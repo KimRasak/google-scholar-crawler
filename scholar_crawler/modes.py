@@ -1,10 +1,10 @@
 """The modes that run instead of a crawl.
 
-``--self-check``, ``--rehearse-handoff``, ``--show-state`` and ``--forget`` each answer a
-question about the tool rather than collecting records: does Scholar still parse, does the
-takeover path work, where did previous runs stop, and drop that progress. They share the
-crawler's browser settings and its takeover log but none of its paging, so they live apart
-from both the crawl loop and argument parsing.
+``--doctor``, ``--self-check``, ``--rehearse-handoff``, ``--show-state`` and ``--forget`` each
+answer a question about the tool rather than collecting records: can this machine run a crawl
+at all, does Scholar still parse, does the takeover path work, where did previous runs stop,
+and drop that progress. They share the crawler's browser settings and its takeover log but
+none of its paging, so they live apart from both the crawl loop and argument parsing.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from pathlib import Path
 from .browser import Session, browser_session
 from .challenge import ChallengeUnattended
 from .crawler import ScholarCrawler
+from .doctor import Status, diagnose_environment, render_environment
 from .models import SearchRequest
 from .rehearsal import rehearse
 from .selfcheck import check_page, report
@@ -26,6 +27,21 @@ SELF_CHECK_QUERY = "machine learning"
 
 RECENT_TAKEOVERS = 5
 """How many of the most recent takeovers :func:`show_state` prints."""
+
+
+def check_environment(*, profile: Path, out: Path, state: Path, channel: str | None) -> int:
+    """Report whether this machine can run a crawl, without sending a request.
+
+    :param profile: profile directory a crawl would reuse.
+    :param out: JSONL destination a crawl would write.
+    :param state: resume-state file a crawl would write.
+    :param channel: browser channel a crawl would drive.
+    :returns: process exit code — 0 when nothing is broken, 1 when something must be fixed.
+    """
+    findings = diagnose_environment(profile=profile, out=out, state=state, channel=channel)
+    for line in render_environment(findings):
+        print(f"[doctor] {line}", flush=True)
+    return 1 if any(finding.status is Status.FAIL for finding in findings) else 0
 
 
 def self_check(session: Session) -> int:

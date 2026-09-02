@@ -12,7 +12,7 @@ from .crawler import Pacing
 from .expand import FollowPolicy
 from .history import advise
 from .models import AuthorRequest, SearchRequest
-from .modes import forget_state, rehearse_takeover, self_check, show_state
+from .modes import check_environment, forget_state, rehearse_takeover, self_check, show_state
 from .plan import RunPlan, plan_run
 from .recipes import getting_started, render
 from .run import CrawlLimits, Outputs, crawl
@@ -59,6 +59,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--recipes",
         action="store_true",
         help="print ready-to-run commands for the usual tasks and stop",
+    )
+    query.add_argument(
+        "--doctor",
+        action="store_true",
+        help="check that this machine can run a crawl — Python, libraries, a browser, "
+        "writable directories — and print how to fix what cannot; sends no request",
     )
     query.add_argument(
         "--self-check",
@@ -382,6 +388,10 @@ def _run_offline_mode(args: argparse.Namespace) -> int | None:
         return show_state(args.state, args.challenge_log)
     if args.forget is not None:
         return forget_state(args.state, args.forget)
+    if args.doctor:
+        return check_environment(
+            profile=args.profile, out=args.out, state=args.state, channel=args.channel or None
+        )
     if args.self_check:
         return self_check(_session_of(args))
     if args.rehearse_handoff:

@@ -44,9 +44,31 @@ python3 -m playwright install chromium   # 若不用本机 Chrome（--channel ""
 
 需要 Python 3.10+。本机已安装 Chrome 时保持默认 `--channel chrome`，指纹更自然。装好后 `scholar-crawler ...` 与 `python3 -m scholar_crawler ...` 等价。
 
+装完先跑一次环境体检，它不发任何请求：
+
+```sh
+$ scholar-crawler --doctor
+[doctor] + python                 3.13.5 at /opt/miniconda3/bin/python3
+[doctor] + playwright             1.60.0
+[doctor] + bs4                    4.14.3
+[doctor] + lxml                   6.1.0
+[doctor] + bundled chromium       /Users/you/Library/Caches/ms-playwright/chromium-1223/...
+[doctor] + browser channel        chrome at /Applications/Google Chrome.app/...
+[doctor] ! profile                .scholar-profile holds no cookies yet, so the first challenge will need a human
+[doctor] + output                 out is writable
+[doctor] nothing is broken; these are worth knowing:
+[doctor]   profile: expect one takeover on the first run; the cleared cookies are then reused
+```
+
+检查项：Python 版本是否达到 3.10、三个依赖是否装上且版本不低于 `pyproject.toml` 声明的下限、Playwright 自带的 Chromium 是否真的下载了、`--channel` 指定的浏览器是否找得到、profile 里有没有以前攒下的 cookie、输出与断点文件的目录是否可写。每项失败都给出具体的修复命令（`pip install -e .`、`playwright install chromium`、`--channel ''`……），有 `x` 就退出码 1。
+
+两个刻意的设计：找不到 Chrome 只算警告（自带 Chromium 照样能跑），而体检本身不会创建任何目录——路径打错了不该在磁盘上留下空壳，所以它探测的是最近的已存在上级目录，并如实写明「目录还不存在，但上级可写」。
+
+环境没问题之后再用 `--self-check` 去碰网络。
+
 ## 快速开始
 
-不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十条可以直接复制的完整命令（自检、演练接管、单查询、先算账、批量+CSV、作者主页、引文网络、断点续抓、数据体检、离线出书目）。什么都不传时，报错后也会顺手列出前三条。
+不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十一条可以直接复制的完整命令（环境体检、自检、演练接管、单查询、先算账、批量+CSV、作者主页、引文网络、断点续抓、数据体检、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
 
 ```sh
 $ scholar-crawler --recipes
@@ -325,7 +347,7 @@ python3 -m tests.sanitize out/dump/<结果页>.html tests/pages/results.html 6
 
 ## 自检
 
-怀疑 Scholar 改版、解析结果变空时，先跑一次自检（只发一次请求）：
+先 `--doctor` 确认本机装好了（见[安装](#安装)），再用自检碰网络。怀疑 Scholar 改版、解析结果变空时，先跑一次自检（只发一次请求）：
 
 ```sh
 scholar-crawler --self-check
@@ -460,7 +482,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 253 个用例，全部离线
+python3 -m pytest -q     # 271 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -472,6 +494,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **失败诊断**：九类网络错误各自归类、只重试可能是暂时的失败、认不出的错误保留原文并仍给建议、每条诊断都带 URL 与下一步、429/503 与其他 5xx 区分、无法解析的页面指向 parser.py 与存盘副本、连续验证被判为封锁、渲染顺序
 - **全链路**：真实浏览器打本地假 Scholar——翻页与页数上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、干净数据不报警、headless 拒绝接管时已抓数据仍在、连接被拒/不可解析页面/429 各自给出人话、零结果页仍是零结果
 - **抓取时体检**：逐条累加与整批体检结果完全一致、单条坏记录不报警、一个字段大面积失败才报警、缺失类警告永不报警、运行结束时打印在输出之后
+- **环境体检**：依赖过旧算失败、缺 Chrome 只算警告、不存在的目录如实报告且绝不创建、上级目录不可读也不崩、profile 有无 cookie、`--doctor` 走一遍 CLI
 - **综述报告**：说明数字来自抓取当时、规模统计、链接只在有目标时生成、分组表、柱状图按最忙的一年缩放、查询来源、自带可信度一节、标题里的竖线被转义、缺失字段显示为破折号、`--quiet` 下也算输出
 - **数据体检**：干净记录不误报、页码型 venue 与残留年份、与灰字矛盾的年份、有被引数无链接、负计数、缺失与有损字段的档位、仅引用条目不因缺 card id 被判错、占比与例子、真实夹具记录零 error
 - **文档导航**：两份 README 的页内链接都指向真实小节、导航表覆盖至少 7 种情况、两份文档的模块清单一致且与实际模块完全对应
@@ -502,7 +525,8 @@ scholar_crawler/
   browser.py    持久化 profile 的浏览器会话
   crawler.py    抓取循环：节奏、接管、翻页/分批、BibTeX 取用、HTML dump
   run.py        一次运行的执行：开浏览器、目标抓取、图展开、输出文件开关与汇报
-  modes.py      替代抓取的四种模式：自检、演练、查看断点、清除断点
+  modes.py      替代抓取的五种模式：环境体检、自检、演练、查看断点、清除断点
+  doctor.py     环境体检：依赖版本、浏览器、目录权限
   expand.py     引文网络展开：选点、上限、去重
   plan.py       抓取计划：页数/加载数/用时估算
   selfcheck.py  解析自检：逐字段体检与报告

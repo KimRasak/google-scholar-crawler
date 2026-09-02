@@ -50,10 +50,22 @@ def test_every_crawler_recipe_describes_a_buildable_run(workspace: Path) -> None
         if argv[0] != "scholar-crawler":
             continue
         args = build_parser().parse_args(argv[1:])
-        if args.self_check or args.rehearse_handoff:
+        if args.doctor or args.self_check or args.rehearse_handoff:
             continue  # these modes carry no target by design
         listings, authors = build_targets(args)
         assert listings or authors, recipe.command
+
+
+def test_the_doctor_recipe_runs_as_written(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    doctor = [recipe for recipe in RECIPES if "--doctor" in recipe.command]
+    assert doctor, "keep a recipe that checks the machine before anything is requested"
+    for recipe in doctor:
+        assert main(shlex.split(recipe.command)[1:]) == 0
+        printed = capsys.readouterr().out
+        assert "[doctor] + python" in printed
+        assert "[doctor] + bundled chromium" in printed
 
 
 def test_the_dry_run_recipe_runs_as_written(

@@ -44,9 +44,31 @@ python3 -m playwright install chromium   # only if you do not use local Chrome (
 
 Python 3.10+. Keep the default `--channel chrome` when Chrome is installed. `scholar-crawler ...` and `python3 -m scholar_crawler ...` are equivalent.
 
+Check the machine first; this sends no request:
+
+```sh
+$ scholar-crawler --doctor
+[doctor] + python                 3.13.5 at /opt/miniconda3/bin/python3
+[doctor] + playwright             1.60.0
+[doctor] + bs4                    4.14.3
+[doctor] + lxml                   6.1.0
+[doctor] + bundled chromium       /Users/you/Library/Caches/ms-playwright/chromium-1223/...
+[doctor] + browser channel        chrome at /Applications/Google Chrome.app/...
+[doctor] ! profile                .scholar-profile holds no cookies yet, so the first challenge will need a human
+[doctor] + output                 out is writable
+[doctor] nothing is broken; these are worth knowing:
+[doctor]   profile: expect one takeover on the first run; the cleared cookies are then reused
+```
+
+It checks the Python version against 3.10, that all three dependencies import and are no older than the floors declared in `pyproject.toml`, that Playwright's own Chromium was actually downloaded, that the browser `--channel` names can be found, whether the profile already holds cookies from earlier runs, and whether the output and state directories can be written. Every failure names the command that fixes it (`pip install -e .`, `playwright install chromium`, `--channel ''`, …), and any `x` exits 1.
+
+Two deliberate choices: a missing Chrome is only a warning, because the bundled Chromium runs fine, and the check creates no directories — a mistyped path should not leave empty shells on disk, so it probes the closest existing ancestor and says plainly that the directory does not exist yet while its parent is writable.
+
+Once the machine is sound, `--self-check` goes on to test the network.
+
 ## Usage
 
-Rather than reading the flag table, start from `--recipes`: ten complete commands to copy, ordered from safest to most expensive (self-check, takeover rehearsal, one topic, costing a run, batch plus CSV, an author, the citation graph, resuming, auditing, offline digest). A run given nothing to do prints the first three after the error.
+Rather than reading the flag table, start from `--recipes`: eleven complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, one topic, costing a run, batch plus CSV, an author, the citation graph, resuming, auditing, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
 
 ```sh
 $ scholar-crawler --recipes
@@ -461,7 +483,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 253 tests, fully offline
+python3 -m pytest -q     # 271 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -503,7 +525,8 @@ scholar_crawler/
   browser.py    persistent-profile browser session
   crawler.py    crawl loop: pacing, takeover, pagination and author batching, BibTeX loads, HTML dumps
   run.py        executing one run: opening the browser, crawling targets, expanding, reporting outputs
-  modes.py      the four modes that replace a crawl: self-check, rehearsal, show and forget state
+  modes.py      the five modes that replace a crawl: doctor, self-check, rehearsal, show and forget state
+  doctor.py     environment check: dependency versions, browsers, directory permissions
   expand.py     citation-graph expansion: seed choice, caps, dedup
   plan.py       run plan: pages, loads and duration estimates
   selfcheck.py  parser self-check: per-field health report

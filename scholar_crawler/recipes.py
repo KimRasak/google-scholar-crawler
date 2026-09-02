@@ -26,6 +26,11 @@ class Recipe:
 
 RECIPES: tuple[Recipe, ...] = (
     Recipe(
+        purpose="Check that this machine can run a crawl at all",
+        command="scholar-crawler --doctor",
+        note="no requests; reports Python, the libraries, the browser and the directories",
+    ),
+    Recipe(
         purpose="Check the parser against Scholar before trusting a long run",
         command="scholar-crawler --self-check",
         note="one request; reports per field whether Scholar's layout still parses",
