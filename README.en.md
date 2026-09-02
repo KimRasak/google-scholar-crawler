@@ -304,6 +304,12 @@ scholar-crawler -q "graph attention networks" -p 1 -n 2 --bibtex out/x.bib \
 python3 -m tests.sanitize out/dump/<result-page>.html tests/pages/results.html 6
 ```
 
+### End-to-end tests: a local fake Scholar
+
+Unit tests feed HTML strings to the parser and `--self-check` needs the real network; neither covers the path that matters most: a **real browser** navigating real URLs, tripping a challenge, resuming after a takeover and writing the files correctly. `tests/fakescholar.py` serves a fake Scholar on loopback with `http.server`, answering only `/scholar` and `/citations`, and can be told to answer a given offset with a challenge page the first time it is asked. The stand-in human in the tests clears it the way a person does — reload the page, the challenge is gone, the crawl continues.
+
+Behaviour that used to be verified once against the real Scholar now runs on every CI job: paging to the page budget and not one page further, 20 records and the matching CSV rows, a cursor at 40, challenge → takeover → the same offset refetched → nothing lost, `resolved` in the takeover log with a redacted URL, `--resume` continuing from 20 to 40, an author profile and its header stored, clean data raising no audit alarm, and — when headless refuses the takeover — the 10 records already collected still on disk, exit code 1, and the cursor left at 10.
+
 ## Self-check
 
 When results come back empty and you suspect a Scholar layout change, spend one request on the self-check:
@@ -421,7 +427,7 @@ The slowdown has two stages: every takeover widens the delays by `--backoff-fact
 ## Development
 
 ```sh
-python3 -m pytest -q     # 222 tests, fully offline
+python3 -m pytest -q     # 228 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -430,6 +436,7 @@ All tests run offline (no network at all), grouped by area:
 - **Parsing**: result cards (citation-only records, PDF side links, cited-by and version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author profiles (header lines, the position-read summary table, publication rows, missing years and zero citations, the "show more" state), real-page fixtures (all ten self-checks on a real result page, field completeness, the sanitizing rules, a no-credentials scan)
 - **URLs and filters**: query and profile URL assembly, filter parameters, id and URL parsing, cite-popup addresses
 - **Crawl loop**: pagination and author batching, pacing and cooldowns, the back-to-back challenge wait and its off switch, both run-summary duration formats, HTML dumps, a challenge during export
+- **End to end**: a real browser against the local fake Scholar — paging and the page budget, a takeover losing nothing, `--resume`, an author profile stored, no alarm on clean data, and data kept on disk when headless refuses the takeover
 - **Auditing while crawling**: the incremental tally agrees exactly with the batch audit, one bad record stays quiet, a field failing across a run raises an alarm, missing-field warnings never do, and the alarm prints after the run's output
 - **Record audit**: a clean record trips nothing, page-range venues and leftover years, a year the byline never mentioned, citations without a link, negative counts, the severity of missing and lossy fields, citation-only records not blamed for a missing card id, counts with examples, and zero errors on records parsed from the real fixtures
 - **Documentation**: in-page links in both READMEs resolve to real sections, the navigation table covers at least seven situations, and both documents list exactly the modules that exist

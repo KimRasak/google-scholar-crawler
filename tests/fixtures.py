@@ -178,7 +178,7 @@ BIBTEX_EXPORT_HTML = """
 """
 
 
-def result_page_html(cards: int, *, next_start: int | None = 10) -> str:
+def result_page_html(cards: int, *, next_start: int | None = 10, first_index: int = 0) -> str:
     """Build a result page carrying an exact number of cards.
 
     Page-budget arithmetic depends on how many records a page holds, so tests that compare
@@ -186,6 +186,8 @@ def result_page_html(cards: int, *, next_start: int | None = 10) -> str:
 
     :param cards: how many result cards the page carries.
     :param next_start: offset the next-page link points at; None omits the link.
+    :param first_index: number the first card gets; later pages must not repeat card ids or
+        the crawler deduplicates them away.
     :returns: the page HTML.
     """
     body = "".join(
@@ -199,7 +201,7 @@ def result_page_html(cards: int, *, next_start: int | None = 10) -> str:
     </div>
   </div>
 """
-        for index in range(cards)
+        for index in range(first_index, first_index + cards)
     )
     nav = (
         '<div id="gs_n"><center><table><tr><td align="left">'

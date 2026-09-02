@@ -448,7 +448,6 @@ def main(argv: list[str] | None = None) -> int:
         profiles=args.profiles_out,
         bibtex=args.bibtex,
         csv=args.csv,
-        challenges=args.challenge_log,
     )
     if outputs.bibtex is not None and authors:
         print(

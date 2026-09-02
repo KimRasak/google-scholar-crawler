@@ -16,7 +16,7 @@ from .crawler import Pacing, ScholarCrawler
 from .expand import FollowPolicy, next_level
 from .models import AuthorProfile, AuthorRequest, ScholarResult, SearchRequest
 from .parser import bibtex_key
-from .storage import BibtexSink, ChallengeLog, ProfileStore, ResultSink, StateStore
+from .storage import BibtexSink, ProfileStore, ResultSink, StateStore
 
 
 @dataclass(slots=True, frozen=True)
@@ -203,7 +203,6 @@ class Outputs:
     :param state: resume cursor store.
     :param profiles: author-profile store.
     :param bibtex: BibTeX writer, when export was asked for.
-    :param challenges: takeover log, when a path was given.
     :param csv_path: CSV destination written when the run ends, when asked for.
     """
 
@@ -211,7 +210,6 @@ class Outputs:
     state: StateStore
     profiles: ProfileStore
     bibtex: BibtexSink | None
-    challenges: ChallengeLog | None = None
     csv_path: Path | None = None
 
     @classmethod
@@ -223,7 +221,6 @@ class Outputs:
         profiles: Path,
         bibtex: Path | None = None,
         csv: Path | None = None,
-        challenges: Path | None = None,
     ) -> Outputs:
         """Open every output file a run writes.
 
@@ -232,7 +229,6 @@ class Outputs:
         :param profiles: author-profile file.
         :param bibtex: ``.bib`` destination, when BibTeX export was asked for.
         :param csv: CSV destination written once the run ends, when asked for.
-        :param challenges: destination for the takeover log, when asked for.
         :returns: the opened outputs.
         """
         sink = ResultSink(out)
@@ -249,7 +245,6 @@ class Outputs:
             state=cursors,
             profiles=store,
             bibtex=entries,
-            challenges=ChallengeLog(challenges) if challenges else None,
             csv_path=csv,
         )
 
