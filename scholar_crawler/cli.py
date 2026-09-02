@@ -12,6 +12,7 @@ from .crawler import Pacing, ScholarCrawler
 from .expand import FollowPolicy, next_level
 from .models import AuthorProfile, AuthorRequest, ScholarResult, SearchRequest
 from .parser import bibtex_key
+from .rehearsal import rehearse
 from .selfcheck import check_page, report
 from .storage import BibtexSink, ProfileStore, ResultSink, StateStore
 from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
@@ -52,6 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="fetch one page for a fixed query and report whether every parsed field still "
         "arrives; use it to tell a Scholar layout change from a bug",
+    )
+    query.add_argument(
+        "--rehearse-handoff",
+        action="store_true",
+        help="rehearse the human takeover on a local page (no request to Google): the "
+        "challenge is detected, the window is handed over, and the crawl resumes",
     )
     query.add_argument("--year-from", type=int, help="earliest publication year")
     query.add_argument("--year-to", type=int, help="latest publication year")
@@ -361,6 +368,23 @@ def _follow_citations(
             frontier += _crawl_listing(crawler, request, args, sink, state, bibtex, depth=level)
 
 
+def _browser_options(args: argparse.Namespace) -> BrowserOptions:
+    """Collect the browser flags into launch options.
+
+    :param args: parsed arguments.
+    :returns: the launch options for this run.
+    """
+    return BrowserOptions(
+        user_data_dir=args.profile,
+        headless=args.headless,
+        channel=args.channel or None,
+        locale=args.locale,
+        timezone=args.timezone,
+        proxy_server=args.proxy,
+        slow_mo=args.slow_mo,
+    )
+
+
 SELF_CHECK_QUERY = "machine learning"
 """Broad query used by ``--self-check``: many hits, PDFs, citations and a next page."""
 
@@ -371,15 +395,7 @@ def _run_self_check(args: argparse.Namespace) -> int:
     :param args: parsed arguments supplying browser and pacing settings.
     :returns: process exit code — 0 when every check passed, 1 otherwise.
     """
-    options = BrowserOptions(
-        user_data_dir=args.profile,
-        headless=args.headless,
-        channel=args.channel or None,
-        locale=args.locale,
-        timezone=args.timezone,
-        proxy_server=args.proxy,
-        slow_mo=args.slow_mo,
-    )
+    options = _browser_options(args)
     handoff = HumanHandoff(timeout=args.handoff_timeout, headless=args.headless)
     print(f"[check] fetching one page for {SELF_CHECK_QUERY!r}", flush=True)
     try:
@@ -397,6 +413,33 @@ def _run_self_check(args: argparse.Namespace) -> int:
     return 0 if report(check_page(fetched)) else 1
 
 
+def _run_rehearsal(args: argparse.Namespace) -> int:
+    """Exercise the human-takeover path against a local page, without requesting anything.
+
+    :param args: parsed arguments supplying browser and handoff settings.
+    :returns: process exit code — 0 when the takeover path worked (or refused as designed
+        under ``--headless``), 1 when it did not, 130 on Ctrl+C.
+    """
+    handoff = HumanHandoff(timeout=args.handoff_timeout, headless=args.headless)
+    print(
+        "[rehearse] opening a local challenge page in the crawling profile; "
+        "no request is sent to Google",
+        flush=True,
+    )
+    try:
+        with browser_session(_browser_options(args)) as (_context, page):
+            return 0 if rehearse(page, handoff) else 1
+    except KeyboardInterrupt:
+        print("\n[stop] interrupted by user", flush=True)
+        return 130
+    except ChallengeUnattended as error:
+        if args.headless:
+            print(f"[rehearse] refused without a window, as designed: {error}", flush=True)
+            return 0
+        print(f"\n[stop] {error}", file=sys.stderr)
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the crawler from command-line arguments.
 
@@ -406,6 +449,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.self_check:
         return _run_self_check(args)
+    if args.rehearse_handoff:
+        return _run_rehearsal(args)
     try:
         listings, authors = build_targets(args)
         follow = FollowPolicy(
@@ -445,15 +490,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{follow.estimate(len(listings) + len(authors))} listings this run",
             flush=True,
         )
-    options = BrowserOptions(
-        user_data_dir=args.profile,
-        headless=args.headless,
-        channel=args.channel or None,
-        locale=args.locale,
-        timezone=args.timezone,
-        proxy_server=args.proxy,
-        slow_mo=args.slow_mo,
-    )
+    options = _browser_options(args)
     handoff = HumanHandoff(timeout=args.handoff_timeout, headless=args.headless)
     exit_code = 0
     try:
