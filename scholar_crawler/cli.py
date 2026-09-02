@@ -8,8 +8,9 @@ from pathlib import Path
 
 from .browser import BrowserOptions, Session
 from .challenge import HumanHandoff
-from .crawler import Pacing
+from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
 from .expand import FollowPolicy
+from .explain import explain
 from .history import advise
 from .models import AuthorRequest, SearchRequest
 from .modes import check_environment, forget_state, rehearse_takeover, self_check, show_state
@@ -158,6 +159,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="author profile headers (one record per author)",
     )
     output.add_argument("--dump-html", type=Path, help="save every fetched page's HTML here for debugging")
+    output.add_argument(
+        "--explain",
+        action="store_true",
+        help="read this command back in plain words — what it will crawl, which files it "
+        "will touch, and which flags contradict each other — and stop",
+    )
 
     browser = parser.add_argument_group("browser")
     browser.add_argument(
@@ -297,12 +304,6 @@ def _browser_options(args: argparse.Namespace) -> BrowserOptions:
         slow_mo=args.slow_mo,
     )
 
-
-DEFAULT_MIN_DELAY = 4.0
-"""Starting minimum delay, widened when the challenge log shows previous blocks."""
-
-DEFAULT_MAX_DELAY = 11.0
-"""Starting maximum delay, widened when the challenge log shows previous blocks."""
 
 def _session_of(args: argparse.Namespace) -> Session:
     """Collect the browser-backed settings the offline modes share with a crawl.
@@ -454,6 +455,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(line, file=sys.stderr)
         return 1
 
+    if args.explain:
+        for line in explain(args, listings, authors, follow, pacing):
+            print(f"[explain] {line}" if line else "[explain]", flush=True)
+        if not args.dry_run:
+            print("[explain] nothing was requested; drop --explain to start", flush=True)
+            return 0
     if args.dry_run:
         for line in _plan_of(args, listings, authors, follow, pacing).render():
             print(f"[plan] {line}", flush=True)

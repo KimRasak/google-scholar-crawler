@@ -41,6 +41,11 @@ RECIPES: tuple[Recipe, ...] = (
         note="a local challenge page; press the button to prove the resume path works",
     ),
     Recipe(
+        purpose="Read a command back before running it",
+        command='scholar-crawler -q "diffusion models" -p 5 --bibtex out/refs.bib --explain',
+        note="no requests; names the files it would touch and any flags that cancel each other",
+    ),
+    Recipe(
         purpose="Search one topic",
         command='scholar-crawler -q "graph attention networks" -p 3 -o out/gat.jsonl',
         note="3 pages, 10 records each, roughly a minute at the default rhythm",

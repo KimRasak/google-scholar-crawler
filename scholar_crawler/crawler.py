@@ -81,6 +81,13 @@ class RunStats:
         )
 
 
+DEFAULT_MIN_DELAY = 4.0
+"""Starting minimum delay between page loads, widened when the challenge log shows blocks."""
+
+DEFAULT_MAX_DELAY = 11.0
+"""Starting maximum delay between page loads, widened when the challenge log shows blocks."""
+
+
 @dataclass(slots=True)
 class Pacing:
     """Request rhythm. Slower settings mean fewer challenges, not just politeness.
@@ -96,8 +103,8 @@ class Pacing:
         back to back, which means the address is still being watched; 0 disables it.
     """
 
-    min_delay: float = 4.0
-    max_delay: float = 11.0
+    min_delay: float = DEFAULT_MIN_DELAY
+    max_delay: float = DEFAULT_MAX_DELAY
     cooldown_every: int = 10
     cooldown_seconds: float = 90.0
     nav_timeout: float = 45.0

@@ -68,6 +68,17 @@ def test_the_doctor_recipe_runs_as_written(
         assert "[doctor] + bundled chromium" in printed
 
 
+def test_the_explain_recipe_runs_as_written(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    explained = [recipe for recipe in RECIPES if "--explain" in recipe.command]
+    assert explained, "keep a recipe that reads a command back before it runs"
+    for recipe in explained:
+        assert main(shlex.split(recipe.command)[1:]) == 0
+        printed = capsys.readouterr().out
+        assert "[explain] crawling" in printed
+
+
 def test_the_dry_run_recipe_runs_as_written(
     workspace: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

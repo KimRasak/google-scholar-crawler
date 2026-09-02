@@ -12,7 +12,7 @@ The code never tries to solve, bypass or hide a verification challenge. Verifica
 | Your situation | Sections to read |
 | --- | --- |
 | First time | [Install](#install) → [Usage](#usage) (run `--recipes` and `--self-check` first) |
-| Collecting a batch | [Usage](#usage) → [Counting the cost first](#counting-the-cost-first---dry-run) → [Options](#options) → [Output](#output) |
+| Collecting a batch | [Usage](#usage) → [Reading the command back](#reading-the-command-back---explain) → [Counting the cost first](#counting-the-cost-first---dry-run) → [Options](#options) → [Output](#output) |
 | Using what you collected | [A readable overview](#a-readable-overview---report) → [Building a bibliography offline](#building-a-bibliography-offline) → [Grouping](#grouping) |
 | Getting blocked | [The takeover log](#the-takeover-log) → [Learning to slow down across runs](#learning-to-slow-down-across-runs) → [Getting challenged less](#getting-challenged-less) → [Rehearsing the human takeover](#rehearsing-the-human-takeover) |
 | It stopped with an error | [Failures in plain words](#failures-in-plain-words) → [Self-check](#self-check) |
@@ -68,7 +68,7 @@ Once the machine is sound, `--self-check` goes on to test the network.
 
 ## Usage
 
-Rather than reading the flag table, start from `--recipes`: eleven complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, one topic, costing a run, batch plus CSV, an author, the citation graph, resuming, auditing, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
+Rather than reading the flag table, start from `--recipes`: twelve complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, one topic, costing a run, batch plus CSV, an author, the citation graph, resuming, auditing, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
 
 ```sh
 $ scholar-crawler --recipes
@@ -207,6 +207,38 @@ $ scholar-crawler --forget "attention" --state out/state.json
 Signatures are rendered back into their targets, with the filters that distinguish them — year range, language, sort order, `--review-only` — in brackets, because the same query under different filters is a different cursor. Entries now also carry an update time; state files written by older versions still load and show `unknown time`.
 
 A target cut short by `-n/--max-results` no longer counts as finished: stopping there was our decision and Scholar still had results, so its cursor stays resumable.
+
+## Reading the command back: `--explain`
+
+There are more than forty flags, and a wrong combination rarely fails — it quietly does something else. `--explain` translates the command into plain words (what it crawls, how deep, at what rhythm, what a challenge does, which files it touches) and then names the flags that contradict or cancel each other:
+
+```sh
+$ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --explain
+[explain] crawling 1 listing(s)
+[explain]   target: graph attention networks
+[explain] up to 3 page(s) per listing, 10 records a page
+[explain] waiting 4–11s between page loads
+[explain] pausing 90s every 10 loads, and giving up on a page after 45s
+[explain] on a challenge: the window is brought to you, waiting up to 600s for you to clear it, up to 5 time(s) this run
+[explain] after each takeover the delays widen by x1.6
+[explain] creating records: out/results.jsonl
+[explain] creating bibtex: out/refs.bib
+[explain] creating resume state: out/state.json
+[explain] creating takeover log: out/challenges.jsonl
+```
+
+What it catches (`warn` means a flag does not do what it looks like; `note` means a consequence worth knowing):
+
+- `--headless` has nobody to hand a challenge to, so the first one ends the run with whatever was collected;
+- `--year-from` later than `--year-to`, which returns nothing;
+- values that amount to doing no work, such as `--pages 0` or `--max-handoffs 0`;
+- delays shorter than the default 4–11s, and `--cooldown-every 0` removing the long pause;
+- `--no-learn-from-history` when the takeover log actually holds history (silent when it does not);
+- `--resume` with no cursor for these targets, which really means starting over; the reverse, a stored cursor without `--resume`, which recollects what is already on disk; and `--resume` together with `--start`, where the cursor wins;
+- two output flags pointed at one file;
+- `--bibtex` with `--author` costing three page loads per record, `--dump-html` writing pages that carry session material to disk, `--proxy` addresses being challenged more, and a `--host` other than the default.
+
+It answers a different question from `--dry-run`: that one estimates how long a run takes, this one tells you whether the command is the one you meant. Both can be given together.
 
 ## Counting the cost first: `--dry-run`
 
@@ -379,6 +411,7 @@ It fetches one page of a broad query and reports, field by field, whether titles
 | `--handoff-timeout`, `--max-handoffs`, `--backoff-factor`, `--challenge-cooldown` | how long to wait for a human (0 = forever), takeover budget, slowdown per takeover, wait-out after back-to-back challenges |
 | `--recipes` | print complete commands to copy (no requests) |
 | `--show-state`, `--forget PATTERN` | review stored progress and recent takeovers; drop cursors by signature substring (empty pattern drops all) |
+| `--explain` | read the command back in plain words and name flags that cancel each other |
 | `--dry-run` | print the run plan and duration estimate, then stop without requesting anything |
 | `--self-check` | run the parser self-check (one request) and report field by field what still parses |
 | `--headless` | no window; **a challenge then aborts the run with instructions** |
@@ -483,7 +516,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 271 tests, fully offline
+python3 -m pytest -q     # 290 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -528,6 +561,7 @@ scholar_crawler/
   modes.py      the five modes that replace a crawl: doctor, self-check, rehearsal, show and forget state
   doctor.py     environment check: dependency versions, browsers, directory permissions
   expand.py     citation-graph expansion: seed choice, caps, dedup
+  explain.py    the command read back in plain words, with doubtful combinations
   plan.py       run plan: pages, loads and duration estimates
   selfcheck.py  parser self-check: per-field health report
   rehearsal.py  takeover rehearsal: local challenge page, full-path drill

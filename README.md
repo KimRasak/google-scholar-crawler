@@ -12,7 +12,7 @@
 | 你的情况 | 读这几节 |
 | --- | --- |
 | 第一次用 | [安装](#安装) → [快速开始](#快速开始)（先跑 `--recipes` 和 `--self-check`） |
-| 想抓一批数据 | [快速开始](#快速开始) → [先算账：`--dry-run`](#先算账--dry-run) → [常用参数](#常用参数) → [输出](#输出) |
+| 想抓一批数据 | [快速开始](#快速开始) → [先把命令读回来：`--explain`](#先把命令读回来--explain) → [先算账：`--dry-run`](#先算账--dry-run) → [常用参数](#常用参数) → [输出](#输出) |
 | 抓完了要用数据 | [出一份可读的综述](#出一份可读的综述--report) → [离线生成参考文献](#离线生成参考文献) → [分组统计](#分组统计) |
 | 被验证码拦了 | [接管记录](#接管记录) → [跨运行学会减速](#跨运行学会减速) → [降低验证频率](#降低验证频率) → [演练人工接管](#演练人工接管) |
 | 程序报错停了 | [出错时给人话](#出错时给人话) → [自检](#自检) |
@@ -68,7 +68,7 @@ $ scholar-crawler --doctor
 
 ## 快速开始
 
-不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十一条可以直接复制的完整命令（环境体检、自检、演练接管、单查询、先算账、批量+CSV、作者主页、引文网络、断点续抓、数据体检、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
+不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十二条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、单查询、先算账、批量+CSV、作者主页、引文网络、断点续抓、数据体检、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
 
 ```sh
 $ scholar-crawler --recipes
@@ -206,6 +206,38 @@ $ scholar-crawler --forget "attention" --state out/state.json
 签名会被还原成可读的目标名，年份区间、语言、排序、`--review-only` 之类的过滤条件以 `[...]` 附在后面——同一个查询配不同过滤条件是不同的断点，这样一眼能分清。每条断点现在还带最后更新时间（旧的 state 文件照样能读，只是显示 `unknown time`）。
 
 `-n/--max-results` 截断的目标不再被记成「已抓完」：那是我们自己决定停的，Scholar 那边还有结果，所以它保持可续抓。
+
+## 先把命令读回来：`--explain`
+
+参数有四十多个，写错的组合通常不会报错，只是安静地做了另一件事。`--explain` 把这条命令翻译成人话——抓什么、翻多少页、按什么节奏、遇到验证怎么办、会动哪些文件——然后指出互相抵消或名不副实的参数：
+
+```sh
+$ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --explain
+[explain] crawling 1 listing(s)
+[explain]   target: graph attention networks
+[explain] up to 3 page(s) per listing, 10 records a page
+[explain] waiting 4–11s between page loads
+[explain] pausing 90s every 10 loads, and giving up on a page after 45s
+[explain] on a challenge: the window is brought to you, waiting up to 600s for you to clear it, up to 5 time(s) this run
+[explain] after each takeover the delays widen by x1.6
+[explain] creating records: out/results.jsonl
+[explain] creating bibtex: out/refs.bib
+[explain] creating resume state: out/state.json
+[explain] creating takeover log: out/challenges.jsonl
+```
+
+会被点出来的组合（`warn` 是「这个参数不做你以为的事」，`note` 是「后果值得知道」）：
+
+- `--headless` 无人可交，第一次验证就会带着已抓到的数据结束；
+- `--year-from` 晚于 `--year-to`，Scholar 什么都不会返回；
+- `--pages 0`、`--max-handoffs 0` 这类等于「不干活」的值；
+- 延迟比默认的 4–11 秒更短、`--cooldown-every 0` 去掉长暂停；
+- `--no-learn-from-history`，且接管记录里确实有历史（没有历史就不提）；
+- `--resume` 但断点里没有这些目标 → 其实是从头开始；反过来，断点里有而没写 `--resume` → 已经抓过的会再抓一遍；`--resume` 与 `--start` 同时给 → 断点赢；
+- 两个输出参数指向同一个文件；
+- `--bibtex` 配 `--author` 每条要三次页面加载；`--dump-html` 会把含会话信息的页面写到磁盘；`--proxy` 的机房 IP 更容易被拦；`--host` 不是默认站点。
+
+它和 `--dry-run` 是两件事：`--dry-run` 回答「要花多久」，`--explain` 回答「这条命令是不是你想写的」。两个可以一起用，先读人话再看账单。
 
 ## 先算账：`--dry-run`
 
@@ -378,6 +410,7 @@ scholar-crawler --self-check
 | `--handoff-timeout`、`--max-handoffs`、`--backoff-factor`、`--challenge-cooldown` | 等人多久（0 = 无限等）、最多接管几次、每次接管后延迟放大倍数、连续被拦时恢复前的静默等待 |
 | `--recipes` | 打印可直接复制的完整命令（不发请求） |
 | `--show-state`、`--forget PATTERN` | 查看断点进度与最近的接管记录；按签名子串清除断点（空串清空全部） |
+| `--explain` | 把这条命令读回成人话，并指出互相抵消的参数 |
 | `--dry-run` | 只打印这轮的抓取计划与用时估算，不发任何请求 |
 | `--self-check` | 跑一次解析自检（一个请求），逐项报告哪些字段还能正常解析 |
 | `--headless` | 无窗口模式；**此时遇到验证会直接终止并提示改用有界面模式** |
@@ -482,7 +515,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 271 个用例，全部离线
+python3 -m pytest -q     # 290 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -494,6 +527,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **失败诊断**：九类网络错误各自归类、只重试可能是暂时的失败、认不出的错误保留原文并仍给建议、每条诊断都带 URL 与下一步、429/503 与其他 5xx 区分、无法解析的页面指向 parser.py 与存盘副本、连续验证被判为封锁、渲染顺序
 - **全链路**：真实浏览器打本地假 Scholar——翻页与页数上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、干净数据不报警、headless 拒绝接管时已抓数据仍在、连接被拒/不可解析页面/429 各自给出人话、零结果页仍是零结果
 - **抓取时体检**：逐条累加与整批体检结果完全一致、单条坏记录不报警、一个字段大面积失败才报警、缺失类警告永不报警、运行结束时打印在输出之后
+- **命令自述**：目标与文件逐条列出、创建与追加分开、十三种可疑组合各有一条用例、`warn` 排在 `note` 前、`--explain` 不写任何文件、可与 `--dry-run` 同时用
 - **环境体检**：依赖过旧算失败、缺 Chrome 只算警告、不存在的目录如实报告且绝不创建、上级目录不可读也不崩、profile 有无 cookie、`--doctor` 走一遍 CLI
 - **综述报告**：说明数字来自抓取当时、规模统计、链接只在有目标时生成、分组表、柱状图按最忙的一年缩放、查询来源、自带可信度一节、标题里的竖线被转义、缺失字段显示为破折号、`--quiet` 下也算输出
 - **数据体检**：干净记录不误报、页码型 venue 与残留年份、与灰字矛盾的年份、有被引数无链接、负计数、缺失与有损字段的档位、仅引用条目不因缺 card id 被判错、占比与例子、真实夹具记录零 error
@@ -528,6 +562,7 @@ scholar_crawler/
   modes.py      替代抓取的五种模式：环境体检、自检、演练、查看断点、清除断点
   doctor.py     环境体检：依赖版本、浏览器、目录权限
   expand.py     引文网络展开：选点、上限、去重
+  explain.py    把命令读回成人话，并指出互相抵消的参数
   plan.py       抓取计划：页数/加载数/用时估算
   selfcheck.py  解析自检：逐字段体检与报告
   rehearsal.py  接管演练：本地验证页与全链路空演
