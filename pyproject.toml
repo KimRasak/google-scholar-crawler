@@ -29,6 +29,7 @@ dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [project.scripts]
 scholar-crawler = "scholar_crawler.cli:main"
+scholar-digest = "scholar_crawler.digest:main"
 
 [project.urls]
 Homepage = "https://github.com/KimRasak/google-scholar-crawler"

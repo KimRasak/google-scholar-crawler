@@ -71,6 +71,29 @@ A takeover looks like this:
 [pace] backing off to 6.4-17.6s between pages
 ```
 
+## Digesting collected results (no requests)
+
+Crawling in short sessions leaves results spread over several JSONL files. `scholar-digest` reads local files only, and merges, filters, summarizes and exports them:
+
+```sh
+# merge several result files into one deduplicated set, plus a CSV
+scholar-digest out/*.jsonl -o out/all.jsonl --csv out/all.csv
+
+# keep only well-cited recent work
+scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.jsonl
+```
+
+By default it prints an overview: record count, total citations, how many already carry a BibTeX key, citation-only records, the year distribution, the citation-graph level distribution, the most frequent venues, and the most-cited records.
+
+When the same work appears in several files, the higher citation count wins as the fresher observation, the fuller record wins ties, `extra.bibtex_key` survives, and `follow_depth` keeps the shallowest level.
+
+| Option | Effect |
+| --- | --- |
+| `-o`, `--csv` | write the merged records as JSONL / CSV |
+| `--min-citations`, `--year-from`, `--year-to` | filters; a year range drops records without a year |
+| `--top` | how many most-cited records the overview lists (default: 5) |
+| `--quiet` | print only what was written; needs `-o` or `--csv` |
+
 ## Self-check
 
 When results come back empty and you suspect a Scholar layout change, spend one request on the self-check:
@@ -161,11 +184,11 @@ Author publications land in the same JSONL (with Scholar's citation id in `extra
 ## Development
 
 ```sh
-python3 -m pytest -q     # 100 tests, fully offline
+python3 -m pytest -q     # 115 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
-Tests cover result parsing (citation-only cards, PDF side links, cited-by/version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author-profile parsing (header lines, the position-read summary table, publication rows, zero citations and missing years, the "show more" state), URL and filter assembly, id/URL parsing, JSONL dedup and CSV export, profile upserts, resume state, challenge detection (real headless Chromium DOM), the takeover wait including timeout, closed window and headless refusal, BibTeX link discovery (by href, not label) and `<pre>` extraction, `.bib` dedup, a takeover during export, the self-check report (healthy page, zero-hit page, pinpointed missing fields, last page, output format), card-id resolution for profile records, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, result-cap truncation, unknown profile layouts failing loudly, post-takeover slowdown, HTML dumps, and CLI argument assembly. GitHub Actions runs the same suite on Python 3.10 and 3.13.
+Tests cover result parsing (citation-only cards, PDF side links, cited-by/version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author-profile parsing (header lines, the position-read summary table, publication rows, zero citations and missing years, the "show more" state), URL and filter assembly, id/URL parsing, JSONL dedup and CSV export, profile upserts, resume state, challenge detection (real headless Chromium DOM), the takeover wait including timeout, closed window and headless refusal, BibTeX link discovery (by href, not label) and `<pre>` extraction, `.bib` dedup, a takeover during export, the offline digest (merge precedence, `extra` merging, shallowest level, combined filters, summary counts and ranking, file writing, flag validation), the self-check report (healthy page, zero-hit page, pinpointed missing fields, last page, output format), card-id resolution for profile records, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, result-cap truncation, unknown profile layouts failing loudly, post-takeover slowdown, HTML dumps, and CLI argument assembly. GitHub Actions runs the same suite on Python 3.10 and 3.13.
 
 ## Compliance
 
@@ -179,7 +202,7 @@ scholar_crawler/
   parser.py     result-page and profile HTML -> structured records
   challenge.py  challenge detection + human takeover wait
   browser.py    persistent-profile browser session
-  crawler.py    crawl loop: pacing, takeover, the self-check report (healthy page, zero-hit page, pinpointed missing fields, last page, output format), card-id resolution for profile records, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, HTML dumps
+  crawler.py    crawl loop: pacing, takeover, the offline digest (merge precedence, `extra` merging, shallowest level, combined filters, summary counts and ranking, file writing, flag validation), the self-check report (healthy page, zero-hit page, pinpointed missing fields, last page, output format), card-id resolution for profile records, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, HTML dumps
   storage.py    JSONL/CSV writers, author profile records, the .bib file, resume state
   cli.py        command-line entry point
 tests/          offline tests, including headless-Chromium detection tests

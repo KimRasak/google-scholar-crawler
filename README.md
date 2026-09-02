@@ -71,6 +71,29 @@ scholar-crawler -q 'author:"Yoshua Bengio" source:"NeurIPS"' -p 2
 [pace] backing off to 6.4-17.6s between pages
 ```
 
+## 汇总已抓到的结果（不发请求）
+
+多次断断续续地抓，结果会散在好几个 JSONL 里。`scholar-digest` 只读本地文件，做合并去重、过滤、统计和导出：
+
+```sh
+# 合并多份结果，去重后写成一份，并导出 CSV
+scholar-digest out/*.jsonl -o out/all.jsonl --csv out/all.csv
+
+# 只要 2018 年以后、被引 1000 以上的
+scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.jsonl
+```
+
+默认打印一份概览：记录数、被引总数、已带 BibTeX 键的条数、只有引用信息的条数、年份分布、引文层级分布、出现最多的期刊/会议，以及被引最高的几条。
+
+同一篇论文在多份文件里重复时，保留被引数更高（也就是更新）的那条，字段更全的那条优先，`extra` 里的 `bibtex_key` 不会丢，`follow_depth` 取最浅的一层。
+
+| 参数 | 作用 |
+| --- | --- |
+| `-o`、`--csv` | 写出合并后的 JSONL / CSV |
+| `--min-citations`、`--year-from`、`--year-to` | 过滤条件；带年份区间时会丢掉没有年份的记录 |
+| `--top` | 概览里列出的高被引条数（默认 5） |
+| `--quiet` | 只打印写出结果，需要配合 `-o` 或 `--csv` |
+
 ## 自检
 
 怀疑 Scholar 改版、解析结果变空时，先跑一次自检（只发一次请求）：
@@ -161,11 +184,11 @@ JSONL 每行一条记录：
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 100 个用例，全部离线
+python3 -m pytest -q     # 115 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
-测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、BibTeX 链接识别（按 href 而非按标签文字）与 `<pre>` 内容提取、`.bib` 去重、导出过程中的接管、自检报告（健康页面、空结果页、字段缺失定位、末页判定、输出格式）、作者条目的 `data-cid` 解析回退、引文网络展开（按被引排序、宽度上限、访问去重、引用下限、逐层推进与提前收敛）、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
+测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、BibTeX 链接识别（按 href 而非按标签文字）与 `<pre>` 内容提取、`.bib` 去重、导出过程中的接管、离线汇总（合并取舍、`extra` 合并、层级取最浅、过滤组合、统计与排序、写文件、参数校验）、自检报告（健康页面、空结果页、字段缺失定位、末页判定、输出格式）、作者条目的 `data-cid` 解析回退、引文网络展开（按被引排序、宽度上限、访问去重、引用下限、逐层推进与提前收敛）、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
 
 ## 合规
 
@@ -182,6 +205,7 @@ scholar_crawler/
   crawler.py    抓取循环：节奏、接管、翻页/分批、BibTeX 取用、HTML dump
   expand.py     引文网络展开：选点、上限、去重
   selfcheck.py  解析自检：逐字段体检与报告
+  digest.py     离线汇总：合并去重、过滤、统计、导出
   storage.py    JSONL/CSV 写入、作者主页记录、BibTeX 文件、断点状态
   cli.py        命令行入口
 tests/          离线测试（含 headless Chromium 判定测试）
