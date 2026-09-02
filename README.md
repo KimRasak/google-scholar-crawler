@@ -71,6 +71,16 @@ scholar-crawler -q 'author:"Yoshua Bengio" source:"NeurIPS"' -p 2
 [pace] backing off to 6.4-17.6s between pages
 ```
 
+## 自检
+
+怀疑 Scholar 改版、解析结果变空时，先跑一次自检（只发一次请求）：
+
+```sh
+scholar-crawler --self-check
+```
+
+它抓一页固定的宽泛查询，逐项报告标题、链接、作者行、年份、摘要、`data-cid`、被引链接、结果总数、下一页是否都还能解析出来，全通过退出码 0，任一项失败退出码 1 并提示用 `--dump-html` 保存页面。
+
 ## 常用参数
 
 | 参数 | 说明 |
@@ -90,6 +100,7 @@ scholar-crawler -q 'author:"Yoshua Bengio" source:"NeurIPS"' -p 2
 | `--profile`、`--channel`、`--locale`、`--timezone`、`--proxy` | 浏览器 profile 与环境参数 |
 | `--min-delay/--max-delay`、`--cooldown-every/--cooldown-seconds` | 抓取节奏 |
 | `--handoff-timeout`、`--max-handoffs`、`--backoff-factor` | 等人多久（0 = 无限等）、最多接管几次、每次接管后延迟放大倍数 |
+| `--self-check` | 跑一次解析自检（一个请求），逐项报告哪些字段还能正常解析 |
 | `--headless` | 无窗口模式；**此时遇到验证会直接终止并提示改用有界面模式** |
 
 `--headless` 与人工接管天然冲突：没有窗口就没人能操作。建议先用有界面模式跑一次、人工通过验证，之后同一个 `--profile` 在 headless 下命中率会明显提高；即使被拦，程序也会带着明确提示退出而不是空转。
@@ -138,7 +149,7 @@ JSONL 每行一条记录：
 
 - 一次抓 10 条的页面，开了 `--bibtex` 就是 21 次请求而不是 1 次，整体耗时约慢一个数量级，被验证拦的概率也随之上升。建议配合 `-n` 只对确定要用的结果导出。
 - 这两次加载都走可见窗口的正常导航，因此同样受节奏控制和人工接管保护。不能改用后台 HTTP 请求：Scholar 对浏览器导航之外发起的同样请求直接返回 429。
-- 作者主页的论文条目没有 Scholar 的 `data-cid`，无法走这条导出路径，会被跳过并在开头提示一次。
+- 作者主页的论文条目没有 Scholar 的 `data-cid`，程序会先用它的 cluster 列表把 `data-cid`查出来，所以每条是 3 次加载而不是 2 次；开头会提示一次。
 
 ## 降低验证频率
 
@@ -150,11 +161,11 @@ JSONL 每行一条记录：
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 93 个用例，全部离线
+python3 -m pytest -q     # 100 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
-测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、BibTeX 链接识别（按 href 而非按标签文字）与 `<pre>` 内容提取、`.bib` 去重、导出过程中的接管、引文网络展开（按被引排序、宽度上限、访问去重、引用下限、逐层推进与提前收敛）、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
+测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、BibTeX 链接识别（按 href 而非按标签文字）与 `<pre>` 内容提取、`.bib` 去重、导出过程中的接管、自检报告（健康页面、空结果页、字段缺失定位、末页判定、输出格式）、作者条目的 `data-cid` 解析回退、引文网络展开（按被引排序、宽度上限、访问去重、引用下限、逐层推进与提前收敛）、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
 
 ## 合规
 
@@ -170,6 +181,7 @@ scholar_crawler/
   browser.py    持久化 profile 的浏览器会话
   crawler.py    抓取循环：节奏、接管、翻页/分批、BibTeX 取用、HTML dump
   expand.py     引文网络展开：选点、上限、去重
+  selfcheck.py  解析自检：逐字段体检与报告
   storage.py    JSONL/CSV 写入、作者主页记录、BibTeX 文件、断点状态
   cli.py        命令行入口
 tests/          离线测试（含 headless Chromium 判定测试）

@@ -23,6 +23,7 @@ from .urls import (
     absolute,
     author_url,
     cite_url,
+    parse_cluster_id,
     search_url,
 )
 
@@ -218,17 +219,19 @@ class ScholarCrawler:
         answers 429 to requests issued outside the browser's own navigation stack — so
         the pacing and the human takeover cover them like any other page.
 
-        :param result: a record carrying Scholar's ``data-cid``; author-profile records
-            have none, and get no BibTeX.
+        :param result: the record to export. Records parsed from result pages carry
+            Scholar's ``data-cid``; profile publications do not, and cost one extra load
+            while it is resolved through their cluster listing.
         :param language: interface language (``hl``) for the popup.
         :returns: the BibTeX entry, or None when Scholar exposes none for this record.
         :raises RuntimeError: when the handoff budget is exhausted or a load keeps failing.
         """
-        if not result.cluster_id:
+        card_id = result.cluster_id or self._resolve_card_id(result, language)
+        if not card_id:
             return None
         popup = self._load(
-            cite_url(result.cluster_id, host=self._host, language=language),
-            f"cite-{result.cluster_id}",
+            cite_url(card_id, host=self._host, language=language),
+            f"cite-{card_id}",
             content_selector=CITE_POPUP_SELECTOR,
         )
         if popup is None:
@@ -236,8 +239,32 @@ class ScholarCrawler:
         export_url = absolute(bibtex_link(popup), self._host)
         if export_url is None:
             return None
-        body = self._load(export_url, f"bib-{result.cluster_id}", content_selector="pre")
+        body = self._load(export_url, f"bib-{card_id}", content_selector="pre")
         return parse_bibtex(body) if body is not None else None
+
+    def _resolve_card_id(self, result: ScholarResult, language: str | None) -> str | None:
+        """Find Scholar's ``data-cid`` for a record that carries only a numeric cluster id.
+
+        Profile publications link their citing works as ``cites=<cluster id>``; loading that
+        cluster's own listing yields a result card, whose ``data-cid`` the cite popup needs.
+
+        :param result: a record whose ``cited_by_url`` holds the cluster id.
+        :param language: interface language (``hl``) for the listing.
+        :returns: the card id, or None when the record links no cluster or the listing is empty.
+        :raises RuntimeError: when the handoff budget is exhausted or the load keeps failing.
+        """
+        if not result.cited_by_url:
+            return None
+        try:
+            cluster = parse_cluster_id(result.cited_by_url)
+        except ValueError:  # a citing-works link Scholar rendered without an id
+            return None
+        request = SearchRequest(cluster=cluster, language=language)
+        html = self._load(search_url(request, host=self._host), f"cluster-{cluster}")
+        if html is None:
+            return None
+        cards = parse_result_page(html, query=request.label).results
+        return cards[0].cluster_id if cards else None
 
     def _pace(self) -> None:
         """Apply the pre-request delay for the next request of this run."""

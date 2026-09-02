@@ -15,6 +15,7 @@ from .models import (
     SearchRequest,
 )
 from .parser import bibtex_key, bibtex_link, parse_author_page, parse_bibtex, parse_result_page
+from .selfcheck import Check, check_page
 from .storage import BibtexSink, ProfileStore, ResultSink, StateStore
 from .urls import author_url, cite_url, parse_cluster_id, parse_user_id, search_url
 
@@ -27,6 +28,7 @@ __all__ = [
     "Challenge",
     "ChallengeKind",
     "ChallengeUnattended",
+    "Check",
     "FollowPolicy",
     "HumanHandoff",
     "Pacing",
@@ -41,6 +43,7 @@ __all__ = [
     "bibtex_key",
     "bibtex_link",
     "browser_session",
+    "check_page",
     "cite_url",
     "detect_challenge",
     "next_level",

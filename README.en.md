@@ -71,6 +71,16 @@ A takeover looks like this:
 [pace] backing off to 6.4-17.6s between pages
 ```
 
+## Self-check
+
+When results come back empty and you suspect a Scholar layout change, spend one request on the self-check:
+
+```sh
+scholar-crawler --self-check
+```
+
+It fetches one page of a broad query and reports, field by field, whether titles, links, author lines, years, snippets, `data-cid`s, citing-works links, the result count and the next-page link still parse. Exit code 0 means everything held; 1 lists what failed and points at `--dump-html`.
+
 ## Options
 
 | Option | Meaning |
@@ -90,6 +100,7 @@ A takeover looks like this:
 | `--profile`, `--channel`, `--locale`, `--timezone`, `--proxy` | browser profile and environment |
 | `--min-delay/--max-delay`, `--cooldown-every/--cooldown-seconds` | request rhythm |
 | `--handoff-timeout`, `--max-handoffs`, `--backoff-factor` | how long to wait for a human (0 = forever), takeover budget, slowdown per takeover |
+| `--self-check` | run the parser self-check (one request) and report field by field what still parses |
 | `--headless` | no window; **a challenge then aborts the run with instructions** |
 
 `--headless` and human takeover are mutually exclusive by nature: with no window, nobody can act. Run headed once so a human clears the challenge, then reuse the same `--profile` in headless mode; if it is still blocked, the run exits with a clear message instead of spinning.
@@ -138,7 +149,7 @@ Author publications land in the same JSONL (with Scholar's citation id in `extra
 
 - A 10-result page becomes 21 requests instead of 1, an order of magnitude slower, with a matching rise in challenge risk. Pair it with `-n` and export only what you will cite.
 - Both loads are ordinary navigations in the visible window, so pacing and human takeover cover them. A background HTTP request is not an option: Scholar answers 429 to the same request issued outside the browser's navigation stack.
-- Author-profile publications carry no Scholar `data-cid`, so they cannot use this export path and are skipped with a single notice.
+- Author-profile publications carry no Scholar `data-cid`, so it is resolved through their cluster listing first: three loads per record instead of two, announced once at the start.
 
 ## Getting challenged less
 
@@ -150,11 +161,11 @@ Author publications land in the same JSONL (with Scholar's citation id in `extra
 ## Development
 
 ```sh
-python3 -m pytest -q     # 93 tests, fully offline
+python3 -m pytest -q     # 100 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
-Tests cover result parsing (citation-only cards, PDF side links, cited-by/version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author-profile parsing (header lines, the position-read summary table, publication rows, zero citations and missing years, the "show more" state), URL and filter assembly, id/URL parsing, JSONL dedup and CSV export, profile upserts, resume state, challenge detection (real headless Chromium DOM), the takeover wait including timeout, closed window and headless refusal, BibTeX link discovery (by href, not label) and `<pre>` extraction, `.bib` dedup, a takeover during export, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, result-cap truncation, unknown profile layouts failing loudly, post-takeover slowdown, HTML dumps, and CLI argument assembly. GitHub Actions runs the same suite on Python 3.10 and 3.13.
+Tests cover result parsing (citation-only cards, PDF side links, cited-by/version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author-profile parsing (header lines, the position-read summary table, publication rows, zero citations and missing years, the "show more" state), URL and filter assembly, id/URL parsing, JSONL dedup and CSV export, profile upserts, resume state, challenge detection (real headless Chromium DOM), the takeover wait including timeout, closed window and headless refusal, BibTeX link discovery (by href, not label) and `<pre>` extraction, `.bib` dedup, a takeover during export, the self-check report (healthy page, zero-hit page, pinpointed missing fields, last page, output format), card-id resolution for profile records, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, result-cap truncation, unknown profile layouts failing loudly, post-takeover slowdown, HTML dumps, and CLI argument assembly. GitHub Actions runs the same suite on Python 3.10 and 3.13.
 
 ## Compliance
 
@@ -168,7 +179,7 @@ scholar_crawler/
   parser.py     result-page and profile HTML -> structured records
   challenge.py  challenge detection + human takeover wait
   browser.py    persistent-profile browser session
-  crawler.py    crawl loop: pacing, takeover, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, HTML dumps
+  crawler.py    crawl loop: pacing, takeover, the self-check report (healthy page, zero-hit page, pinpointed missing fields, last page, output format), card-id resolution for profile records, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, HTML dumps
   storage.py    JSONL/CSV writers, author profile records, the .bib file, resume state
   cli.py        command-line entry point
 tests/          offline tests, including headless-Chromium detection tests

@@ -24,6 +24,7 @@ from scholar_crawler.urls import cite_url  # noqa: E402
 from tests.fixtures import (  # noqa: E402
     BIBTEX_EXPORT_HTML,
     CITE_POPUP_HTML,
+    EMPTY_PAGE_HTML,
     RESULT_PAGE_HTML,
 )
 
@@ -44,7 +45,7 @@ class _FakeLocator:
         self._html = html
 
     def count(self) -> int:
-        markers = ('class="gs_r gs_or gs_scl"', 'class="gs_citr"', "<pre")
+        markers = ('class="gs_r gs_or gs_scl"', 'class="gs_citr"', "<pre", 'class="gs_med"')
         return sum(self._html.count(marker) for marker in markers)
 
 
@@ -122,13 +123,38 @@ def test_fetch_bibtex_loads_popup_then_export(monkeypatch: pytest.MonkeyPatch) -
     assert "scholar.bib" in page.visited[1]
 
 
-def test_records_without_a_card_id_are_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_profile_records_resolve_their_card_id_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: None)
+    page = _FakePage([RESULT_PAGE_HTML, CITE_POPUP_HTML, BIBTEX_EXPORT_HTML])
+    result = _result()
+    result.cluster_id = None  # a profile publication carries only its cluster id
+    result.cited_by_url = "https://scholar.google.com/scholar?oi=bibs&hl=en&cites=987654321"
+    entry = _crawler(page).fetch_bibtex(result)
+    assert entry is not None and entry.startswith("@article{")
+    assert len(page.visited) == 3
+    assert "cluster=987654321" in page.visited[0]
+    assert "output=cite" in page.visited[1]
+    assert "scholar.bib" in page.visited[2]
+
+
+def test_records_with_neither_id_are_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: None)
     page = _FakePage([])
     result = _result()
     result.cluster_id = None
+    result.cited_by_url = None
     assert _crawler(page).fetch_bibtex(result) is None
     assert page.visited == []
+
+
+def test_an_empty_cluster_listing_yields_no_entry(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: None)
+    page = _FakePage([EMPTY_PAGE_HTML])
+    result = _result()
+    result.cluster_id = None
+    result.cited_by_url = "https://scholar.google.com/scholar?cites=987654321"
+    assert _crawler(page).fetch_bibtex(result) is None
+    assert len(page.visited) == 1
 
 
 def test_popup_without_an_export_link_yields_nothing(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -12,6 +12,7 @@ from .crawler import Pacing, ScholarCrawler
 from .expand import FollowPolicy, next_level
 from .models import AuthorProfile, AuthorRequest, ScholarResult, SearchRequest
 from .parser import bibtex_key
+from .selfcheck import check_page, report
 from .storage import BibtexSink, ProfileStore, ResultSink, StateStore
 from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
 
@@ -45,6 +46,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         help="crawl this author profile; accepts a user id or a profile URL; repeatable",
+    )
+    query.add_argument(
+        "--self-check",
+        action="store_true",
+        help="fetch one page for a fixed query and report whether every parsed field still "
+        "arrives; use it to tell a Scholar layout change from a bug",
     )
     query.add_argument("--year-from", type=int, help="earliest publication year")
     query.add_argument("--year-to", type=int, help="latest publication year")
@@ -281,6 +288,7 @@ def _crawl_author(
     sink: ResultSink,
     state: StateStore,
     profiles: ProfileStore,
+    bibtex: BibtexSink | None = None,
 ) -> list[ScholarResult]:
     """Crawl one author profile into ``sink`` and its header into ``profiles``.
 
@@ -290,6 +298,7 @@ def _crawl_author(
     :param sink: JSONL writer for the publication records.
     :param state: resume cursor store.
     :param profiles: writer for the profile header record.
+    :param bibtex: when set, each publication's BibTeX entry is exported as well.
     :returns: every publication record parsed, for the next expansion level.
     """
     signature = request.signature()
@@ -303,6 +312,8 @@ def _crawl_author(
         latest = batch.profile
         collected += batch.results
         profiles.write(batch.profile)
+        if bibtex is not None:
+            _export_bibtex(crawler, batch.results, args, bibtex)
         new = sum(1 for result in batch.results if sink.write(result))
         _report(batch.cstart, len(batch.results), new, f"~{batch.profile.cited_by_total} citations")
         state.record(signature, batch.cstart + len(batch.results), exhausted=not batch.has_more)
@@ -350,6 +361,42 @@ def _follow_citations(
             frontier += _crawl_listing(crawler, request, args, sink, state, bibtex, depth=level)
 
 
+SELF_CHECK_QUERY = "machine learning"
+"""Broad query used by ``--self-check``: many hits, PDFs, citations and a next page."""
+
+
+def _run_self_check(args: argparse.Namespace) -> int:
+    """Fetch one page and report whether the parser still finds every field.
+
+    :param args: parsed arguments supplying browser and pacing settings.
+    :returns: process exit code — 0 when every check passed, 1 otherwise.
+    """
+    options = BrowserOptions(
+        user_data_dir=args.profile,
+        headless=args.headless,
+        channel=args.channel or None,
+        locale=args.locale,
+        timezone=args.timezone,
+        proxy_server=args.proxy,
+        slow_mo=args.slow_mo,
+    )
+    handoff = HumanHandoff(timeout=args.handoff_timeout, headless=args.headless)
+    print(f"[check] fetching one page for {SELF_CHECK_QUERY!r}", flush=True)
+    try:
+        with browser_session(options) as (_context, page):
+            crawler = ScholarCrawler(
+                page, handoff, host=args.host, max_handoffs=args.max_handoffs, dump_dir=args.dump_html
+            )
+            fetched = crawler.fetch_page(SearchRequest(query=SELF_CHECK_QUERY, language=args.lang), 0)
+    except KeyboardInterrupt:
+        print("\n[stop] interrupted by user", flush=True)
+        return 130
+    except (ChallengeUnattended, RuntimeError) as error:
+        print(f"\n[stop] {error}", file=sys.stderr)
+        return 1
+    return 0 if report(check_page(fetched)) else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the crawler from command-line arguments.
 
@@ -357,6 +404,8 @@ def main(argv: list[str] | None = None) -> int:
     :returns: process exit code — 0 on success, 1 on usage or crawl failure, 130 on Ctrl+C.
     """
     args = build_parser().parse_args(argv)
+    if args.self_check:
+        return _run_self_check(args)
     try:
         listings, authors = build_targets(args)
         follow = FollowPolicy(
@@ -386,8 +435,8 @@ def main(argv: list[str] | None = None) -> int:
         bibtex.open()
         if authors:
             print(
-                "[bibtex] profile publications carry no cluster id; "
-                "BibTeX is exported for keyword, --cites and --cluster records only",
+                "[bibtex] profile publications need their card id resolved first, "
+                "so each one costs three page loads instead of two",
                 flush=True,
             )
     if follow.enabled:
@@ -421,7 +470,7 @@ def main(argv: list[str] | None = None) -> int:
             for listing in listings:
                 harvest += _crawl_listing(crawler, listing, args, sink, state, bibtex)
             for author in authors:
-                harvest += _crawl_author(crawler, author, args, sink, state, profiles)
+                harvest += _crawl_author(crawler, author, args, sink, state, profiles, bibtex)
             _follow_citations(crawler, harvest, args, follow, sink, state, bibtex)
     except KeyboardInterrupt:
         print("\n[stop] interrupted by user", flush=True)
