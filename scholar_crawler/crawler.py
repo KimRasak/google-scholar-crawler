@@ -233,7 +233,8 @@ class ScholarCrawler:
         :param max_pages: maximum number of pages to request in this run.
         :param start: first result offset, used for resuming.
         :param max_results: stop once this many results have been yielded; the last page
-            is truncated to land exactly on the limit. None means no result cap.
+            is truncated to land exactly on the limit and marked ``truncated``, so resume
+            state can tell "we stopped" apart from "Scholar ran out". None means no cap.
         :returns: iterator of parsed pages in Scholar order.
         """
         offset = start
@@ -242,10 +243,10 @@ class ScholarCrawler:
             page_result = self.fetch_page(request, offset)
             if max_results is not None and collected + len(page_result.results) >= max_results:
                 page_result.results = page_result.results[: max_results - collected]
-                page_result.has_next = False
+                page_result.truncated = True
             collected += len(page_result.results)
             yield page_result
-            if not page_result.results or not page_result.has_next:
+            if page_result.truncated or not page_result.results or not page_result.has_next:
                 return
             offset += RESULTS_PER_PAGE
 
@@ -263,7 +264,8 @@ class ScholarCrawler:
         :param max_pages: maximum number of batches to request in this run.
         :param cstart: first publication offset, used for resuming.
         :param max_results: stop once this many publications have been yielded; the last
-            batch is truncated to land exactly on the limit. None means no cap.
+            batch is truncated to land exactly on the limit and marked ``truncated``, so
+            resume state does not read as finished. None means no cap.
         :returns: iterator of profile batches in profile order.
         """
         offset = cstart
@@ -272,10 +274,10 @@ class ScholarCrawler:
             batch = self.fetch_author_page(request, offset)
             if max_results is not None and collected + len(batch.results) >= max_results:
                 batch.results = batch.results[: max_results - collected]
-                batch.has_more = False
+                batch.truncated = True
             collected += len(batch.results)
             yield batch
-            if not batch.results or not batch.has_more:
+            if batch.truncated or not batch.results or not batch.has_more:
                 return
             offset += AUTHOR_PAGE_SIZE
 

@@ -138,7 +138,7 @@ def test_max_results_truncates_the_last_page(monkeypatch: pytest.MonkeyPatch) ->
     page = _FakePage(iter([RESULT_PAGE_HTML, RESULT_PAGE_HTML]))
     pages = list(_crawler(page).search(SearchRequest(query="t"), max_pages=5, max_results=4))
     assert [len(result.results) for result in pages] == [3, 1]
-    assert pages[-1].has_next is False
+    assert pages[-1].truncated is True
     assert len(page.visited) == 2
 
 
@@ -258,7 +258,9 @@ def test_author_max_results_truncates_the_last_batch(monkeypatch: pytest.MonkeyP
         _crawler(page).crawl_author(AuthorRequest(user_id="AAAAAAAAAAAA"), max_pages=5, max_results=3)
     )
     assert [len(batch.results) for batch in batches] == [2, 1]
-    assert batches[-1].has_more is False
+    # The cap stopped the run; the profile still has more publications to give, so the
+    # batch is marked truncated instead of pretending the profile was exhausted.
+    assert (batches[-1].truncated, batches[-1].has_more) == (True, True)
 
 
 def test_unknown_profile_layout_fails_loudly(monkeypatch: pytest.MonkeyPatch) -> None:

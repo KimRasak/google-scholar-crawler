@@ -59,6 +59,52 @@ class SearchRequest:
         return "|".join(parts)
 
 
+def describe_signature(signature: str) -> str:
+    """Render a stored resume signature back into something readable.
+
+    Signatures are built for stability, not for reading; this turns one back into the
+    target it stands for so stored progress can be reviewed.
+
+    :param signature: a signature from :meth:`SearchRequest.signature` or
+        :meth:`AuthorRequest.signature`.
+    :returns: the target followed by the filters that distinguish it, or the raw
+        signature when it does not follow either layout.
+    """
+    fields = signature.split("|")
+    values = dict(
+        part.split("=", 1) for part in fields if "=" in part and not part.startswith("author=")
+    )
+    if fields[0].startswith("author="):
+        who = fields[0].removeprefix("author=")
+        extras = [values.get("lang") or "", "by year" if values.get("year") == "1" else ""]
+        return f"author:{who}" + _bracket(extras)
+    if len(fields) < 10:
+        return signature
+    target = fields[0] or (
+        f"cites:{values['cites']}" if values.get("cites") else f"cluster:{values.get('cluster', '')}"
+    )
+    years = f"{values.get('lo') or ''}-{values.get('hi') or ''}".strip("-")
+    extras = [
+        values.get("lang") or "",
+        years,
+        "by date" if values.get("date") == "1" else "",
+        "no citations" if values.get("cit") == "0" else "",
+        "no patents" if values.get("pat") == "0" else "",
+        "reviews only" if values.get("rev") == "1" else "",
+    ]
+    return f"{target}{_bracket(extras)}"
+
+
+def _bracket(extras: list[str]) -> str:
+    """Join the non-empty extras into a bracketed suffix.
+
+    :param extras: descriptions, some of which may be empty.
+    :returns: ``" [a, b]"``, or an empty string when nothing is left.
+    """
+    kept = [extra for extra in extras if extra]
+    return f" [{', '.join(kept)}]" if kept else ""
+
+
 @dataclass(slots=True)
 class ScholarResult:
     """A single result card from a Google Scholar result page."""
@@ -96,12 +142,21 @@ class ScholarResult:
 
 @dataclass(slots=True)
 class PageResult:
-    """Outcome of fetching one result page."""
+    """Outcome of fetching one result page.
+
+    :param start: result offset this page began at.
+    :param results: parsed result cards, in Scholar order.
+    :param total_estimate: Scholar's estimated hit count for the whole query.
+    :param has_next: True when Scholar offers a further page.
+    :param truncated: True when the record cap cut this page short, which means the run
+        stopped here by choice while Scholar still had results to give.
+    """
 
     start: int
     results: list[ScholarResult]
     total_estimate: int | None
     has_next: bool
+    truncated: bool = False
 
 
 @dataclass(slots=True)
@@ -167,3 +222,5 @@ class AuthorPage:
     profile: AuthorProfile
     results: list[ScholarResult]
     has_more: bool
+    truncated: bool = False
+    """True when the record cap cut this batch short, so the profile is not finished."""

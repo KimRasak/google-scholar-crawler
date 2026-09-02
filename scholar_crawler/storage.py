@@ -11,10 +11,11 @@ from __future__ import annotations
 import csv
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TextIO
 
-from .models import AuthorProfile, ScholarResult
+from .models import AuthorProfile, ScholarResult, describe_signature
 from .parser import bibtex_key
 
 CSV_COLUMNS = (
@@ -196,6 +197,36 @@ class ProfileStore:
 
 
 @dataclass(slots=True)
+class StateEntry:
+    """Stored progress for one target.
+
+    :param signature: the target's resume signature.
+    :param next_start: first offset not yet fetched.
+    :param exhausted: True when Scholar offered no further page.
+    :param updated_at: UTC timestamp of the last update, empty for entries written by
+        versions that did not record one.
+    """
+
+    signature: str
+    next_start: int
+    exhausted: bool
+    updated_at: str
+
+    def describe(self) -> str:
+        """Render the entry as one readable line.
+
+        :returns: the target, its cursor, and when it was last touched.
+        """
+        status = (
+            f"done after {self.next_start} records"
+            if self.exhausted
+            else f"next offset {self.next_start}"
+        )
+        seen = self.updated_at.replace("T", " ").replace("+00:00", " UTC") or "unknown time"
+        return f"{describe_signature(self.signature)} — {status}, {seen}"
+
+
+@dataclass(slots=True)
 class StateStore:
     """Per-query pagination cursor persisted as JSON.
 
@@ -227,6 +258,44 @@ class StateStore:
         :param next_start: first offset not yet fetched.
         :param exhausted: True when Scholar offered no further page.
         """
-        self._data[signature] = {"next_start": next_start, "exhausted": exhausted}
+        self._data[signature] = {
+            "next_start": next_start,
+            "exhausted": exhausted,
+            "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        self._save()
+
+    def entries(self) -> list[StateEntry]:
+        """List the stored progress, most recently updated first.
+
+        :returns: one entry per stored target.
+        """
+        entries = [
+            StateEntry(
+                signature=signature,
+                next_start=int(record.get("next_start", 0)),
+                exhausted=bool(record.get("exhausted", False)),
+                updated_at=str(record.get("updated_at", "")),
+            )
+            for signature, record in self._data.items()
+        ]
+        return sorted(entries, key=lambda entry: entry.updated_at, reverse=True)
+
+    def forget(self, pattern: str) -> list[StateEntry]:
+        """Drop the stored progress of every target whose signature contains ``pattern``.
+
+        :param pattern: case-insensitive substring; an empty pattern matches every target.
+        :returns: the entries that were removed.
+        """
+        needle = pattern.casefold()
+        removed = [entry for entry in self.entries() if needle in entry.signature.casefold()]
+        for entry in removed:
+            del self._data[entry.signature]
+        if removed:
+            self._save()
+        return removed
+
+    def _save(self) -> None:
+        """Write the state file, creating its directory when needed."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(self._data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

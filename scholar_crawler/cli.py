@@ -56,6 +56,17 @@ def build_parser() -> argparse.ArgumentParser:
         "arrives; use it to tell a Scholar layout change from a bug",
     )
     query.add_argument(
+        "--show-state",
+        action="store_true",
+        help="list the resume progress stored in the state file and stop",
+    )
+    query.add_argument(
+        "--forget",
+        metavar="PATTERN",
+        help="drop stored resume progress for targets whose signature contains PATTERN "
+        "(an empty pattern drops all of it) and stop",
+    )
+    query.add_argument(
         "--dry-run",
         action="store_true",
         help="print what the run would request and how long it would take, then stop "
@@ -274,7 +285,8 @@ def _crawl_listing(
         new = sum(1 for result in page.results if sink.write(result))
         total = f"~{page.total_estimate}" if page.total_estimate else "unknown"
         _report(page.start, len(page.results), new, total)
-        state.record(signature, page.start + len(page.results), exhausted=not page.has_next)
+        finished = not page.has_next and not page.truncated
+        state.record(signature, page.start + len(page.results), exhausted=finished)
         collected += page.results
     return collected
 
@@ -338,7 +350,8 @@ def _crawl_author(
             _export_bibtex(crawler, batch.results, args, bibtex)
         new = sum(1 for result in batch.results if sink.write(result))
         _report(batch.cstart, len(batch.results), new, f"~{batch.profile.cited_by_total} citations")
-        state.record(signature, batch.cstart + len(batch.results), exhausted=not batch.has_more)
+        finished = not batch.has_more and not batch.truncated
+        state.record(signature, batch.cstart + len(batch.results), exhausted=finished)
     if latest is not None:
         print(
             f"[author] {latest.name or request.user_id}: {latest.cited_by_total} citations, "
@@ -428,6 +441,44 @@ def _run_self_check(args: argparse.Namespace) -> int:
     return 0 if report(check_page(fetched)) else 1
 
 
+def _show_state(args: argparse.Namespace) -> int:
+    """Print the resume progress stored in the state file.
+
+    :param args: parsed arguments supplying the state path.
+    :returns: process exit code — always 0, including for an empty state file.
+    """
+    state = StateStore(args.state)
+    state.load()
+    entries = state.entries()
+    if not entries:
+        print(f"[state] nothing stored in {args.state}", flush=True)
+        return 0
+    done = sum(1 for entry in entries if entry.exhausted)
+    print(f"[state] {len(entries)} targets in {args.state} ({done} finished)", flush=True)
+    for entry in entries:
+        print(f"[state]   {entry.describe()}", flush=True)
+    return 0
+
+
+def _forget_state(args: argparse.Namespace) -> int:
+    """Drop stored progress for the targets matching ``--forget``.
+
+    :param args: parsed arguments supplying the state path and the pattern.
+    :returns: process exit code — always 0, including when nothing matched.
+    """
+    state = StateStore(args.state)
+    state.load()
+    removed = state.forget(args.forget)
+    if not removed:
+        print(f"[state] no stored target matches {args.forget!r}", flush=True)
+        return 0
+    print(f"[state] dropped {len(removed)} target(s) from {args.state}", flush=True)
+    for entry in removed:
+        print(f"[state]   {entry.describe()}", flush=True)
+    print("[state] those targets will be crawled from the start again", flush=True)
+    return 0
+
+
 def _run_rehearsal(args: argparse.Namespace) -> int:
     """Exercise the human-takeover path against a local page, without requesting anything.
 
@@ -462,6 +513,10 @@ def main(argv: list[str] | None = None) -> int:
     :returns: process exit code — 0 on success, 1 on usage or crawl failure, 130 on Ctrl+C.
     """
     args = build_parser().parse_args(argv)
+    if args.show_state:
+        return _show_state(args)
+    if args.forget is not None:
+        return _forget_state(args)
     if args.self_check:
         return _run_self_check(args)
     if args.rehearse_handoff:
