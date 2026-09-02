@@ -8,7 +8,7 @@ from .crawler import Pacing, ScholarCrawler
 from .models import PageResult, ScholarResult, SearchRequest
 from .parser import parse_result_page
 from .storage import ResultSink, StateStore
-from .urls import search_url
+from .urls import parse_cluster_id, search_url
 
 __all__ = [
     "BrowserOptions",
@@ -25,6 +25,7 @@ __all__ = [
     "StateStore",
     "browser_session",
     "detect_challenge",
+    "parse_cluster_id",
     "parse_result_page",
     "search_url",
 ]

@@ -7,10 +7,10 @@ handoffs low. Headed mode is the default because human takeover needs a window.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 from playwright.sync_api import BrowserContext, Page, sync_playwright
 

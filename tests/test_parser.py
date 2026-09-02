@@ -5,11 +5,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scholar_crawler.models import SearchRequest  # noqa: E402
 from scholar_crawler.parser import parse_result_page  # noqa: E402
-from scholar_crawler.urls import search_url  # noqa: E402
+from scholar_crawler.urls import parse_cluster_id, search_url  # noqa: E402
 from tests.fixtures import EMPTY_PAGE_HTML, RESULT_PAGE_HTML  # noqa: E402
 
 
@@ -102,3 +104,47 @@ def test_signature_distinguishes_filters() -> None:
     base = SearchRequest(query="x")
     assert base.signature() != SearchRequest(query="x", year_low=2020).signature()
     assert base.signature() == SearchRequest(query="x").signature()
+
+
+def test_signature_distinguishes_entry_points() -> None:
+    assert SearchRequest(cites="42").signature() != SearchRequest(cluster="42").signature()
+    assert SearchRequest(query="x").signature() != SearchRequest(query="x", cites="42").signature()
+
+
+def test_cites_and_cluster_urls() -> None:
+    cites_url = search_url(SearchRequest(cites="1234567890"), start=10)
+    assert "cites=1234567890" in cites_url
+    assert "start=10" in cites_url
+    assert "q=" not in cites_url
+    assert "cluster=99" in search_url(SearchRequest(cluster="99"))
+    both = search_url(SearchRequest(query="transformer", cites="1234567890"))
+    assert "cites=1234567890" in both and "q=transformer" in both
+
+
+def test_request_without_entry_point_is_rejected() -> None:
+    with pytest.raises(ValueError, match="needs a query, a cites id or a cluster id"):
+        SearchRequest()
+
+
+def test_label_names_the_entry_point() -> None:
+    assert SearchRequest(query="transformer").label == "transformer"
+    assert SearchRequest(cites="42").label == "cites:42"
+    assert SearchRequest(cluster="42").label == "cluster:42"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "1234567890",
+        "  1234567890 ",
+        "https://scholar.google.com/scholar?cites=1234567890&as_sdt=2005",
+        "/scholar?hl=en&cluster=1234567890",
+    ],
+)
+def test_parse_cluster_id_accepts_ids_and_urls(value: str) -> None:
+    assert parse_cluster_id(value) == "1234567890"
+
+
+def test_parse_cluster_id_rejects_unrelated_text() -> None:
+    with pytest.raises(ValueError, match="no Scholar cites/cluster id"):
+        parse_cluster_id("https://example.org/paper")

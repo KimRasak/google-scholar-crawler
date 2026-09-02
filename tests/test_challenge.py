@@ -9,8 +9,8 @@ detector, because Playwright's sync API is bound to one thread and a stand-in
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from playwright.sync_api import Page, sync_playwright

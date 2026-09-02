@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 
@@ -49,7 +49,7 @@ class _FakePage:
     def bring_to_front(self) -> None:
         return None
 
-    def locator(self, _selector: str) -> "_FakeLocator":
+    def locator(self, _selector: str) -> _FakeLocator:
         return _FakeLocator(self.html)
 
 
@@ -122,3 +122,53 @@ def test_cooldown_triggers_on_the_configured_interval(monkeypatch: pytest.Monkey
     for index in range(3):
         pacing.sleep_before_request(index)
     assert slept == [3.0, 3.0, 42.0]
+
+
+def test_max_results_truncates_the_last_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: None)
+    page = _FakePage(iter([RESULT_PAGE_HTML, RESULT_PAGE_HTML]))
+    pages = list(_crawler(page).search(SearchRequest(query="t"), max_pages=5, max_results=4))
+    assert [len(result.results) for result in pages] == [3, 1]
+    assert pages[-1].has_next is False
+    assert len(page.visited) == 2
+
+
+def test_takeover_widens_the_delay_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
+    outcomes = iter([CAPTCHA, None])
+    monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: next(outcomes, None))
+    monkeypatch.setattr(crawler_module.HumanHandoff, "resolve", lambda _self, _page, _challenge: None)
+    pacing = Pacing(min_delay=4.0, max_delay=10.0, cooldown_every=0, backoff_factor=2.0)
+    page = _FakePage(iter([CAPTCHA_PAGE_HTML, RESULT_PAGE_HTML]))
+    ScholarCrawler(page, HumanHandoff(), pacing).fetch_page(SearchRequest(query="t"), 0)  # type: ignore[arg-type]
+    assert (pacing.min_delay, pacing.max_delay) == (8.0, 20.0)
+
+
+def test_backoff_factor_of_one_keeps_the_rhythm() -> None:
+    pacing = Pacing(min_delay=4.0, max_delay=10.0, backoff_factor=1.0)
+    pacing.after_handoff()
+    assert (pacing.min_delay, pacing.max_delay) == (4.0, 10.0)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"min_delay": -1.0}, "must not be negative"),
+        ({"min_delay": 20.0, "max_delay": 5.0}, "exceeds max_delay"),
+        ({"cooldown_seconds": -5.0}, "must not be negative"),
+        ({"backoff_factor": 0.5}, "backoff_factor must be"),
+    ],
+)
+def test_invalid_pacing_fails_loudly(kwargs: dict[str, float], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        Pacing(**kwargs)
+
+
+def test_dump_html_writes_pages_and_challenges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    outcomes = iter([CAPTCHA, None])
+    monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: next(outcomes, None))
+    monkeypatch.setattr(crawler_module.HumanHandoff, "resolve", lambda _self, _page, _challenge: None)
+    page = _FakePage(iter([CAPTCHA_PAGE_HTML, RESULT_PAGE_HTML]))
+    crawler = ScholarCrawler(page, HumanHandoff(), NO_DELAY, dump_dir=tmp_path / "dump")  # type: ignore[arg-type]
+    crawler.fetch_page(SearchRequest(query="t"), 0)
+    names = sorted(path.name.split("-", 1)[1] for path in (tmp_path / "dump").iterdir())
+    assert names == ["challenge-captcha-0.html", "page-0.html"]

@@ -11,7 +11,7 @@ from .challenge import ChallengeUnattended, HumanHandoff
 from .crawler import Pacing, ScholarCrawler
 from .models import SearchRequest
 from .storage import ResultSink, StateStore
-from .urls import SCHOLAR_HOST
+from .urls import SCHOLAR_HOST, parse_cluster_id
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,6 +26,18 @@ def build_parser() -> argparse.ArgumentParser:
     query = parser.add_argument_group("query")
     query.add_argument("-q", "--query", action="append", default=[], help="search query; repeatable")
     query.add_argument("--queries-file", type=Path, help="file with one query per line")
+    query.add_argument(
+        "--cites",
+        action="append",
+        default=[],
+        help="list works citing this cluster; accepts an id or a cited_by_url; repeatable",
+    )
+    query.add_argument(
+        "--cluster",
+        action="append",
+        default=[],
+        help="list all versions of one work; accepts an id or a versions_url; repeatable",
+    )
     query.add_argument("--year-from", type=int, help="earliest publication year")
     query.add_argument("--year-to", type=int, help="latest publication year")
     query.add_argument("--lang", default="en", help="Scholar interface language (hl), default en")
@@ -35,7 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
     query.add_argument("--review-only", action="store_true", help="review articles only")
 
     paging = parser.add_argument_group("paging")
-    paging.add_argument("-p", "--pages", type=int, default=3, help="pages per query (10 results each), default 3")
+    paging.add_argument(
+        "-p", "--pages", type=int, default=3, help="pages per query (10 results each), default 3"
+    )
+    paging.add_argument("-n", "--max-results", type=int, help="stop each query after this many results")
     paging.add_argument("--start", type=int, default=0, help="first result offset, default 0")
     paging.add_argument("--resume", action="store_true", help="continue each query from the saved cursor")
     paging.add_argument("--host", default=SCHOLAR_HOST, help="Scholar host, e.g. https://scholar.google.de")
@@ -44,11 +59,16 @@ def build_parser() -> argparse.ArgumentParser:
     output.add_argument("-o", "--out", type=Path, default=Path("out/results.jsonl"), help="JSONL output path")
     output.add_argument("--csv", type=Path, help="also export collected records to this CSV path")
     output.add_argument("--state", type=Path, default=Path("out/state.json"), help="resume-state path")
+    output.add_argument("--dump-html", type=Path, help="save every fetched page's HTML here for debugging")
 
     browser = parser.add_argument_group("browser")
-    browser.add_argument("--profile", type=Path, default=Path(".scholar-profile"), help="persistent profile dir")
+    browser.add_argument(
+        "--profile", type=Path, default=Path(".scholar-profile"), help="persistent profile dir"
+    )
     browser.add_argument("--headless", action="store_true", help="no window; a challenge then aborts the run")
-    browser.add_argument("--channel", default="chrome", help="browser channel; empty string uses bundled Chromium")
+    browser.add_argument(
+        "--channel", default="chrome", help="browser channel; empty string uses bundled Chromium"
+    )
     browser.add_argument("--locale", default="en-US", help="browser locale")
     browser.add_argument("--timezone", default="America/Los_Angeles", help="IANA timezone")
     browser.add_argument("--proxy", help="proxy server URL")
@@ -59,8 +79,16 @@ def build_parser() -> argparse.ArgumentParser:
     pace.add_argument("--max-delay", type=float, default=11.0, help="max seconds between page requests")
     pace.add_argument("--cooldown-every", type=int, default=10, help="long pause every N pages; 0 disables")
     pace.add_argument("--cooldown-seconds", type=float, default=90.0, help="length of the long pause")
-    pace.add_argument("--handoff-timeout", type=float, default=600.0, help="seconds to wait for a human; 0 waits forever")
+    pace.add_argument(
+        "--handoff-timeout", type=float, default=600.0, help="seconds to wait for a human; 0 waits forever"
+    )
     pace.add_argument("--max-handoffs", type=int, default=5, help="abort after this many takeovers")
+    pace.add_argument(
+        "--backoff-factor",
+        type=float,
+        default=1.6,
+        help="multiply page delays by this after each takeover; 1.0 keeps the rhythm",
+    )
     return parser
 
 
@@ -79,6 +107,30 @@ def _collect_queries(args: argparse.Namespace) -> list[str]:
     return queries
 
 
+def build_requests(args: argparse.Namespace) -> list[SearchRequest]:
+    """Turn parsed arguments into the listings to crawl, in the order given.
+
+    :param args: parsed arguments.
+    :returns: one request per query, ``--cites`` id and ``--cluster`` id.
+    :raises ValueError: when no entry point was given, or an id cannot be parsed.
+    """
+    shared = {
+        "year_low": args.year_from,
+        "year_high": args.year_to,
+        "language": args.lang,
+        "sort_by_date": args.sort_by_date,
+        "include_citations": not args.no_citations,
+        "include_patents": not args.no_patents,
+        "review_only": args.review_only,
+    }
+    requests = [SearchRequest(query=query, **shared) for query in _collect_queries(args)]
+    requests += [SearchRequest(cites=parse_cluster_id(value), **shared) for value in args.cites]
+    requests += [SearchRequest(cluster=parse_cluster_id(value), **shared) for value in args.cluster]
+    if not requests:
+        raise ValueError("provide at least one --query, --queries-file, --cites or --cluster")
+    return requests
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the crawler from command-line arguments.
 
@@ -86,24 +138,18 @@ def main(argv: list[str] | None = None) -> int:
     :returns: process exit code — 0 on success, 1 on usage or crawl failure, 130 on Ctrl+C.
     """
     args = build_parser().parse_args(argv)
-    queries = _collect_queries(args)
-    if not queries:
-        print("error: provide at least one --query or a --queries-file", file=sys.stderr)
-        return 1
-
-    requests = [
-        SearchRequest(
-            query=query,
-            year_low=args.year_from,
-            year_high=args.year_to,
-            language=args.lang,
-            sort_by_date=args.sort_by_date,
-            include_citations=not args.no_citations,
-            include_patents=not args.no_patents,
-            review_only=args.review_only,
+    try:
+        requests = build_requests(args)
+        pacing = Pacing(
+            min_delay=args.min_delay,
+            max_delay=args.max_delay,
+            cooldown_every=args.cooldown_every,
+            cooldown_seconds=args.cooldown_seconds,
+            backoff_factor=args.backoff_factor,
         )
-        for query in queries
-    ]
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
 
     sink = ResultSink(args.out)
     sink.open()
@@ -118,22 +164,26 @@ def main(argv: list[str] | None = None) -> int:
         proxy_server=args.proxy,
         slow_mo=args.slow_mo,
     )
-    pacing = Pacing(
-        min_delay=args.min_delay,
-        max_delay=args.max_delay,
-        cooldown_every=args.cooldown_every,
-        cooldown_seconds=args.cooldown_seconds,
-    )
     handoff = HumanHandoff(timeout=args.handoff_timeout, headless=args.headless)
     exit_code = 0
     try:
         with browser_session(options) as (_context, page):
-            crawler = ScholarCrawler(page, handoff, pacing, host=args.host, max_handoffs=args.max_handoffs)
+            crawler = ScholarCrawler(
+                page,
+                handoff,
+                pacing,
+                host=args.host,
+                max_handoffs=args.max_handoffs,
+                dump_dir=args.dump_html,
+            )
             for request in requests:
                 signature = request.signature()
                 start = state.next_start(signature, args.start) if args.resume else args.start
-                print(f"\n[query] {request.query!r} from offset {start}", flush=True)
-                for page_result in crawler.search(request, max_pages=args.pages, start=start):
+                print(f"\n[query] {request.label!r} from offset {start}", flush=True)
+                pages = crawler.search(
+                    request, max_pages=args.pages, start=start, max_results=args.max_results
+                )
+                for page_result in pages:
                     new = sum(1 for result in page_result.results if sink.write(result))
                     total = f"~{page_result.total_estimate}" if page_result.total_estimate else "unknown"
                     print(

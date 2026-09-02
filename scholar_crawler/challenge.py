@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from enum import Enum
 
@@ -146,10 +147,8 @@ class HumanHandoff:
             "[handoff] Crawling resumes automatically; press Ctrl+C to stop.",
             flush=True,
         )
-        try:
+        with suppress(PlaywrightError):  # window already gone; the wait below reports it
             page.bring_to_front()
-        except PlaywrightError:  # window already gone; the wait below reports it
-            pass
         deadline = time.monotonic() + self.timeout if self.timeout else None
         while True:
             time.sleep(self.poll_interval)

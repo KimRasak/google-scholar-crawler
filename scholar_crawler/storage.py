@@ -62,7 +62,8 @@ class ResultSink:
                     if not line:
                         continue
                     record = json.loads(line)
-                    self._seen.add(record.get("cluster_id") or f"{record.get('title')}::{record.get('link') or ''}")
+                    fallback = f"{record.get('title')}::{record.get('link') or ''}"
+                    self._seen.add(record.get("cluster_id") or fallback)
         self._handle = self.path.open("a", encoding="utf-8")
 
     def write(self, result: ScholarResult) -> bool:

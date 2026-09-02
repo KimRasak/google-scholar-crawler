@@ -2,23 +2,51 @@
 
 from __future__ import annotations
 
+import re
 from urllib.parse import urlencode
 
 from .models import SearchRequest
 
 SCHOLAR_HOST = "https://scholar.google.com"
 RESULTS_PER_PAGE = 10
+_ID_RE = re.compile(r"(?:cites|cluster)=(\d+)")
+_DIGITS_RE = re.compile(r"^\d+$")
+
+
+def parse_cluster_id(value: str) -> str:
+    """Accept a bare Scholar id or any URL carrying ``cites=``/``cluster=``.
+
+    Lets the ``cited_by_url`` and ``versions_url`` fields of collected records be
+    pasted straight back into the CLI.
+
+    :param value: a numeric id, or a Scholar URL containing one.
+    :returns: the numeric id.
+    :raises ValueError: when ``value`` holds no Scholar cluster id.
+    """
+    candidate = value.strip()
+    if _DIGITS_RE.match(candidate):
+        return candidate
+    match = _ID_RE.search(candidate)
+    if match is None:
+        raise ValueError(f"no Scholar cites/cluster id found in {value!r}")
+    return match.group(1)
 
 
 def search_url(request: SearchRequest, start: int = 0, host: str = SCHOLAR_HOST) -> str:
     """Build the result-page URL for ``request`` at result offset ``start``.
 
-    :param request: the query and its filters.
+    :param request: the listing and its filters.
     :param start: zero-based result offset; Google Scholar pages in steps of 10.
     :param host: Scholar host to hit, e.g. a regional mirror.
     :returns: absolute URL of the result page.
     """
-    params: dict[str, str | int] = {"q": request.query, "hl": request.language or "en"}
+    params: dict[str, str | int] = {"hl": request.language or "en"}
+    if request.cites:
+        params["cites"] = request.cites
+    if request.cluster:
+        params["cluster"] = request.cluster
+    if request.query:
+        params["q"] = request.query
     if start:
         params["start"] = start
     if request.year_low is not None:

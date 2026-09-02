@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import random
 import time
+from collections.abc import Iterator
+from contextlib import suppress
 from dataclasses import dataclass
-from typing import Iterator
+from datetime import datetime, timezone
+from pathlib import Path
 
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
+from playwright.sync_api import Page
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
 from .challenge import RESULTS_SELECTOR, HumanHandoff, detect_challenge
 from .models import PageResult, SearchRequest
@@ -25,6 +29,8 @@ class Pacing:
     :param cooldown_every: pause longer after this many pages; 0 disables cooldowns.
     :param cooldown_seconds: length of that longer pause.
     :param nav_timeout: per-navigation timeout in seconds.
+    :param backoff_factor: multiplier applied to both delay bounds after each human
+        takeover, so a challenged run automatically slows down; 1.0 keeps the rhythm.
     """
 
     min_delay: float = 4.0
@@ -32,6 +38,21 @@ class Pacing:
     cooldown_every: int = 10
     cooldown_seconds: float = 90.0
     nav_timeout: float = 45.0
+    backoff_factor: float = 1.6
+
+    def __post_init__(self) -> None:
+        """Reject settings that would silently produce nonsense timing.
+
+        :raises ValueError: on a negative delay, an inverted delay range, or a factor below 1.
+        """
+        if self.min_delay < 0 or self.max_delay < 0:
+            raise ValueError("delays must not be negative")
+        if self.min_delay > self.max_delay:
+            raise ValueError(f"min_delay {self.min_delay} exceeds max_delay {self.max_delay}")
+        if self.cooldown_every < 0 or self.cooldown_seconds < 0:
+            raise ValueError("cooldown settings must not be negative")
+        if self.backoff_factor < 1.0:
+            raise ValueError("backoff_factor must be >= 1.0 so takeovers never speed the crawl up")
 
     def sleep_before_request(self, page_index: int) -> None:
         """Sleep the pre-request delay, plus a cooldown at the configured interval.
@@ -45,6 +66,17 @@ class Pacing:
             print(f"[pace] cooldown {self.cooldown_seconds:.0f}s after {page_index} pages", flush=True)
             time.sleep(self.cooldown_seconds)
 
+    def after_handoff(self) -> None:
+        """Widen both delay bounds by ``backoff_factor`` after a human takeover."""
+        if self.backoff_factor == 1.0:
+            return
+        self.min_delay *= self.backoff_factor
+        self.max_delay *= self.backoff_factor
+        print(
+            f"[pace] backing off to {self.min_delay:.1f}-{self.max_delay:.1f}s between pages",
+            flush=True,
+        )
+
 
 class ScholarCrawler:
     """Drives Google Scholar result pages in a human-supervised browser page."""
@@ -57,6 +89,7 @@ class ScholarCrawler:
         *,
         host: str = "https://scholar.google.com",
         max_handoffs: int = 5,
+        dump_dir: Path | None = None,
     ) -> None:
         """Bind the crawler to one browser page.
 
@@ -65,18 +98,20 @@ class ScholarCrawler:
         :param pacing: request rhythm; defaults to :class:`Pacing`.
         :param host: Scholar host or regional mirror.
         :param max_handoffs: give up after this many human takeovers in one run.
+        :param dump_dir: when set, every fetched page's HTML is saved here for debugging.
         """
         self._page = page
         self._handoff = handoff
         self._pacing = pacing or Pacing()
         self._host = host
         self._max_handoffs = max_handoffs
+        self._dump_dir = dump_dir
         self.handoff_count = 0
 
     def fetch_page(self, request: SearchRequest, start: int) -> PageResult:
         """Load one result page, handing over to a human if Scholar challenges us.
 
-        :param request: the query being paginated.
+        :param request: the listing being paginated.
         :param start: result offset to load.
         :returns: the parsed page.
         :raises RuntimeError: when the handoff budget is exhausted or the page never loads.
@@ -87,6 +122,7 @@ class ScholarCrawler:
                 continue
             challenge = detect_challenge(self._page)
             if challenge is not None:
+                self._dump(f"challenge-{challenge.kind.value}-{start}")
                 self.handoff_count += 1
                 if self.handoff_count > self._max_handoffs:
                     raise RuntimeError(
@@ -94,13 +130,16 @@ class ScholarCrawler:
                         "increase --max-handoffs or slow the crawl down with --min-delay/--max-delay"
                     )
                 self._handoff.resolve(self._page, challenge)
+                self._pacing.after_handoff()
                 continue
             if self._page.locator(RESULTS_SELECTOR).count() == 0:
-                # Zero-hit query, or a layout the selectors miss; both are terminal.
+                # Zero-hit listing, or a layout the selectors miss; both are terminal.
+                self._dump(f"empty-{start}")
                 return PageResult(start=start, results=[], total_estimate=0, has_next=False)
             self._humanize()
-            return parse_result_page(self._page.content(), query=request.query, start=start)
-        raise RuntimeError(f"could not obtain a result page for offset {start} of {request.query!r}")
+            self._dump(f"page-{start}")
+            return parse_result_page(self._page.content(), query=request.label, start=start)
+        raise RuntimeError(f"could not obtain a result page for offset {start} of {request.label!r}")
 
     def search(
         self,
@@ -108,18 +147,26 @@ class ScholarCrawler:
         *,
         max_pages: int = 3,
         start: int = 0,
+        max_results: int | None = None,
     ) -> Iterator[PageResult]:
-        """Yield result pages for ``request`` until exhausted or ``max_pages`` reached.
+        """Yield result pages for ``request`` until exhausted or a limit is reached.
 
-        :param request: the query to run.
+        :param request: the listing to page through.
         :param max_pages: maximum number of pages to request in this run.
         :param start: first result offset, used for resuming.
+        :param max_results: stop once this many results have been yielded; the last page
+            is truncated to land exactly on the limit. None means no result cap.
         :returns: iterator of parsed pages in Scholar order.
         """
         offset = start
+        collected = 0
         for page_index in range(max_pages):
             self._pacing.sleep_before_request(page_index)
             page_result = self.fetch_page(request, offset)
+            if max_results is not None and collected + len(page_result.results) >= max_results:
+                page_result.results = page_result.results[: max_results - collected]
+                page_result.has_next = False
+            collected += len(page_result.results)
             yield page_result
             if not page_result.results or not page_result.has_next:
                 return
@@ -144,8 +191,21 @@ class ScholarCrawler:
 
     def _humanize(self) -> None:
         """Scroll and pause briefly so page dwell time is not machine-uniform."""
-        try:
+        with suppress(PlaywrightError):  # the wheel is unavailable on a page that just navigated
             self._page.mouse.wheel(0, random.randint(300, 1200))
-        except PlaywrightError:  # wheel is unavailable on a page that just navigated
-            pass
         time.sleep(random.uniform(0.6, 2.2))
+
+    def _dump(self, tag: str) -> None:
+        """Save the current page HTML under ``dump_dir`` when dumping is enabled.
+
+        :param tag: filename stem describing why the page was saved.
+        """
+        if self._dump_dir is None:
+            return
+        self._dump_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        try:
+            html = self._page.content()
+        except PlaywrightError:  # page navigated away before it could be captured
+            return
+        (self._dump_dir / f"{stamp}-{tag}.html").write_text(html, encoding="utf-8")
