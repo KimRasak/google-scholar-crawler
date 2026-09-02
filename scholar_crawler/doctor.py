@@ -119,6 +119,28 @@ def check_python() -> Finding:
     )
 
 
+def check_toml_reader() -> Finding:
+    """Check that a settings file could be read on this interpreter.
+
+    ``tomllib`` is stdlib from 3.11; older interpreters need the ``tomli`` backport, and a
+    ``--config`` run is the wrong moment to find that out.
+
+    :returns: the finding.
+    """
+    if sys.version_info[:2] >= (3, 11):
+        return Finding("settings files", Status.OK, "tomllib (stdlib) reads --config files")
+    try:
+        import tomli  # noqa: F401 - presence is the whole check
+    except ModuleNotFoundError:
+        return Finding(
+            "settings files",
+            Status.WARN,
+            "--config needs the tomli backport on this Python",
+            "pip install tomli, or run on Python 3.11+",
+        )
+    return Finding("settings files", Status.OK, "tomli reads --config files")
+
+
 def _version_of(requirement: Requirement) -> str:
     """Read the installed version of a requirement.
 
@@ -310,6 +332,7 @@ def diagnose_environment(
     """
     findings = [check_python()]
     findings.extend(check_module(requirement) for requirement in REQUIREMENTS)
+    findings.append(check_toml_reader())
     findings.append(check_bundled_chromium())
     findings.append(check_channel(channel))
     findings.append(check_profile(profile))

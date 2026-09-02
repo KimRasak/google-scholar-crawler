@@ -12,7 +12,7 @@ The code never tries to solve, bypass or hide a verification challenge. Verifica
 | Your situation | Sections to read |
 | --- | --- |
 | First time | [Install](#install) → [Usage](#usage) (run `--recipes` and `--self-check` first) |
-| Collecting a batch | [Usage](#usage) → [Reading the command back](#reading-the-command-back---explain) → [Counting the cost first](#counting-the-cost-first---dry-run) → [Options](#options) → [Output](#output) |
+| Collecting a batch | [Usage](#usage) → [Settings files](#settings-files---config) → [Reading the command back](#reading-the-command-back---explain) → [Counting the cost first](#counting-the-cost-first---dry-run) → [Options](#options) → [Output](#output) |
 | Using what you collected | [A readable overview](#a-readable-overview---report) → [Building a bibliography offline](#building-a-bibliography-offline) → [Grouping](#grouping) |
 | Getting blocked | [The takeover log](#the-takeover-log) → [Learning to slow down across runs](#learning-to-slow-down-across-runs) → [Getting challenged less](#getting-challenged-less) → [Rehearsing the human takeover](#rehearsing-the-human-takeover) |
 | It stopped with an error | [Failures in plain words](#failures-in-plain-words) → [Self-check](#self-check) |
@@ -68,7 +68,7 @@ Once the machine is sound, `--self-check` goes on to test the network.
 
 ## Usage
 
-Rather than reading the flag table, start from `--recipes`: fourteen complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, one topic, costing a run, batch plus CSV, an author, crawling the citation graph, resuming, auditing, exporting that graph, staleness and refreshing, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
+Rather than reading the flag table, start from `--recipes`: fifteen complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, a settings file, one topic, costing a run, batch plus CSV, an author, crawling the citation graph, resuming, auditing, exporting that graph, staleness and refreshing, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
 
 ```sh
 $ scholar-crawler --recipes
@@ -240,6 +240,53 @@ $ scholar-crawler --forget "attention" --state out/state.json
 Signatures are rendered back into their targets, with the filters that distinguish them — year range, language, sort order, `--review-only` — in brackets, because the same query under different filters is a different cursor. Entries now also carry an update time; state files written by older versions still load and show `unknown time`.
 
 A target cut short by `-n/--max-results` no longer counts as finished: stopping there was our decision and Scholar still had results, so its cursor stays resumable.
+
+## Settings files: `--config`
+
+Collecting one topic over weeks means retyping `--min-delay --max-delay --profile --follow-cites --year-from` every session, and a mistyped delay costs a request. Put those choices in a TOML file and pass it:
+
+```sh
+cp scholar.toml.example scholar.toml   # then edit it
+scholar-crawler --config scholar.toml
+```
+
+Precedence is one rule and it is not negotiable: **command line > file > built-in defaults**. So "same settings, different query" is:
+
+```sh
+scholar-crawler --config scholar.toml -q "another topic" --pages 1
+```
+
+`--explain` names where every value in effect came from, which is what makes "why was the delay 8 seconds?" answerable later:
+
+```
+[explain] settings file scholar.toml: 5 value(s) in effect
+[explain]   cooldown_every, max_delay, out, profile, query
+[explain]   min_delay came from the command line instead, which wins over the file
+[explain]   pages came from the command line instead, which wins over the file
+```
+
+An ordinary run prints one line instead: `[config] 5 setting(s) from scholar.toml, 2 overridden by flags`.
+
+How a file is written:
+
+- **A key is the long flag without its dashes.** `min-delay` and `min_delay` both work, and so does `"--min-delay"`.
+- **Tables like `[pacing]` are for the reader only.** The crawler reads their contents exactly as if the keys stood at the top of the file, so organise a file however you like without memorising which flag belongs to which group.
+- **A repeatable flag takes an array** (`query = ["a", "b"]`). Passing `-q` on the command line *replaces* that list rather than adding to it — which is what "same settings, different query" needs.
+- **Modes may not live in a file.** `--doctor`, `--self-check`, `--rehearse-handoff`, `--show-state`, `--forget`, `--dry-run`, `--explain`, `--recipes` and `--config` decide *what the command does*, not how it behaves. A settings file naming one is an error: it should not be able to turn a crawl into something else behind your back.
+
+Anything wrong is reported before the first request, by name:
+
+```
+error: scholar.toml: unknown setting 'min_dely'; did you mean 'min_delay'?
+error: scholar.toml: 'pages' wants a number, not a string
+error: scholar.toml: 'query' wants a list of values
+error: scholar.toml: 'headless' wants true or false
+error: scholar.toml: 'doctor' decides what the command does, so it stays on the command line
+error: scholar.toml: [pacing.deeper] nests too deep; settings are one level
+error: scholar.toml: 'min-delay' is set twice
+```
+
+`tomllib` is stdlib from Python 3.11; 3.10 needs `tomli`, which `pyproject.toml` declares for `python_version < "3.11"`. `--doctor` reports a `settings files` line either way, so a missing reader surfaces before a `--config` run needs it.
 
 ## Reading the command back: `--explain`
 
@@ -496,6 +543,7 @@ It fetches one page of a broad query and reports, field by field, whether titles
 | `--min-delay/--max-delay`, `--cooldown-every/--cooldown-seconds` | request rhythm |
 | `--handoff-timeout`, `--max-handoffs`, `--backoff-factor`, `--challenge-cooldown` | how long to wait for a human (0 = forever), takeover budget, slowdown per takeover, wait-out after back-to-back challenges |
 | `--recipes` | print complete commands to copy (no requests) |
+| `--config FILE` | read settings from a TOML file; anything passed as a flag wins over it |
 | `--show-state`, `--forget PATTERN` | review stored progress and recent takeovers; drop cursors by signature substring (empty pattern drops all) |
 | `--explain` | read the command back in plain words and name flags that cancel each other |
 | `--dry-run` | print the run plan and duration estimate, then stop without requesting anything |
@@ -602,7 +650,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 353 tests, fully offline
+python3 -m pytest -q     # 388 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -612,11 +660,12 @@ All tests run offline (no network at all), grouped by area:
 - **URLs and filters**: query and profile URL assembly, filter parameters, id and URL parsing, cite-popup addresses
 - **Crawl loop**: pagination and author batching, pacing and cooldowns, the back-to-back challenge wait and its off switch, both run-summary duration formats, HTML dumps, a challenge during export
 - **Failure diagnosis**: nine classes of network error, retrying only failures a retry could survive, an unrecognized error keeping its text and still advising, every diagnosis naming the URL and a next step, 429/503 told apart from other 5xx, an unreadable page pointing at parser.py and the saved copy, repeated challenges reported as a block, and the render order
-- **End to end**: a real browser against the local fake Scholar — paging and the page budget, a takeover losing nothing, `--resume`, an author profile stored, no alarm on clean data, data kept on disk when headless refuses the takeover, plain-words diagnoses for a refused connection, an unreadable page and HTTP 429, and a zero-hit listing still reported as empty
+- **End to end**: a real browser against the local fake Scholar — paging and the page budget, a takeover losing nothing, `--resume`, an author profile stored, no alarm on clean data, data kept on disk when headless refuses the takeover, plain-words diagnoses for a refused connection, an unreadable page and HTTP 429, a zero-hit listing still reported as empty, and a run described entirely by a settings file — query, pages, host, profile and every output path read from TOML, with `--config` the only flag — collecting the same records
 - **Auditing while crawling**: the incremental tally agrees exactly with the batch audit, one bad record stays quiet, a field failing across a run raises an alarm, missing-field warnings never do, and the alarm prints after the run's output
 - **The report**: stating that the numbers are as-collected, the counts at a glance, links only where a destination exists, the grouped tables, a chart scaled to the busiest year, which query each record came from, its own trust section, an escaped pipe in a title, an em dash for a missing field, and counting as output under `--quiet`
 - **Record audit**: a clean record trips nothing, page-range venues and leftover years, a year the byline never mentioned, citations without a link, negative counts, the severity of missing and lossy fields, citation-only records not blamed for a missing card id, counts with examples, and zero errors on records parsed from the real fixtures
 - **Documentation**: in-page links in both READMEs resolve to real sections, the navigation table covers at least seven situations, and both documents list exactly the modules that exist
+- **Settings files**: a table and a top-level key mean the same thing, dashes and underscores both work, a flag beats the file and the override is reported, a repeated flag replaces the file's list, a misspelled key suggests the closest real one, modes are refused, every type mismatch is refused by name (number-as-string, switch-as-string, list-versus-single, outside choices), a nested table, a key set twice, broken TOML, a missing file, and the shipped `scholar.toml.example` reading back in full and running its recipe as written under `--explain`
 - **The interface**: both parsers are read back and compared — a shared flag parses the same way in both commands, every flag has help, every flag sits in a described group, a flag with a default states it, and terminal lists and the written report are governed by separate options
 - **Modes**: all four modes driven without argparse (the rehearsal in a real headless Chromium), showing and forgetting state, and takeovers printed newest last
 - **Recipes**: every recipe parses, builds a target and (for the `--dry-run` one) actually runs; the print format, the first three shown for a bare invocation, and a terse error when arguments were passed
@@ -662,9 +711,12 @@ scholar_crawler/
   audit.py      offline audit: implausible and missing fields
   bibsynth.py   offline bibliography: BibTeX from stored fields
   storage.py    JSONL/CSV writers, author profile records, the .bib file, resume state
+  config.py     TOML settings files: reading, validation, precedence, provenance
   cli.py        command-line entry point: flag definitions and mode dispatch
   __main__.py   makes python3 -m scholar_crawler equivalent to scholar-crawler
 tests/          offline tests, including headless-Chromium detection tests
+scholar.toml.example   sample settings file; copy it to scholar.toml
+queries.example.txt    sample query list
 ```
 
 MIT licensed.

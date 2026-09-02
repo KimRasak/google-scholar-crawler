@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from .config import Sources
 from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
 from .expand import FollowPolicy
 from .models import AuthorRequest, SearchRequest
@@ -403,6 +404,7 @@ def explain(
     authors: list[AuthorRequest],
     follow: FollowPolicy,
     pacing: Pacing,
+    sources: Sources | None = None,
 ) -> list[str]:
     """Describe this command in plain words, then list what is worth knowing about it.
 
@@ -411,9 +413,11 @@ def explain(
     :param authors: author profiles.
     :param follow: expansion policy.
     :param pacing: the resolved pacing.
+    :param sources: where the settings in effect came from, when a settings file was read.
     :returns: printable lines.
     """
     lines = [
+        *(sources.describe() if sources is not None else []),
         *_targets(listings, authors),
         *_paging(args, listings),
         *_filters(args),

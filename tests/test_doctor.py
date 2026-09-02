@@ -18,6 +18,7 @@ from scholar_crawler.doctor import (  # noqa: E402
     check_module,
     check_profile,
     check_python,
+    check_toml_reader,
     check_writable,
     diagnose_environment,
     render_environment,
@@ -134,8 +135,15 @@ def test_the_full_check_covers_every_prerequisite(tmp_path: Path) -> None:
         channel="chrome",
     )
     names = [finding.name for finding in findings]
-    assert names[:5] == ["python", "playwright", "bs4", "lxml", "bundled chromium"]
-    assert names[5:] == ["browser channel", "profile", "output", "state"]
+    assert names[:6] == [
+        "python",
+        "playwright",
+        "bs4",
+        "lxml",
+        "settings files",
+        "bundled chromium",
+    ]
+    assert names[6:] == ["browser channel", "profile", "output", "state"]
     assert _named(findings, "python").status is Status.OK
 
 
@@ -161,6 +169,14 @@ def test_the_report_puts_fixes_last_and_ends_on_what_to_do_next(tmp_path: Path) 
     clean = [finding for finding in findings if finding.status is Status.OK]
     ready = render_environment(clean)
     assert ready[-1] == "this machine is ready; run --self-check next to test Scholar itself"
+
+
+def test_the_toml_reader_is_checked_before_a_config_run_needs_it() -> None:
+    # pyproject declares the backport for 3.10, so every supported interpreter can read one.
+    finding = check_toml_reader()
+    assert finding.name == "settings files"
+    assert finding.status is Status.OK, finding.detail
+    assert "--config" in finding.detail
 
 
 def test_doctor_reports_through_the_cli_and_sends_no_request(

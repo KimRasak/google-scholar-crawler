@@ -26,6 +26,7 @@ from scholar_crawler.challenge import (  # noqa: E402
     Takeover,
     detect_challenge,
 )
+from scholar_crawler.cli import main  # noqa: E402
 from scholar_crawler.crawler import Pacing, ScholarCrawler  # noqa: E402
 from scholar_crawler.expand import FollowPolicy  # noqa: E402
 from scholar_crawler.models import AuthorRequest, SearchRequest  # noqa: E402
@@ -250,6 +251,36 @@ def test_a_clean_crawl_raises_no_audit_alarm(
     printed = capsys.readouterr().out
     assert "[out] 10 new records" in printed
     assert "[audit]" not in printed
+
+
+def test_a_run_described_entirely_by_a_settings_file_collects_the_same_records(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The file has to reach the browser, not just the parser: host, profile and outputs all
+    # come from disk here, and nothing is passed as a flag except the file itself.
+    site = FakeScholar(pages=1)
+    with serving(site) as host:
+        settings = tmp_path / "scholar.toml"
+        settings.write_text(
+            'query = ["graph attention"]\n'
+            "pages = 1\n"
+            "headless = true\n"
+            'channel = ""\n'
+            f'host = "{host}"\n'
+            f'profile = "{tmp_path / "profile"}"\n'
+            f'out = "{tmp_path / "results.jsonl"}"\n'
+            f'state = "{tmp_path / "state.json"}"\n'
+            f'challenge-log = "{tmp_path / "challenges.jsonl"}"\n'
+            "\n[pacing]\nmin-delay = 0.0\nmax-delay = 0.0\ncooldown-every = 0\n",
+            encoding="utf-8",
+        )
+        assert main(["--config", str(settings)]) == 0
+
+    printed = capsys.readouterr().out
+    assert f"[config] 12 setting(s) from {settings}" in printed
+    assert "[out] 10 new records" in printed
+    assert len(_records(tmp_path / "results.jsonl")) == 10
+    assert site.offsets_requested() == [0]
 
 
 def test_an_unattended_challenge_stops_the_run_without_losing_what_it_had(

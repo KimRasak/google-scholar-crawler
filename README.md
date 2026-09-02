@@ -12,7 +12,7 @@
 | 你的情况 | 读这几节 |
 | --- | --- |
 | 第一次用 | [安装](#安装) → [快速开始](#快速开始)（先跑 `--recipes` 和 `--self-check`） |
-| 想抓一批数据 | [快速开始](#快速开始) → [先把命令读回来：`--explain`](#先把命令读回来--explain) → [先算账：`--dry-run`](#先算账--dry-run) → [常用参数](#常用参数) → [输出](#输出) |
+| 想抓一批数据 | [快速开始](#快速开始) → [把常用参数写进文件：`--config`](#把常用参数写进文件--config) → [先把命令读回来：`--explain`](#先把命令读回来--explain) → [先算账：`--dry-run`](#先算账--dry-run) → [常用参数](#常用参数) → [输出](#输出) |
 | 抓完了要用数据 | [出一份可读的综述](#出一份可读的综述--report) → [离线生成参考文献](#离线生成参考文献) → [分组统计](#分组统计) |
 | 被验证码拦了 | [接管记录](#接管记录) → [跨运行学会减速](#跨运行学会减速) → [降低验证频率](#降低验证频率) → [演练人工接管](#演练人工接管) |
 | 程序报错停了 | [出错时给人话](#出错时给人话) → [自检](#自检) |
@@ -68,7 +68,7 @@ $ scholar-crawler --doctor
 
 ## 快速开始
 
-不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十四条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、单查询、先算账、批量+CSV、作者主页、抓引文网络、断点续抓、数据体检、导出引文网络、判旧与重抓、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
+不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十五条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、设置文件、单查询、先算账、批量+CSV、作者主页、抓引文网络、断点续抓、数据体检、导出引文网络、判旧与重抓、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
 
 ```sh
 $ scholar-crawler --recipes
@@ -239,6 +239,53 @@ $ scholar-crawler --forget "attention" --state out/state.json
 签名会被还原成可读的目标名，年份区间、语言、排序、`--review-only` 之类的过滤条件以 `[...]` 附在后面——同一个查询配不同过滤条件是不同的断点，这样一眼能分清。每条断点现在还带最后更新时间（旧的 state 文件照样能读，只是显示 `unknown time`）。
 
 `-n/--max-results` 截断的目标不再被记成「已抓完」：那是我们自己决定停的，Scholar 那边还有结果，所以它保持可续抓。
+
+## 把常用参数写进文件：`--config`
+
+同一个课题断断续续抓几周，每次都要重敲 `--min-delay --max-delay --profile --follow-cites --year-from` 这一长串，敲错一个延迟数字就是一次多余的请求。把这些写进一个 TOML 文件，用 `--config` 带上：
+
+```sh
+cp scholar.toml.example scholar.toml   # 编辑它
+scholar-crawler --config scholar.toml
+```
+
+优先级只有一条规则，且不可协商：**命令行 > 文件 > 内置默认值**。所以「同样的设置，换个查询」就是：
+
+```sh
+scholar-crawler --config scholar.toml -q "另一个题目" --pages 1
+```
+
+`--explain` 会说明每个值的来源，「为什么这次延迟是 8 秒」有据可查：
+
+```
+[explain] settings file scholar.toml: 5 value(s) in effect
+[explain]   cooldown_every, max_delay, out, profile, query
+[explain]   min_delay came from the command line instead, which wins over the file
+[explain]   pages came from the command line instead, which wins over the file
+```
+
+不带 `--explain` 的正常运行只打一行 `[config] 5 setting(s) from scholar.toml, 2 overridden by flags`。
+
+写法约定：
+
+- **键名就是长参数去掉前面的横线**，`min-delay` 和 `min_delay` 都认，`"--min-delay"` 也认。
+- **`[pacing]` 这类表只是给人分段用的**，程序把表里的键当作写在文件顶层完全一样。所以你可以按自己的习惯组织文件，不必记住哪个参数属于哪一组。
+- **可重复的参数写成数组**（`query = ["a", "b"]`）。命令行上再给 `-q` 是**替换**整个列表，不是追加——这正是「同样的设置，换个查询」想要的行为。
+- **模式类参数不许写进文件**：`--doctor`、`--self-check`、`--rehearse-handoff`、`--show-state`、`--forget`、`--dry-run`、`--explain`、`--recipes`、`--config` 决定这条命令**做什么**，不是它**怎么做**。文件里出现它们会直接报错——一个设置文件不该在你不知情时把抓取变成别的动作。
+
+任何不对的地方都在发出第一个请求前报错，而且指名道姓：
+
+```
+error: scholar.toml: unknown setting 'min_dely'; did you mean 'min_delay'?
+error: scholar.toml: 'pages' wants a number, not a string
+error: scholar.toml: 'query' wants a list of values
+error: scholar.toml: 'headless' wants true or false
+error: scholar.toml: 'doctor' decides what the command does, so it stays on the command line
+error: scholar.toml: [pacing.deeper] nests too deep; settings are one level
+error: scholar.toml: 'min-delay' is set twice
+```
+
+Python 3.11 起 `tomllib` 是标准库；3.10 需要 `tomli`（`pyproject.toml` 已按 `python_version < "3.11"` 声明），`--doctor` 会顺便报一行 `settings files`，不必等到真用 `--config` 时才发现读不了。
 
 ## 先把命令读回来：`--explain`
 
@@ -461,7 +508,7 @@ python3 -m tests.sanitize out/dump/<结果页>.html tests/pages/results.html 6
 
 单元测试把 HTML 字符串喂给解析器，`--self-check` 需要真网络，两者都没覆盖最要紧的那条路：**真实浏览器**导航真实 URL、撞上验证页、接管后恢复、把文件写对。`tests/fakescholar.py` 用 `http.server` 在本地回环起一个假 Scholar，只答 `/scholar` 和 `/citations` 两条路径，可以指定某个 offset「第一次被请求时返回验证页」；测试里的替身「人」处理方式和真人一样——把页面重新加载一次，验证消失，抓取继续。
 
-于是这些以前只能在真 Scholar 上验证一次的行为，现在每次 CI 都跑：翻页到页数上限（不多请求一页）、20 条记录与 CSV 行数、断点写到 40、遇验证 → 接管 → 同一 offset 重取 → 一条不丢、接管记录里 `resolved` 与 URL 脱敏、`--resume` 从 20 接着抓到 40、作者主页与档案落盘、干净数据不触发体检报警，以及 headless 下拒绝接管时**已抓到的 10 条仍在盘上**、退出码为 1、断点停在 10。
+于是这些以前只能在真 Scholar 上验证一次的行为，现在每次 CI 都跑：翻页到页数上限（不多请求一页）、20 条记录与 CSV 行数、断点写到 40、遇验证 → 接管 → 同一 offset 重取 → 一条不丢、接管记录里 `resolved` 与 URL 脱敏、`--resume` 从 20 接着抓到 40、作者主页与档案落盘、干净数据不触发体检报警，以及 headless 下拒绝接管时**已抓到的 10 条仍在盘上**、退出码为 1、断点停在 10；还有一条完全由设置文件描述的运行——查询、页数、host、profile、输出路径全从 TOML 读出，命令行只有 `--config`——抓到同样的 10 条。
 
 ## 自检
 
@@ -496,6 +543,7 @@ scholar-crawler --self-check
 | `--no-learn-from-history` | 不读接管记录，按默认节奏起跑 |
 | `--handoff-timeout`、`--max-handoffs`、`--backoff-factor`、`--challenge-cooldown` | 等人多久（0 = 无限等）、最多接管几次、每次接管后延迟放大倍数、连续被拦时恢复前的静默等待 |
 | `--recipes` | 打印可直接复制的完整命令（不发请求） |
+| `--config FILE` | 从 TOML 设置文件读参数；命令行给的值优先 |
 | `--show-state`、`--forget PATTERN` | 查看断点进度与最近的接管记录；按签名子串清除断点（空串清空全部） |
 | `--explain` | 把这条命令读回成人话，并指出互相抵消的参数 |
 | `--dry-run` | 只打印这轮的抓取计划与用时估算，不发任何请求 |
@@ -602,7 +650,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 353 个用例，全部离线
+python3 -m pytest -q     # 388 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -621,6 +669,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **综述报告**：说明数字来自抓取当时、规模统计、链接只在有目标时生成、分组表、柱状图按最忙的一年缩放、查询来源、自带可信度一节、标题里的竖线被转义、缺失字段显示为破折号、`--quiet` 下也算输出
 - **数据体检**：干净记录不误报、页码型 venue 与残留年份、与灰字矛盾的年份、有被引数无链接、负计数、缺失与有损字段的档位、仅引用条目不因缺 card id 被判错、占比与例子、真实夹具记录零 error
 - **文档导航**：两份 README 的页内链接都指向真实小节、导航表覆盖至少 7 种情况、两份文档的模块清单一致且与实际模块完全对应
+- **设置文件**：表与顶层键等价、键名可用横线或下划线、命令行覆盖文件且被记录、可重复参数是替换而非追加、拼错的键给出最接近的建议、模式类参数被拒、类型不符（数字写成字符串、开关写成字符串、列表与单值互换、超出 choices）各自报错、表嵌套过深、同键两次、坏 TOML、文件不存在、随仓库发布的 `scholar.toml.example` 能被完整读入，并按 recipe 原样跑通一次 `--explain`
 - **命令行界面**：两条命令的参数表直接读回来比对——同名参数在两边的取值方式一致、每个参数都有说明、每个参数都在有说明的分组里、有默认值的参数必须在帮助里写出来、终端列表与写出综述各归各的参数管
 - **模式**：四种模式脱离 argparse 直接调用（演练在真实 headless Chromium 上跑）、断点查看与清除、接管记录按时间倒数打印
 - **示例命令**：每条 recipe 都能被解析、能构造出目标、`--dry-run` 那条真跑一遍；输出格式与「无参数时提示前三条、有参数出错时只报错」
@@ -666,9 +715,12 @@ scholar_crawler/
   audit.py      离线体检：字段可疑值与缺失率
   bibsynth.py   离线书目：由已存字段拼出 BibTeX
   storage.py    JSONL/CSV 写入、作者主页记录、BibTeX 文件、断点状态
+  config.py     TOML 设置文件：读取校验、与命令行的优先级、来源追溯
   cli.py        命令行入口：参数定义、模式分发
   __main__.py   让 python3 -m scholar_crawler 等价于 scholar-crawler
 tests/          离线测试（含 headless Chromium 判定测试）
+scholar.toml.example   设置文件样例，直接 cp 成 scholar.toml 用
+queries.example.txt    批量查询样例
 ```
 
 MIT License。

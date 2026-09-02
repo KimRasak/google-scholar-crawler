@@ -46,6 +46,11 @@ RECIPES: tuple[Recipe, ...] = (
         note="no requests; names the files it would touch and any flags that cancel each other",
     ),
     Recipe(
+        purpose="Keep the flags you always pass in a file",
+        command="scholar-crawler --config scholar.toml --explain",
+        note="cp scholar.toml.example scholar.toml first; --explain names where every value came from",
+    ),
+    Recipe(
         purpose="Search one topic",
         command='scholar-crawler -q "graph attention networks" -p 3 -o out/gat.jsonl',
         note="3 pages, 10 records each, roughly a minute at the default rhythm",

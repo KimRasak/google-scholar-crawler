@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .browser import BrowserOptions, Session
 from .challenge import HumanHandoff
+from .config import ConfigError, resolve_settings
 from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
 from .expand import FollowPolicy
 from .explain import explain
@@ -35,6 +36,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    settings = parser.add_argument_group(
+        "settings", "keep the flags you always pass in a file instead of retyping them"
+    )
+    settings.add_argument(
+        "--config",
+        type=Path,
+        metavar="FILE",
+        help="read settings from this TOML file; anything you also pass as a flag wins over it",
+    )
+
     query = parser.add_argument_group(
         "query", "what to crawl, or one of the offline modes that crawl nothing"
     )
@@ -504,6 +515,14 @@ def main(argv: list[str] | None = None) -> int:
     """
     given = argv if argv is not None else sys.argv[1:]
     args = build_parser().parse_args(argv)
+    try:
+        sources = resolve_settings(args, build_parser(), argv)
+    except ConfigError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    summary = sources.summary()
+    if summary is not None and not args.explain:
+        print(f"[config] {summary}", flush=True)
     offline = _run_offline_mode(args)
     if offline is not None:
         return offline
@@ -524,7 +543,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.explain:
-        for line in explain(args, listings, authors, follow, pacing):
+        for line in explain(args, listings, authors, follow, pacing, sources):
             print(f"[explain] {line}" if line else "[explain]", flush=True)
         if not args.dry_run:
             print("[explain] nothing was requested; drop --explain to start", flush=True)

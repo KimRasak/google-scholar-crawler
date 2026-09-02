@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scholar_crawler import digest  # noqa: E402
 from scholar_crawler.cli import build_parser, build_targets, main  # noqa: E402
+from scholar_crawler.config import resolve_settings  # noqa: E402
 from scholar_crawler.recipes import RECIPES, getting_started, render  # noqa: E402
 
 PROGRAMS = ("scholar-crawler", "scholar-digest")
@@ -19,9 +20,11 @@ PROGRAMS = ("scholar-crawler", "scholar-digest")
 
 @pytest.fixture
 def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A directory holding the files the recipes refer to."""
+    """A directory holding the files the recipes refer to, including the shipped example settings."""
     (tmp_path / "queries.txt").write_text("graph attention networks\n", encoding="utf-8")
     (tmp_path / "out").mkdir()
+    example = Path(__file__).resolve().parents[1] / "scholar.toml.example"
+    (tmp_path / "scholar.toml").write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
     (tmp_path / "out" / "collected.jsonl").write_text(
         '{"title": "A paper", "cluster_id": "AAA", "query": "x"}\n', encoding="utf-8"
     )
@@ -52,6 +55,8 @@ def test_every_crawler_recipe_describes_a_buildable_run(workspace: Path) -> None
         args = build_parser().parse_args(argv[1:])
         if args.doctor or args.self_check or args.rehearse_handoff:
             continue  # these modes carry no target by design
+        # A recipe may keep its targets in a settings file, exactly as a run does.
+        resolve_settings(args, build_parser(), argv[1:])
         listings, authors = build_targets(args)
         assert listings or authors, recipe.command
 
