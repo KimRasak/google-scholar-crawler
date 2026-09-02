@@ -159,4 +159,4 @@ def test_a_report_is_output_enough_for_quiet(tmp_path: Path, capsys: pytest.Capt
     source = tmp_path / "records.jsonl"
     source.write_text(json.dumps(CORPUS[0]) + "\n", encoding="utf-8")
     assert main([str(source), "--quiet"]) == 1  # nothing to write at all
-    assert "needs --out, --csv or --bibtex" in capsys.readouterr().out
+    assert "--quiet needs --out" in capsys.readouterr().out

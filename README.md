@@ -68,7 +68,7 @@ $ scholar-crawler --doctor
 
 ## 快速开始
 
-不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十二条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、单查询、先算账、批量+CSV、作者主页、引文网络、断点续抓、数据体检、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
+不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十三条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、单查询、先算账、批量+CSV、作者主页、引文网络、断点续抓、数据体检、判旧与重抓、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
 
 ```sh
 $ scholar-crawler --recipes
@@ -145,6 +145,8 @@ scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.js
 | `--group-by` | 按 `author`/`venue`/`year`/`level` 分组统计 |
 | `--audit` | 体检字段：可疑值与缺失率，分 error/warn 两档 |
 | `--report` `--report-title` | 输出一份可读的 Markdown 综述 |
+| `--stale [天数]` | 报告数据有多旧，并按「最可能变了」排序 |
+| `--refresh-list` `--refresh-limit` | 写出该重抓的 cluster id 清单 |
 | `--min-group`、`--groups` | 隐藏记录数少于 N 的组；最多列出几组（默认 10） |
 | `--quiet` | 只打印写出结果，需要配合 `-o`、`--csv` 或 `--bibtex` |
 
@@ -305,6 +307,34 @@ scholar-digest out/*.jsonl --report out/report.md --report-title "图注意力�
 
 报告开头写明「所有数字都来自抓取当时 Scholar 显示的内容，生成报告没有重新请求」，避免读者把它当成实时数据。
 
+### 维护一个持续更新的文献库：`--stale` 与 `--refresh-list`
+
+每条记录都带 `fetched_at`（抓取时刻，UTC），所以「这批数据有多旧」是离线就能算的。被引数会一直涨，抓过三个月的记录里那个数字已经不能引用了。
+
+```sh
+$ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh-limit 5
+  20 records collected between 475 and 0 days ago
+  17 older than 60 days (85% of the set)
+  17 of those can be re-listed by id, one page load each; 0 would need their query re-run
+    375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network...
+    475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks...
+[out] 5 id(s) to re-list -> out/refresh.txt (of 17 records older than 60 days)
+```
+
+排序不是单纯按年龄：被引 3 次的论文放一年数字也不会动，被引四万次的放两个月就差了几百。所以权重是「年龄 × log(被引数)」——把数字真的变了的排在前面。这只是给人排个序，不假装能预测新的被引数。
+
+`--refresh-list` 写出的文件就是 `scholar-crawler --clusters-file` 读的格式，一进一出闭环：
+
+```sh
+scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt   # 离线，选出该重抓的
+scholar-crawler --clusters-file out/refresh.txt -p 1 -o out/new.jsonl  # 每条一次页面加载
+scholar-digest out/*.jsonl out/new.jsonl --min-citations 1 -o out/library.jsonl
+```
+
+第三条为什么要 `--min-citations 1`：`--cluster` 列的是「这篇的所有版本」，除了正主之外还会带回同一篇的镜像、预印本等版本行——它们没有 `data-cid`、也没有被引数。实测 5 次重抓带回 37 条，其中 32 条是这种版本行；`--min-citations 1` 正好把它们滤掉，剩下 20 条正主。
+
+合并时也做了一处修正：以前只保留「更富」的那条记录，现在胜者缺的字段会从另一条补上。重抓回来的记录被引数更新、但版本列表里没有摘要，如果整条替换就会把已经抓到的摘要丢掉。
+
 ### 体检已抓到的数据：`--audit`
 
 Scholar 的结果卡片只有一行灰字承载「作者 - 期刊, 年份 - 站点」，解析靠位置切分：常见卡片没问题，剩下的会静默出错——venue 实际上是页码范围、year 来自期刊名里的数字、作者列表被 Scholar 自己截断。下游不会察觉，`--group-by year` 照样按错的年份分组。
@@ -392,6 +422,7 @@ scholar-crawler --self-check
 | 参数 | 说明 |
 | --- | --- |
 | `-q/--query`、`--queries-file` | 关键词检索，可重复；文件一行一个 |
+| `--cluster`、`--clusters-file` | 按 cluster id 列某篇的所有版本；文件一行一个 |
 | `--cites`、`--cluster` | 抓某文的引证文献 / 全部版本；接受数字 id 或结果里的 `cited_by_url`、`versions_url`，可重复 |
 | `--author` | 抓作者主页论文列表；接受 12 位 user id 或主页 URL，可重复；配合 `--sort-by-date` 按年份排序 |
 | `-p/--pages`、`-n/--max-results` | 每个入口抓几页 / 最多抓几条（末页精确截断）。检索页每页 10 条，作者主页每页 100 篇 |
@@ -515,7 +546,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 290 个用例，全部离线
+python3 -m pytest -q     # 305 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -527,6 +558,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **失败诊断**：九类网络错误各自归类、只重试可能是暂时的失败、认不出的错误保留原文并仍给建议、每条诊断都带 URL 与下一步、429/503 与其他 5xx 区分、无法解析的页面指向 parser.py 与存盘副本、连续验证被判为封锁、渲染顺序
 - **全链路**：真实浏览器打本地假 Scholar——翻页与页数上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、干净数据不报警、headless 拒绝接管时已抓数据仍在、连接被拒/不可解析页面/429 各自给出人话、零结果页仍是零结果
 - **抓取时体检**：逐条累加与整批体检结果完全一致、单条坏记录不报警、一个字段大面积失败才报警、缺失类警告永不报警、运行结束时打印在输出之后
+- **判旧与重抓**：时间戳缺失/写坏/无时区各自处理、只有超期的入选、排序把「数字真的变了的」排前面、能按 id 重抓与只能重跑查询分开统计、清单去重、写出的文件真的能被 `--clusters-file` 读回、重抓不丢已有字段
 - **命令自述**：目标与文件逐条列出、创建与追加分开、十三种可疑组合各有一条用例、`warn` 排在 `note` 前、`--explain` 不写任何文件、可与 `--dry-run` 同时用
 - **环境体检**：依赖过旧算失败、缺 Chrome 只算警告、不存在的目录如实报告且绝不创建、上级目录不可读也不崩、profile 有无 cookie、`--doctor` 走一遍 CLI
 - **综述报告**：说明数字来自抓取当时、规模统计、链接只在有目标时生成、分组表、柱状图按最忙的一年缩放、查询来源、自带可信度一节、标题里的竖线被转义、缺失字段显示为破折号、`--quiet` 下也算输出
@@ -570,6 +602,7 @@ scholar_crawler/
   recipes.py    可直接复制的完整命令
   digest.py     离线汇总：合并去重、过滤、命令行
   analysis.py   离线分析：概览统计与分组
+  refresh.py    离线判旧：该重抓哪些记录
   report.py     离线综述：可读的 Markdown 报告
   audit.py      离线体检：字段可疑值与缺失率
   bibsynth.py   离线书目：由已存字段拼出 BibTeX

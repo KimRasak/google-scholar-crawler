@@ -68,7 +68,7 @@ Once the machine is sound, `--self-check` goes on to test the network.
 
 ## Usage
 
-Rather than reading the flag table, start from `--recipes`: twelve complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, one topic, costing a run, batch plus CSV, an author, the citation graph, resuming, auditing, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
+Rather than reading the flag table, start from `--recipes`: thirteen complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, one topic, costing a run, batch plus CSV, an author, the citation graph, resuming, auditing, staleness and refreshing, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
 
 ```sh
 $ scholar-crawler --recipes
@@ -145,6 +145,8 @@ When the same work appears in several files, the higher citation count wins as t
 | `--group-by` | group by `author`, `venue`, `year` or `level` |
 | `--audit` | audit fields: implausible values and missing rates, as errors and warnings |
 | `--report` `--report-title` | write a readable Markdown overview |
+| `--stale [DAYS]` | report how old the collection is, most-moved records first |
+| `--refresh-list` `--refresh-limit` | write the cluster ids worth re-listing |
 | `--min-group`, `--groups` | hide groups below N records; how many groups to list (default: 10) |
 | `--quiet` | print only what was written; needs `-o`, `--csv` or `--bibtex` |
 
@@ -305,6 +307,34 @@ scholar-digest out/*.jsonl --report out/report.md --report-title "Graph attentio
 It contains the size of the collection at a glance (records, total citations, year span, venues, first authors), the most-cited works with their original links, two grouped tables — by venue and by first author, each with records, citations, median, year span and the group's most-cited work — a text bar chart of records per year (which survives copy-paste), which query each record came from, and finally a "how much of this to trust" section that reuses the `--audit` checks to state the missing rates and doubtful fields outright.
 
 The report opens by saying that every number comes from what Scholar showed when the records were collected and that nothing was re-fetched, so nobody mistakes it for live data.
+
+### Keeping a collection current: `--stale` and `--refresh-list`
+
+Every record carries `fetched_at`, the UTC moment it was collected, so how old a set is can be answered offline. Citation counts only grow, and the number stored three months ago is no longer quotable.
+
+```sh
+$ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh-limit 5
+  20 records collected between 475 and 0 days ago
+  17 older than 60 days (85% of the set)
+  17 of those can be re-listed by id, one page load each; 0 would need their query re-run
+    375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network...
+    475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks...
+[out] 5 id(s) to re-list -> out/refresh.txt (of 17 records older than 60 days)
+```
+
+The order is not age alone: a paper with three citations gains none in a year, while one with forty thousand drifts by hundreds in two months. The weight is age × log(citations), which puts the records whose numbers actually moved first. It orders a list for a human; it does not claim to predict the new count.
+
+The file `--refresh-list` writes is the format `scholar-crawler --clusters-file` reads, so the loop closes:
+
+```sh
+scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt   # offline: pick what to redo
+scholar-crawler --clusters-file out/refresh.txt -p 1 -o out/new.jsonl  # one page load each
+scholar-digest out/*.jsonl out/new.jsonl --min-citations 1 -o out/library.jsonl
+```
+
+Why the last line filters: `--cluster` lists *all versions* of a work, so besides the canonical record it returns the mirrors and preprints of the same paper as extra rows that carry no `data-cid` and no citation count. Five refreshes brought back 37 records here, 32 of them such version rows; `--min-citations 1` drops exactly those and leaves the 20 canonical records.
+
+Merging was corrected to match: the richer record still wins, but fields it lacks are now filled from the other copy. A re-collected record carries the fresher count while a versions listing carries no snippet, and replacing the record wholesale would throw away what was already collected.
 
 ### Auditing what you collected: `--audit`
 
@@ -516,7 +546,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 290 tests, fully offline
+python3 -m pytest -q     # 305 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -569,6 +599,7 @@ scholar_crawler/
   recipes.py    complete commands to copy
   digest.py     offline digest: merge, filter, command line
   analysis.py   offline analysis: overview counts and grouping
+  refresh.py    offline staleness: which records to collect again
   report.py     offline overview: the readable Markdown report
   audit.py      offline audit: implausible and missing fields
   bibsynth.py   offline bibliography: BibTeX from stored fields

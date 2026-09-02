@@ -22,6 +22,14 @@ from .analysis import (
 )
 from .audit import audit_records, render_audit
 from .bibsynth import write_bibtex
+from .refresh import (
+    DEFAULT_REFRESH_LIMIT,
+    DEFAULT_STALE_DAYS,
+    rank_stale,
+    refresh_ids,
+    render_refresh_list,
+    render_staleness,
+)
 from .report import build_report
 from .storage import CSV_COLUMNS
 
@@ -77,16 +85,23 @@ def _richer(left: Record, right: Record) -> Record:
     Citation counts grow over time, so the higher count is the fresher observation; field
     count breaks ties, because a keyword result page carries more than a profile row.
 
+    Fields the winner lacks are taken from the loser: a re-collected record refreshes the
+    citation count but may come from a versions listing that carries no snippet, and dropping
+    what was already known would make a refresh lose data.
+
     :param left: the record kept so far.
     :param right: a later record for the same work.
-    :returns: the record to keep, with the other's ``extra`` values filled in and the
-        shallowest citation-graph level of the two.
+    :returns: the record to keep, with the other's missing fields and ``extra`` values filled
+        in and the shallowest citation-graph level of the two.
     """
     def rank(record: Record) -> tuple[int, int]:
         return (record.get("cited_by_count") or -1, _filled(record))
 
     winner, loser = (right, left) if rank(right) > rank(left) else (left, right)
     merged = dict(winner)
+    for key, value in loser.items():
+        if key != "extra" and merged.get(key) in (None, "", []):
+            merged[key] = value
     extra = {**(loser.get("extra") or {}), **(winner.get("extra") or {})}
     depths = [
         int(record["extra"]["follow_depth"])
@@ -227,6 +242,30 @@ def build_parser() -> argparse.ArgumentParser:
         "--report-title", default="Literature overview", metavar="TEXT", help="heading for --report"
     )
     parser.add_argument(
+        "--stale",
+        type=float,
+        nargs="?",
+        const=float(DEFAULT_STALE_DAYS),
+        metavar="DAYS",
+        help=f"report how current the collection is, counting records older than DAYS as "
+        f"stale (default: {DEFAULT_STALE_DAYS})",
+    )
+    parser.add_argument(
+        "--refresh-list",
+        type=Path,
+        metavar="FILE",
+        help="write the stale records' cluster ids here, most-moved first; feed the file back "
+        "with scholar-crawler --clusters-file",
+    )
+    parser.add_argument(
+        "--refresh-limit",
+        type=int,
+        default=DEFAULT_REFRESH_LIMIT,
+        metavar="N",
+        help=f"ids to write for --refresh-list; each costs one page load "
+        f"(default: {DEFAULT_REFRESH_LIMIT})",
+    )
+    parser.add_argument(
         "--audit",
         action="store_true",
         help="report fields that parsed into something implausible (missing, out of range, "
@@ -244,9 +283,10 @@ def main(argv: list[str] | None = None) -> int:
         would produce no output at all.
     """
     args = build_parser().parse_args(argv)
-    if args.quiet and not (args.out or args.csv or args.bibtex or args.report):
+    if args.quiet and not (args.out or args.csv or args.bibtex or args.report or args.refresh_list):
         print(
-            "error: --quiet needs --out, --csv or --bibtex, otherwise the run prints nothing",
+            "error: --quiet needs --out, --csv, --bibtex, --report or --refresh-list, "
+            "otherwise the run prints nothing",
             flush=True,
         )
         return 1
@@ -278,6 +318,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.audit:
             for line in render_audit(audit_records(kept), len(kept)):
                 print(f"  {line}", flush=True)
+        if args.stale is not None:
+            for line in render_staleness(kept, days=args.stale, top=args.top or 10):
+                print(f"  {line}", flush=True)
         if args.group_by:
             groups = group_records(kept, args.group_by, min_size=args.min_group)
             for line in render_groups(groups, args.group_by, limit=args.groups):
@@ -292,6 +335,18 @@ def main(argv: list[str] | None = None) -> int:
         args.report.write_text(markdown, encoding="utf-8")
         counted = f"{len(kept)} record" + ("" if len(kept) == 1 else "s")
         print(f"[out] report on {counted} -> {args.report}", flush=True)
+    if args.refresh_list:
+        days = args.stale if args.stale is not None else float(DEFAULT_STALE_DAYS)
+        aged = rank_stale(kept, days=days)
+        lines = render_refresh_list(aged, limit=args.refresh_limit)
+        args.refresh_list.parent.mkdir(parents=True, exist_ok=True)
+        args.refresh_list.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        written = len(refresh_ids(aged, limit=args.refresh_limit))
+        print(
+            f"[out] {written} id(s) to re-list -> {args.refresh_list} "
+            f"(of {len(aged)} records older than {days:g} days)",
+            flush=True,
+        )
     if args.bibtex:
         report = write_bibtex(kept, args.bibtex)
         print(

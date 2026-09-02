@@ -81,6 +81,11 @@ RECIPES: tuple[Recipe, ...] = (
         note="no requests; flags implausible years, page-range venues and missing fields",
     ),
     Recipe(
+        purpose="Find out how stale a collection is, and what to collect again",
+        command="scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt",
+        note="no requests; feed the file back with scholar-crawler --clusters-file, one load per id",
+    ),
+    Recipe(
         purpose="Turn what you collected into a readable overview and a bibliography, offline",
         command="scholar-digest out/*.jsonl --report out/report.md --bibtex out/refs.bib",
         note="no requests at all; merges duplicates across files first",

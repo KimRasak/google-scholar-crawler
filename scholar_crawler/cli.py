@@ -51,6 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="list all versions of one work; accepts an id or a versions_url; repeatable",
     )
     query.add_argument(
+        "--clusters-file",
+        type=Path,
+        help="file with one cluster id or versions_url per line, as written by "
+        "scholar-digest --refresh-list",
+    )
+    query.add_argument(
         "--author",
         action="append",
         default=[],
@@ -223,19 +229,36 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _lines_of(path: Path) -> list[str]:
+    """Read a list file, dropping blank lines and ``#`` comments.
+
+    :param path: the file to read.
+    :returns: the remaining lines, stripped.
+    """
+    kept = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            kept.append(stripped)
+    return kept
+
+
 def _collect_queries(args: argparse.Namespace) -> list[str]:
     """Gather queries from ``--query`` flags and ``--queries-file``.
 
     :param args: parsed arguments.
     :returns: queries in the order given, blank lines and ``#`` comments dropped.
     """
-    queries = list(args.query)
-    if args.queries_file:
-        for line in args.queries_file.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                queries.append(line)
-    return queries
+    return list(args.query) + (_lines_of(args.queries_file) if args.queries_file else [])
+
+
+def _collect_clusters(args: argparse.Namespace) -> list[str]:
+    """Gather cluster ids from ``--cluster`` flags and ``--clusters-file``.
+
+    :param args: parsed arguments.
+    :returns: ids or URLs in the order given, blank lines and ``#`` comments dropped.
+    """
+    return list(args.cluster) + (_lines_of(args.clusters_file) if args.clusters_file else [])
 
 
 def build_targets(args: argparse.Namespace) -> tuple[list[SearchRequest], list[AuthorRequest]]:
@@ -256,7 +279,9 @@ def build_targets(args: argparse.Namespace) -> tuple[list[SearchRequest], list[A
     }
     listings = [SearchRequest(query=query, **shared) for query in _collect_queries(args)]
     listings += [SearchRequest(cites=parse_cluster_id(value), **shared) for value in args.cites]
-    listings += [SearchRequest(cluster=parse_cluster_id(value), **shared) for value in args.cluster]
+    listings += [
+        SearchRequest(cluster=parse_cluster_id(value), **shared) for value in _collect_clusters(args)
+    ]
     authors = [
         AuthorRequest(
             user_id=parse_user_id(value), language=args.lang, sort_by_year=args.sort_by_date
@@ -265,7 +290,8 @@ def build_targets(args: argparse.Namespace) -> tuple[list[SearchRequest], list[A
     ]
     if not listings and not authors:
         raise ValueError(
-            "provide at least one --query, --queries-file, --cites, --cluster or --author"
+            "provide at least one --query, --queries-file, --cites, --cluster, "
+            "--clusters-file or --author"
         )
     return listings, authors
 
