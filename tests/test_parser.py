@@ -1,0 +1,104 @@
+"""Parser and URL-building behavior."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scholar_crawler.models import SearchRequest  # noqa: E402
+from scholar_crawler.parser import parse_result_page  # noqa: E402
+from scholar_crawler.urls import search_url  # noqa: E402
+from tests.fixtures import EMPTY_PAGE_HTML, RESULT_PAGE_HTML  # noqa: E402
+
+
+def test_parses_every_card_including_citation_only() -> None:
+    page = parse_result_page(RESULT_PAGE_HTML, query="transformer", start=0)
+    assert [result.cluster_id for result in page.results] == ["AAA111", "BBB222", "CCC333"]
+    assert page.results[2].citation_only is True
+    assert page.results[2].link is None
+
+
+def test_first_card_fields() -> None:
+    first = parse_result_page(RESULT_PAGE_HTML, query="transformer", start=10).results[0]
+    assert first.title == "Attention is all you need"
+    assert first.position == 11
+    assert first.page_start == 10
+    assert first.link == "https://example.org/paper"
+    assert first.resource_link == "https://example.org/paper.pdf"
+    assert first.resource_type == "PDF"
+    assert first.authors == "A Vaswani, N Shazeer, N Parmar"
+    assert first.venue == "Advances in neural information processing systems"
+    assert first.year == 2017
+    assert first.cited_by_count == 123456
+    assert first.cited_by_url == "https://scholar.google.com/scholar?cites=1234567890&as_sdt=2005"
+    assert first.versions_count == 89
+    assert first.related_url is not None
+    assert "Transformer" in first.snippet
+
+
+def test_relative_title_link_is_absolute() -> None:
+    second = parse_result_page(RESULT_PAGE_HTML).results[1]
+    assert second.link == "https://scholar.google.com/citations?user=xyz"
+    assert second.versions_count is None
+
+
+def test_bolded_query_terms_do_not_split_words() -> None:
+    # Scholar wraps matched terms in <b>, sometimes mid-word.
+    assert parse_result_page(RESULT_PAGE_HTML).results[1].title == (
+        "Deep residual learning for multi-agents"
+    )
+
+
+def test_total_estimate_skips_non_numeric_banner() -> None:
+    assert parse_result_page(RESULT_PAGE_HTML).total_estimate == 1240
+
+
+def test_total_estimate_ignores_the_page_number_from_page_two_on() -> None:
+    page_two = RESULT_PAGE_HTML.replace(
+        "About 1,240 results (0.06 sec)", "Page 2 of about 1,240 results (0.06 sec)"
+    )
+    assert parse_result_page(page_two, start=10).total_estimate == 1240
+
+
+def test_next_page_detected_only_for_larger_offsets() -> None:
+    assert parse_result_page(RESULT_PAGE_HTML, start=0).has_next is True
+    assert parse_result_page(RESULT_PAGE_HTML, start=10).has_next is False
+
+
+def test_empty_page_yields_no_results() -> None:
+    page = parse_result_page(EMPTY_PAGE_HTML)
+    assert page.results == []
+    assert page.has_next is False
+
+
+def test_search_url_encodes_filters() -> None:
+    request = SearchRequest(
+        query="graph neural network",
+        year_low=2020,
+        year_high=2024,
+        language="zh-CN",
+        sort_by_date=True,
+        include_citations=False,
+        include_patents=False,
+        review_only=True,
+    )
+    url = search_url(request, start=20)
+    assert url.startswith("https://scholar.google.com/scholar?")
+    for fragment in ("q=graph+neural+network", "hl=zh-CN", "start=20", "as_ylo=2020", "as_yhi=2024",
+                     "scisbd=1", "as_rr=1", "as_vis=1", "as_sdt=0"):
+        assert fragment in url
+
+
+def test_search_url_omits_start_and_defaults_to_english() -> None:
+    url = search_url(SearchRequest(query="llm agents"))
+    assert "start=" not in url
+    assert "hl=en" in url
+    assert "as_sdt=0%2C5" in url
+
+
+def test_signature_distinguishes_filters() -> None:
+    base = SearchRequest(query="x")
+    assert base.signature() != SearchRequest(query="x", year_low=2020).signature()
+    assert base.signature() == SearchRequest(query="x").signature()

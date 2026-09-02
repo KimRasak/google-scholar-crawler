@@ -1,0 +1,6 @@
+# One query per line; blank lines and #-comments are ignored.
+# Scholar's advanced syntax works here as-is.
+large language model agents
+retrieval augmented generation evaluation
+author:"Yoshua Bengio" source:"NeurIPS"
+"graph neural network" AND "drug discovery"
