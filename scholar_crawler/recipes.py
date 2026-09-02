@@ -66,6 +66,11 @@ RECIPES: tuple[Recipe, ...] = (
         note="each target continues from the offset in the state file; --show-state first",
     ),
     Recipe(
+        purpose="Check how much of what you collected can be trusted",
+        command="scholar-digest out/*.jsonl --audit",
+        note="no requests; flags implausible years, page-range venues and missing fields",
+    ),
+    Recipe(
         purpose="Turn what you collected into a summary and a bibliography, offline",
         command="scholar-digest out/*.jsonl --group-by venue --bibtex out/refs.bib",
         note="no requests at all; merges duplicates across files first",

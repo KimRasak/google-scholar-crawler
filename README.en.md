@@ -45,7 +45,7 @@ Python 3.10+. Keep the default `--channel chrome` when Chrome is installed. `sch
 
 ## Usage
 
-Rather than reading the flag table, start from `--recipes`: nine complete commands to copy, ordered from safest to most expensive (self-check, takeover rehearsal, one topic, costing a run, batch plus CSV, an author, the citation graph, resuming, offline digest). A run given nothing to do prints the first three after the error.
+Rather than reading the flag table, start from `--recipes`: ten complete commands to copy, ordered from safest to most expensive (self-check, takeover rehearsal, one topic, costing a run, batch plus CSV, an author, the citation graph, resuming, auditing, offline digest). A run given nothing to do prints the first three after the error.
 
 ```sh
 $ scholar-crawler --recipes
@@ -120,6 +120,7 @@ When the same work appears in several files, the higher citation count wins as t
 | `--min-citations`, `--year-from`, `--year-to` | filters; a year range drops records without a year |
 | `--top` | how many most-cited records the overview lists (default: 5) |
 | `--group-by` | group by `author`, `venue`, `year` or `level` |
+| `--audit` | audit fields: implausible values and missing rates, as errors and warnings |
 | `--min-group`, `--groups` | hide groups below N records; how many groups to list (default: 10) |
 | `--quiet` | print only what was written; needs `-o`, `--csv` or `--bibtex` |
 
@@ -236,6 +237,25 @@ These are reconstructions, not Scholar's own export, and the difference is worth
 So: author names keep Scholar's initials, a list Scholar truncated gains `and others`, and the arXiv identifier may be missing — in exchange for zero requests, plus the original link and the citation count. Export during the crawl when you need exact entries; build offline when you want a usable bibliography without waiting hours again.
 
 Details: a record exported during the crawl reuses its key, so both files name the same work identically; `Veličković` transliterates to `velickovic` (`ł`, `ø`, `ß`, `æ` are handled too); colliding keys gain `a`, `b`, …; a venue mentioning Proceedings, Conference or Workshop becomes `@inproceedings` with `booktitle`, and a record without a venue becomes `@misc`; titles are double-braced so a style cannot flatten their capitalization; `&`, `%` and `_` are escaped. Records without a title are skipped and counted.
+
+### Auditing what you collected: `--audit`
+
+A Scholar card carries one grey line holding "authors - venue, year - site", and the parser splits it by position. That works for the usual card and fails quietly on the rest: a venue that is really a page range, a year taken from digits in the journal name, an author list Scholar itself truncated. Nothing downstream notices — `--group-by year` simply groups a wrong year.
+
+`--audit` reads local files only and measures how much of what you already collected can be trusted:
+
+```
+$ scholar-digest out/*.jsonl --audit
+  audit of 9 records: 2 checks tripped (0 errors, 2 warnings)
+    warn  authors_truncated              3  33.3%  Scholar elided the author list, so BibTeX gets 'and others'
+        e.g. P Veličković, G Cucurull, A Casanova… | Graph attention networks
+    warn  cluster_id_missing             3  33.3%  no card id, so BibTeX export and citation expansion cannot address this record
+        e.g. <empty> | Generative adversarial nets
+```
+
+Two severities: `error` means the value is wrong (an implausible year, a year that appears nowhere in the byline it was read from, a venue that is a volume/issue/page range, a venue that still contains a year, a citation count with no citing-works link, a negative count, a missing title), and `warn` means missing or lossy (no venue/year/authors, a truncated author list, a bare hostname as the venue, a `[PDF]` tag left on the title, no card id). Each finding reports the count, the share and two real examples — not a score, but enough to judge whether the batch is usable.
+
+Its first run found a real defect: the profile parser kept the year inside the venue (`Advances in neural information processing systems 27, 2014`) while the result-page parser stripped it. Grouping happened to be immune (`normalize_venue` cuts the volume tail), but the stored field disagreed between the two sources and the exported BibTeX repeated the year inside `journal`. Both parsing paths now share one stripping function.
 
 ### Grouping
 
@@ -386,7 +406,7 @@ The slowdown has two stages: every takeover widens the delays by `--backoff-fact
 ## Development
 
 ```sh
-python3 -m pytest -q     # 206 tests, fully offline
+python3 -m pytest -q     # 217 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -395,6 +415,7 @@ All tests run offline (no network at all), grouped by area:
 - **Parsing**: result cards (citation-only records, PDF side links, cited-by and version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author profiles (header lines, the position-read summary table, publication rows, missing years and zero citations, the "show more" state), real-page fixtures (all ten self-checks on a real result page, field completeness, the sanitizing rules, a no-credentials scan)
 - **URLs and filters**: query and profile URL assembly, filter parameters, id and URL parsing, cite-popup addresses
 - **Crawl loop**: pagination and author batching, pacing and cooldowns, the back-to-back challenge wait and its off switch, both run-summary duration formats, HTML dumps, a challenge during export
+- **Record audit**: a clean record trips nothing, page-range venues and leftover years, a year the byline never mentioned, citations without a link, negative counts, the severity of missing and lossy fields, citation-only records not blamed for a missing card id, counts with examples, and zero errors on records parsed from the real fixtures
 - **Documentation**: in-page links in both READMEs resolve to real sections, the navigation table covers at least seven situations, and both documents list exactly the modules that exist
 - **Modes**: all four modes driven without argparse (the rehearsal in a real headless Chromium), showing and forgetting state, and takeovers printed newest last
 - **Recipes**: every recipe parses, builds a target and (for the `--dry-run` one) actually runs; the print format, the first three shown for a bare invocation, and a terse error when arguments were passed
@@ -431,6 +452,7 @@ scholar_crawler/
   recipes.py    complete commands to copy
   digest.py     offline digest: merge, filter, command line
   analysis.py   offline analysis: overview counts and grouping
+  audit.py      offline audit: implausible and missing fields
   bibsynth.py   offline bibliography: BibTeX from stored fields
   storage.py    JSONL/CSV writers, author profile records, the .bib file, resume state
   cli.py        command-line entry point: flag definitions and mode dispatch

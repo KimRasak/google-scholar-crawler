@@ -45,7 +45,9 @@ def test_publications_become_result_records() -> None:
     assert first.title == "Notes on the Analytical Engine"
     assert first.link is not None and first.link.startswith("https://scholar.google.com/citations?")
     assert first.authors == "A Lovelace, C Babbage"
-    assert first.venue == "Scientific Memoirs 3, 666-731, 1843"
+    # The year is stored in its own field, so it is stripped from the venue text: keeping
+    # both would split one journal into one venue group per year.
+    assert first.venue == "Scientific Memoirs 3, 666-731"
     assert first.year == 1843
     assert first.cited_by_count == 2048
     assert first.cited_by_url == "https://scholar.google.com/scholar?oi=bibs&hl=en&cites=111222333"

@@ -75,6 +75,18 @@ def _all_ints(text: str) -> list[int]:
     return values
 
 
+def _strip_year(text: str) -> str | None:
+    """Remove the publication year from a venue string.
+
+    Both the result card and the profile row keep the year inside the venue text while the
+    year is stored separately. Leaving it in splits one journal into one group per year.
+
+    :param text: venue text as Scholar renders it.
+    :returns: the venue without its year, or None when nothing is left.
+    """
+    return re.sub(r",?\s*\b(1[89]\d{2}|20\d{2})\b", "", text).strip(" ,") or None
+
+
 def _split_byline(byline: str) -> tuple[str | None, str | None, int | None]:
     """Split a ``div.gs_a`` byline into authors, venue and year.
 
@@ -88,8 +100,7 @@ def _split_byline(byline: str) -> tuple[str | None, str | None, int | None]:
     middle = segments[1] if len(segments) > 1 else ""
     year_match = _YEAR_RE.search(middle) or _YEAR_RE.search(byline)
     year = int(year_match.group(1)) if year_match else None
-    venue = re.sub(r",?\s*\b(1[89]\d{2}|20\d{2})\b", "", middle).strip(" ,") or None
-    return authors, venue, year
+    return authors, _strip_year(middle), year
 
 
 def _footer_links(card: Tag) -> tuple[int | None, str | None, int | None, str | None, str | None]:
@@ -323,7 +334,7 @@ def parse_author_page(html: str, *, user_id: str, cstart: int = 0) -> AuthorPage
             continue
         grays = row.select("div.gs_gray")
         authors = _text(grays[0]) if grays else None
-        venue = _text(grays[1]) if len(grays) > 1 else None
+        venue = _strip_year(_text(grays[1])) if len(grays) > 1 else None
         cites_link = row.select_one("a.gsc_a_ac")
         cited_count = None
         if cites_link is not None:

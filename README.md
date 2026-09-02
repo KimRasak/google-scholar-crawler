@@ -45,7 +45,7 @@ python3 -m playwright install chromium   # 若不用本机 Chrome（--channel ""
 
 ## 快速开始
 
-不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出九条可以直接复制的完整命令（自检、演练接管、单查询、先算账、批量+CSV、作者主页、引文网络、断点续抓、离线出书目）。什么都不传时，报错后也会顺手列出前三条。
+不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十条可以直接复制的完整命令（自检、演练接管、单查询、先算账、批量+CSV、作者主页、引文网络、断点续抓、数据体检、离线出书目）。什么都不传时，报错后也会顺手列出前三条。
 
 ```sh
 $ scholar-crawler --recipes
@@ -120,6 +120,7 @@ scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.js
 | `--min-citations`、`--year-from`、`--year-to` | 过滤条件；带年份区间时会丢掉没有年份的记录 |
 | `--top` | 概览里列出的高被引条数（默认 5） |
 | `--group-by` | 按 `author`/`venue`/`year`/`level` 分组统计 |
+| `--audit` | 体检字段：可疑值与缺失率，分 error/warn 两档 |
 | `--min-group`、`--groups` | 隐藏记录数少于 N 的组；最多列出几组（默认 10） |
 | `--quiet` | 只打印写出结果，需要配合 `-o`、`--csv` 或 `--bibtex` |
 
@@ -235,6 +236,25 @@ scholar-digest out/all.jsonl --min-citations 500 --bibtex out/refs.bib
 也就是说：作者名只有 Scholar 显示的缩写、被它截断的作者列表补 `and others`、arXiv 编号可能缺失；换来的是零请求，外加原始链接与被引数。要精确条目就在抓取时导；要一份能直接用的书目、又不想再等几小时，就离线生成。
 
 其他细节：已经在抓取时导出过的记录会沿用同一个 key（两份文件指同一篇论文时名字一致）；`Veličković` 这类会正确转写成 `velickovic`（`ł`、`ø`、`ß`、`æ` 也都处理）；key 撞车时追加 `a`、`b`；venue 里出现 Proceedings/Conference/Workshop 的记为 `@inproceedings` 并用 `booktitle`，没有 venue 的记为 `@misc`；题名用双花括号包住，避免某些样式把大小写压平；`&`、`%`、`_` 等会转义。没有题名的记录会被跳过并计数。
+
+### 体检已抓到的数据：`--audit`
+
+Scholar 的结果卡片只有一行灰字承载「作者 - 期刊, 年份 - 站点」，解析靠位置切分：常见卡片没问题，剩下的会静默出错——venue 实际上是页码范围、year 来自期刊名里的数字、作者列表被 Scholar 自己截断。下游不会察觉，`--group-by year` 照样按错的年份分组。
+
+`--audit` 只读本地文件，把「已经抓到的数据有多不可信」量出来：
+
+```
+$ scholar-digest out/*.jsonl --audit
+  audit of 9 records: 2 checks tripped (0 errors, 2 warnings)
+    warn  authors_truncated              3  33.3%  Scholar elided the author list, so BibTeX gets 'and others'
+        e.g. P Veličković, G Cucurull, A Casanova… | Graph attention networks
+    warn  cluster_id_missing             3  33.3%  no card id, so BibTeX export and citation expansion cannot address this record
+        e.g. <empty> | Generative adversarial nets
+```
+
+分两档：`error` 是值本身错了（年份不在合理区间、年份在原始灰字里根本没出现过、venue 是卷期页码、venue 里还留着年份、有被引数却没有被引链接、计数为负、标题缺失），`warn` 是缺失或有损（缺 venue/year/作者、作者被截断、venue 是裸域名、标题带 `[PDF]` 标签、没有 card id）。每项给出条数、占比、以及两个真实例子——不是给个总分，而是让你自己判断这批数据能不能用。
+
+这个功能第一次跑就抓到一个真实缺陷：作者主页解析出的 venue 保留了年份（`Advances in neural information processing systems 27, 2014`），而检索页解析是剥掉年份的。分组统计侥幸没受影响（`normalize_venue` 会切掉卷期尾巴），但 JSONL/CSV 里两种来源的字段不一致，导出的 BibTeX 里 `journal` 也重复带上了年份。现在两个解析路径共用同一个剥离函数。
 
 ### 分组统计
 
@@ -385,7 +405,7 @@ scholar-crawler --rehearse-handoff
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 206 个用例，全部离线
+python3 -m pytest -q     # 217 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -394,6 +414,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **解析**：结果卡片（仅引用条目、PDF 侧链、被引/版本计数、词中加粗、第二页的结果计数、零结果页）、作者主页（头部各行、按行位置读统计表、论文行、缺年份与零被引、「显示更多」状态）、真实页面夹具（结果页 10 项自检全过、字段完整性、脱敏规则、夹具不含凭证）
 - **URL 与过滤**：查询/主页地址拼装、过滤参数、id 与 URL 解析、cite 弹窗地址
 - **抓取循环**：翻页与作者分批、节奏与冷却、连续被拦的静默等待与关闭开关、运行摘要的长短两种格式、HTML dump、导出过程中被拦
+- **数据体检**：干净记录不误报、页码型 venue 与残留年份、与灰字矛盾的年份、有被引数无链接、负计数、缺失与有损字段的档位、仅引用条目不因缺 card id 被判错、占比与例子、真实夹具记录零 error
 - **文档导航**：两份 README 的页内链接都指向真实小节、导航表覆盖至少 7 种情况、两份文档的模块清单一致且与实际模块完全对应
 - **模式**：四种模式脱离 argparse 直接调用（演练在真实 headless Chromium 上跑）、断点查看与清除、接管记录按时间倒数打印
 - **示例命令**：每条 recipe 都能被解析、能构造出目标、`--dry-run` 那条真跑一遍；输出格式与「无参数时提示前三条、有参数出错时只报错」
@@ -430,6 +451,7 @@ scholar_crawler/
   recipes.py    可直接复制的完整命令
   digest.py     离线汇总：合并去重、过滤、命令行
   analysis.py   离线分析：概览统计与分组
+  audit.py      离线体检：字段可疑值与缺失率
   bibsynth.py   离线书目：由已存字段拼出 BibTeX
   storage.py    JSONL/CSV 写入、作者主页记录、BibTeX 文件、断点状态
   cli.py        命令行入口：参数定义、模式分发

@@ -20,6 +20,7 @@ from .analysis import (
     render_summary,
     summarize,
 )
+from .audit import audit_records, render_audit
 from .bibsynth import write_bibtex
 from .storage import CSV_COLUMNS
 
@@ -215,6 +216,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--groups", type=int, default=10, metavar="N", help="groups to list (default: 10)"
     )
+    parser.add_argument(
+        "--audit",
+        action="store_true",
+        help="report fields that parsed into something implausible (missing, out of range, "
+        "a venue that is really a page range) before trusting the numbers",
+    )
     parser.add_argument("--quiet", action="store_true", help="print only what was written")
     return parser
 
@@ -258,6 +265,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         for line in render_summary(summarize(kept, top=args.top)):
             print(f"  {line}", flush=True)
+        if args.audit:
+            for line in render_audit(audit_records(kept), len(kept)):
+                print(f"  {line}", flush=True)
         if args.group_by:
             groups = group_records(kept, args.group_by, min_size=args.min_group)
             for line in render_groups(groups, args.group_by, limit=args.groups):
