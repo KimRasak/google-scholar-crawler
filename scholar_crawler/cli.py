@@ -11,6 +11,7 @@ from .browser import BrowserOptions, browser_session
 from .challenge import ChallengeUnattended, HumanHandoff
 from .crawler import Pacing, ScholarCrawler
 from .expand import FollowPolicy
+from .history import advise
 from .models import AuthorRequest, SearchRequest
 from .plan import RunPlan, plan_run
 from .rehearsal import rehearse
@@ -157,8 +158,19 @@ def build_parser() -> argparse.ArgumentParser:
     browser.add_argument("--slow-mo", type=float, default=0.0, help="ms delay per browser action")
 
     pace = parser.add_argument_group("pacing and handoff")
-    pace.add_argument("--min-delay", type=float, default=4.0, help="min seconds between page requests")
-    pace.add_argument("--max-delay", type=float, default=11.0, help="max seconds between page requests")
+    # Left unset so the run can tell an explicit choice from the default and never widen
+    # a rhythm the user asked for; see _resolve_pacing.
+    pace.add_argument(
+        "--min-delay", type=float, help=f"min seconds between page requests (default: {DEFAULT_MIN_DELAY})"
+    )
+    pace.add_argument(
+        "--max-delay", type=float, help=f"max seconds between page requests (default: {DEFAULT_MAX_DELAY})"
+    )
+    pace.add_argument(
+        "--no-learn-from-history",
+        action="store_true",
+        help="ignore the challenge log instead of starting slower after previous blocks",
+    )
     pace.add_argument("--cooldown-every", type=int, default=10, help="long pause every N pages; 0 disables")
     pace.add_argument("--cooldown-seconds", type=float, default=90.0, help="length of the long pause")
     pace.add_argument(
@@ -264,6 +276,12 @@ def _browser_options(args: argparse.Namespace) -> BrowserOptions:
     )
 
 
+DEFAULT_MIN_DELAY = 4.0
+"""Starting minimum delay, widened when the challenge log shows previous blocks."""
+
+DEFAULT_MAX_DELAY = 11.0
+"""Starting maximum delay, widened when the challenge log shows previous blocks."""
+
 SELF_CHECK_QUERY = "machine learning"
 """Broad query used by ``--self-check``: many hits, PDFs, citations and a next page."""
 
@@ -280,7 +298,12 @@ def _run_self_check(args: argparse.Namespace) -> int:
     try:
         with browser_session(options) as (_context, page):
             crawler = ScholarCrawler(
-                page, handoff, host=args.host, max_handoffs=args.max_handoffs, dump_dir=args.dump_html
+                page,
+                handoff,
+                host=args.host,
+                max_handoffs=args.max_handoffs,
+                dump_dir=args.dump_html,
+                challenge_log=ChallengeLog(args.challenge_log),
             )
             fetched = crawler.fetch_page(SearchRequest(query=SELF_CHECK_QUERY, language=args.lang), 0)
     except KeyboardInterrupt:
@@ -375,6 +398,43 @@ def _run_rehearsal(args: argparse.Namespace) -> int:
         return 1
 
 
+def _resolve_pacing(args: argparse.Namespace) -> Pacing:
+    """Choose the run's rhythm, learning from previous blocks unless it was set by hand.
+
+    Explicit ``--min-delay``/``--max-delay`` values are honoured as given; only the defaults
+    are widened, and only when the challenge log records blocks.
+
+    :param args: parsed arguments.
+    :returns: the pacing this run should use.
+    :raises ValueError: when the pacing values are inconsistent.
+    """
+    chosen = args.min_delay is not None or args.max_delay is not None
+    min_delay = args.min_delay if args.min_delay is not None else DEFAULT_MIN_DELAY
+    max_delay = args.max_delay if args.max_delay is not None else DEFAULT_MAX_DELAY
+    if not args.no_learn_from_history:
+        advice = advise(ChallengeLog(args.challenge_log).entries(), min_delay, max_delay)
+        if advice is not None and chosen:
+            print(f"[pace] {advice.history.describe()}", flush=True)
+            if advice.changes_pacing:
+                print(
+                    "[pace] keeping the delays you passed; drop --min-delay/--max-delay "
+                    "to let the log choose them",
+                    flush=True,
+                )
+        elif advice is not None:
+            print(f"[pace] {advice.describe()}", flush=True)
+            if advice.changes_pacing:
+                min_delay, max_delay = advice.min_delay, advice.max_delay
+    return Pacing(
+        min_delay=min_delay,
+        max_delay=max_delay,
+        cooldown_every=args.cooldown_every,
+        cooldown_seconds=args.cooldown_seconds,
+        backoff_factor=args.backoff_factor,
+        challenge_cooldown=args.challenge_cooldown,
+    )
+
+
 def _limits_of(args: argparse.Namespace) -> CrawlLimits:
     """Collect the paging flags into limits for the run.
 
@@ -452,14 +512,7 @@ def main(argv: list[str] | None = None) -> int:
             breadth=args.follow_breadth,
             min_citations=args.follow_min_citations,
         )
-        pacing = Pacing(
-            min_delay=args.min_delay,
-            max_delay=args.max_delay,
-            cooldown_every=args.cooldown_every,
-            cooldown_seconds=args.cooldown_seconds,
-            backoff_factor=args.backoff_factor,
-            challenge_cooldown=args.challenge_cooldown,
-        )
+        pacing = _resolve_pacing(args)
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

@@ -118,6 +118,25 @@ That answers the questions that actually matter afterwards: at which request the
 
 `--rehearse-handoff` writes a record too (`outcome=rehearsed`), which also proves the log path is writable before a real challenge depends on it.
 
+### Learning to slow down across runs
+
+Getting blocked once should not stay in that one run. By default every start-up reads the takeover log and folds the lesson into this run's starting rhythm:
+
+```
+$ scholar-crawler -q "graph attention networks" -p 5
+[pace] 3 previous blocks (captcha x2, rate_limit x1); typically at request 14; 1 arrived back to back; last 2026-09-02T12:37:20+00:00; starting at 6.8-18.7s (x1.7)
+```
+
+The rules are deliberately conservative, and they **only ever widen the delays** — history can prove a rhythm was too fast, but no history proves a faster one is safe:
+
+- One block is not a pattern: it warns and changes nothing.
+- Two or more blocks: x1.3; five or more: x1.6.
+- A block that arrived with no successful page in between: +0.2 (solving the first one did not restore trust).
+- Blocks typically arriving within the first 30 requests: +0.2 (the rhythm is the problem, not the volume).
+- Capped at x2.0. Rehearsals (`outcome=rehearsed`) are not evidence.
+
+Delays you passed yourself are never overridden: the history is printed and the run states that it keeps your values. `--no-learn-from-history` turns the behavior off entirely. `--dry-run` estimates with the learned rhythm, so you can see how much slower this run will be before starting it.
+
 ## Reviewing and resetting resume state
 
 After many short sessions the state file no longer tells you much: its keys are signatures meant for the program. Both of these commands work offline:
@@ -252,6 +271,7 @@ It fetches one page of a broad query and reports, field by field, whether titles
 | `--bibtex` | also export BibTeX to a `.bib` file; deduplicated by citation key, with `extra.bibtex_key` recorded on each record |
 | `--profiles-out`, `--dump-html` | author profile headers (one record per author, re-crawls replace it), raw HTML of every fetched page |
 | `--profile`, `--channel`, `--locale`, `--timezone`, `--proxy` | browser profile and environment |
+| `--no-learn-from-history` | start at the default rhythm instead of reading the takeover log |
 | `--min-delay/--max-delay`, `--cooldown-every/--cooldown-seconds` | request rhythm |
 | `--handoff-timeout`, `--max-handoffs`, `--backoff-factor`, `--challenge-cooldown` | how long to wait for a human (0 = forever), takeover budget, slowdown per takeover, wait-out after back-to-back challenges |
 | `--show-state`, `--forget PATTERN` | review stored progress and recent takeovers; drop cursors by signature substring (empty pattern drops all) |
@@ -339,7 +359,7 @@ The slowdown has two stages: every takeover widens the delays by `--backoff-fact
 ## Development
 
 ```sh
-python3 -m pytest -q     # 184 tests, fully offline
+python3 -m pytest -q     # 193 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -348,6 +368,7 @@ All tests run offline (no network at all), grouped by area:
 - **Parsing**: result cards (citation-only records, PDF side links, cited-by and version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author profiles (header lines, the position-read summary table, publication rows, missing years and zero citations, the "show more" state), real-page fixtures (all ten self-checks on a real result page, field completeness, the sanitizing rules, a no-credentials scan)
 - **URLs and filters**: query and profile URL assembly, filter parameters, id and URL parsing, cite-popup addresses
 - **Crawl loop**: pagination and author batching, pacing and cooldowns, the back-to-back challenge wait and its off switch, both run-summary duration formats, HTML dumps, a challenge during export
+- **Cross-run learning**: rehearsals excluded as evidence, the history summary (kinds, position, streaks), one block only warning, factors stacking for repeated and early blocks with a cap, never speeding a run up, hand-passed delays left alone, the off switch, an empty log leaving defaults
 - **Takeover log**: URL redaction (challenge tokens and search parameters treated differently), the one-line summary, appending and reading back (skipping bad lines), all three outcomes during a crawl (solved, budget exhausted, headless refusal), a recorded rehearsal, and `--show-state` reading it back
 - **Human takeover**: challenge detection against a real headless-Chromium DOM, the wait's timeout, closed window and headless refusal, the full rehearsal path (detected, cleared, resumed)
 - **Citation graph**: most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence
@@ -374,6 +395,7 @@ scholar_crawler/
   plan.py       run plan: pages, loads and duration estimates
   selfcheck.py  parser self-check: per-field health report
   rehearsal.py  takeover rehearsal: local challenge page, full-path drill
+  history.py    takeover log -> starting-rhythm advice
   digest.py     offline digest: merge, filter, command line
   analysis.py   offline analysis: overview counts and grouping
   bibsynth.py   offline bibliography: BibTeX from stored fields

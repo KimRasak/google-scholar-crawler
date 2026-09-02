@@ -118,6 +118,25 @@ $ scholar-crawler --show-state
 
 `--rehearse-handoff` 演练时也会写一条（`outcome=rehearsed`），顺带证明这个日志路径是可写的——不必等真被拦时才发现写不进去。
 
+### 跨运行学会减速
+
+被拦一次的经验不该只留在那一轮里。默认每次启动会读一眼接管记录，把上次的教训折进这轮的起始节奏：
+
+```
+$ scholar-crawler -q "graph attention networks" -p 5
+[pace] 3 previous blocks (captcha x2, rate_limit x1); typically at request 14; 1 arrived back to back; last 2026-09-02T12:37:20+00:00; starting at 6.8-18.7s (x1.7)
+```
+
+规则刻意保守，而且**只会放慢，不会加快**——历史能证明某个节奏太快，但没有任何历史能证明更快的节奏是安全的：
+
+- 只被拦过 1 次：不算规律，只提示，不改节奏。
+- 被拦 ≥2 次：×1.3；≥5 次：×1.6。
+- 出现过「解完一次立刻又被拦」：再 +0.2（说明解验证码并没有恢复信任）。
+- 通常在第 30 次请求以内就被拦：再 +0.2（说明问题是节奏，而不是抓得多）。
+- 上限 ×2.0。演练记录（`outcome=rehearsed`）不算证据。
+
+你自己传了 `--min-delay`/`--max-delay` 时，它绝不会覆盖你的选择——只打印历史，并说明「按你传的值跑」。`--no-learn-from-history` 完全关掉这个行为。`--dry-run` 里的用时估算也会用学到的节奏，所以能先看到「这轮会慢多少」。
+
 ## 查看与重置断点
 
 抓了很多次之后，哪些目标真的抓完了、下次会从哪一页继续，光看 state 文件的 JSON 并不好认（键是给程序用的签名）。两个命令都不联网：
@@ -251,7 +270,8 @@ scholar-crawler --self-check
 | `--bibtex` | 同时导出 BibTeX 到 `.bib` 文件；按引用键去重，记录里写入 `extra.bibtex_key` 便于关联 |
 | `--profiles-out`、`--dump-html` | 作者主页头部记录（每位作者一行，重复抓取覆盖旧值）、抓到的原始 HTML（排查解析问题用） |
 | `--profile`、`--channel`、`--locale`、`--timezone`、`--proxy` | 浏览器 profile 与环境参数 |
-| `--min-delay/--max-delay`、`--cooldown-every/--cooldown-seconds` | 抓取节奏 |
+| `--min-delay/--max-delay`、`--cooldown-every/--cooldown-seconds` | 抓取节奏（默认 4-11s；不传时会按接管记录自动放慢） |
+| `--no-learn-from-history` | 不读接管记录，按默认节奏起跑 |
 | `--handoff-timeout`、`--max-handoffs`、`--backoff-factor`、`--challenge-cooldown` | 等人多久（0 = 无限等）、最多接管几次、每次接管后延迟放大倍数、连续被拦时恢复前的静默等待 |
 | `--show-state`、`--forget PATTERN` | 查看断点进度与最近的接管记录；按签名子串清除断点（空串清空全部） |
 | `--dry-run` | 只打印这轮的抓取计划与用时估算，不发任何请求 |
@@ -338,7 +358,7 @@ scholar-crawler --rehearse-handoff
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 184 个用例，全部离线
+python3 -m pytest -q     # 193 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -347,6 +367,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **解析**：结果卡片（仅引用条目、PDF 侧链、被引/版本计数、词中加粗、第二页的结果计数、零结果页）、作者主页（头部各行、按行位置读统计表、论文行、缺年份与零被引、「显示更多」状态）、真实页面夹具（结果页 10 项自检全过、字段完整性、脱敏规则、夹具不含凭证）
 - **URL 与过滤**：查询/主页地址拼装、过滤参数、id 与 URL 解析、cite 弹窗地址
 - **抓取循环**：翻页与作者分批、节奏与冷却、连续被拦的静默等待与关闭开关、运行摘要的长短两种格式、HTML dump、导出过程中被拦
+- **跨运行学习**：演练不算证据、历史摘要（类型/位置/连续）、1 次只提示、重复被拦与提前被拦的倍数叠加与上限、只放慢不加快、手动传参不被覆盖、可关闭、空日志不改默认
 - **接管记录**：URL 脱敏（验证页令牌与检索参数区别对待）、单行摘要格式、追加与读回（跳过坏行）、抓取中被拦/接管额度用尽/headless 拒绝三种结局各自落账、演练也落账、`--show-state` 读回
 - **人工接管**：真实 headless Chromium DOM 上的验证页判定、等待超时/窗口被关/headless 拒绝、接管演练全链路（识别→清除→恢复）
 - **引文网络**：按被引排序选点、宽度上限、访问去重、被引下限、层级推进与提前收敛
@@ -373,6 +394,7 @@ scholar_crawler/
   plan.py       抓取计划：页数/加载数/用时估算
   selfcheck.py  解析自检：逐字段体检与报告
   rehearsal.py  接管演练：本地验证页与全链路空演
+  history.py    接管记录 → 起始节奏建议
   digest.py     离线汇总：合并去重、过滤、命令行
   analysis.py   离线分析：概览统计与分组
   bibsynth.py   离线书目：由已存字段拼出 BibTeX
