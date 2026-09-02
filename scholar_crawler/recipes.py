@@ -71,8 +71,8 @@ RECIPES: tuple[Recipe, ...] = (
         note="no requests; flags implausible years, page-range venues and missing fields",
     ),
     Recipe(
-        purpose="Turn what you collected into a summary and a bibliography, offline",
-        command="scholar-digest out/*.jsonl --group-by venue --bibtex out/refs.bib",
+        purpose="Turn what you collected into a readable overview and a bibliography, offline",
+        command="scholar-digest out/*.jsonl --report out/report.md --bibtex out/refs.bib",
         note="no requests at all; merges duplicates across files first",
     ),
 )

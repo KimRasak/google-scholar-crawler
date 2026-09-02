@@ -22,6 +22,7 @@ from .analysis import (
 )
 from .audit import audit_records, render_audit
 from .bibsynth import write_bibtex
+from .report import build_report
 from .storage import CSV_COLUMNS
 
 Record = dict[str, Any]
@@ -217,6 +218,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--groups", type=int, default=10, metavar="N", help="groups to list (default: 10)"
     )
     parser.add_argument(
+        "--report",
+        type=Path,
+        metavar="FILE",
+        help="write a readable Markdown overview of the merged records to this file",
+    )
+    parser.add_argument(
+        "--report-title", default="Literature overview", metavar="TEXT", help="heading for --report"
+    )
+    parser.add_argument(
         "--audit",
         action="store_true",
         help="report fields that parsed into something implausible (missing, out of range, "
@@ -234,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
         would produce no output at all.
     """
     args = build_parser().parse_args(argv)
-    if args.quiet and not (args.out or args.csv or args.bibtex):
+    if args.quiet and not (args.out or args.csv or args.bibtex or args.report):
         print(
             "error: --quiet needs --out, --csv or --bibtex, otherwise the run prints nothing",
             flush=True,
@@ -276,6 +286,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[out] {write_jsonl(kept, args.out)} records -> {args.out}", flush=True)
     if args.csv:
         print(f"[out] {write_csv(kept, args.csv)} rows -> {args.csv}", flush=True)
+    if args.report:
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        markdown = build_report(kept, title=args.report_title, top=args.top or 15)
+        args.report.write_text(markdown, encoding="utf-8")
+        counted = f"{len(kept)} record" + ("" if len(kept) == 1 else "s")
+        print(f"[out] report on {counted} -> {args.report}", flush=True)
     if args.bibtex:
         report = write_bibtex(kept, args.bibtex)
         print(

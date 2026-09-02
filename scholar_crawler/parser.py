@@ -17,7 +17,9 @@ from .models import AuthorPage, AuthorProfile, PageResult, ScholarResult
 from .urls import absolute
 
 _INT_RE = re.compile(r"\d[\d,\.\s\u00a0]*")
-_YEAR_RE = re.compile(r"\b(1[89]\d{2}|20\d{2})\b")
+# A year is four digits that are not part of an identifier: arXiv numbers its preprints
+# YYMM.NNNNN, so "arXiv:1910.11945" reads as the year 1910 without the guards.
+_YEAR_RE = re.compile(r"(?<![\d:.])\b(1[89]\d{2}|20\d{2})\b(?![.\d])")
 _START_RE = re.compile(r"[?&]start=(\d+)")
 _BIBTEX_KEY_RE = re.compile(r"@\w+\s*\{\s*([^,\s]+)\s*,")
 _TAG_PREFIX_RE = re.compile(r"^\s*\[[^\]]{1,12}\]\s*")
@@ -84,7 +86,11 @@ def _strip_year(text: str) -> str | None:
     :param text: venue text as Scholar renders it.
     :returns: the venue without its year, or None when nothing is left.
     """
-    return re.sub(r",?\s*\b(1[89]\d{2}|20\d{2})\b", "", text).strip(" ,") or None
+    without_years = _YEAR_RE.sub("", text)
+    # Removing a year from "2022-2023" or "Nature, 2019," leaves separators with nothing
+    # between them; page ranges keep their digits and so survive this.
+    tidied = re.sub(r"\s*([-–,])\s*(?=[-–,]|$)", "", without_years)
+    return tidied.strip(" ,-–") or None
 
 
 def _split_byline(byline: str) -> tuple[str | None, str | None, int | None]:

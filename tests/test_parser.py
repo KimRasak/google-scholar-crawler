@@ -148,3 +148,29 @@ def test_parse_cluster_id_accepts_ids_and_urls(value: str) -> None:
 def test_parse_cluster_id_rejects_unrelated_text() -> None:
     with pytest.raises(ValueError, match="no Scholar cites/cluster id"):
         parse_cluster_id("https://example.org/paper")
+
+
+def _with_byline(byline: str) -> str:
+    """Replace the first card's grey line in the fixture page.
+
+    :param byline: the byline to put in its place.
+    :returns: the page HTML.
+    """
+    original = """A Vaswani, N Shazeer, N Parmar - Advances in neural information
+        processing systems, 2017 - proceedings.neurips.cc"""
+    assert original in RESULT_PAGE_HTML
+    return RESULT_PAGE_HTML.replace(original, byline, 1)
+
+
+def test_an_arxiv_identifier_is_not_read_as_the_publication_year() -> None:
+    # arXiv numbers preprints YYMM.NNNNN, so "arXiv:1910.11945" used to be read as 1910,
+    # and stripping that "year" left the venue as "arXiv preprint arXiv:.11945".
+    byline = "G Wang, J Leskovec - arXiv preprint arXiv:1910.11945, 2019 - arxiv.org"
+    first = parse_result_page(_with_byline(byline)).results[0]
+    assert first.year == 2019
+    assert first.venue == "arXiv preprint arXiv:1910.11945"
+
+
+def test_a_year_range_leaves_no_dangling_separator_in_the_venue() -> None:
+    byline = "X Wang - The world wide web conference, 2022-2023 - dl.acm.org"
+    assert parse_result_page(_with_byline(byline)).results[0].venue == "The world wide web conference"

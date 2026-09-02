@@ -13,7 +13,7 @@ The code never tries to solve, bypass or hide a verification challenge. Verifica
 | --- | --- |
 | First time | [Install](#install) → [Usage](#usage) (run `--recipes` and `--self-check` first) |
 | Collecting a batch | [Usage](#usage) → [Counting the cost first](#counting-the-cost-first---dry-run) → [Options](#options) → [Output](#output) |
-| Using what you collected | [Digesting collected results](#digesting-collected-results-no-requests) → [Building a bibliography offline](#building-a-bibliography-offline) → [Grouping](#grouping) |
+| Using what you collected | [A readable overview](#a-readable-overview---report) → [Building a bibliography offline](#building-a-bibliography-offline) → [Grouping](#grouping) |
 | Getting blocked | [The takeover log](#the-takeover-log) → [Learning to slow down across runs](#learning-to-slow-down-across-runs) → [Getting challenged less](#getting-challenged-less) → [Rehearsing the human takeover](#rehearsing-the-human-takeover) |
 | It stopped with an error | [Failures in plain words](#failures-in-plain-words) → [Self-check](#self-check) |
 | Parsing looks wrong | [Self-check](#self-check) → [Real-structure regression fixtures](#real-structure-regression-fixtures) → `--dump-html` |
@@ -122,6 +122,7 @@ When the same work appears in several files, the higher citation count wins as t
 | `--top` | how many most-cited records the overview lists (default: 5) |
 | `--group-by` | group by `author`, `venue`, `year` or `level` |
 | `--audit` | audit fields: implausible values and missing rates, as errors and warnings |
+| `--report` `--report-title` | write a readable Markdown overview |
 | `--min-group`, `--groups` | hide groups below N records; how many groups to list (default: 10) |
 | `--quiet` | print only what was written; needs `-o`, `--csv` or `--bibtex` |
 
@@ -238,6 +239,18 @@ These are reconstructions, not Scholar's own export, and the difference is worth
 So: author names keep Scholar's initials, a list Scholar truncated gains `and others`, and the arXiv identifier may be missing — in exchange for zero requests, plus the original link and the citation count. Export during the crawl when you need exact entries; build offline when you want a usable bibliography without waiting hours again.
 
 Details: a record exported during the crawl reuses its key, so both files name the same work identically; `Veličković` transliterates to `velickovic` (`ł`, `ø`, `ß`, `æ` are handled too); colliding keys gain `a`, `b`, …; a venue mentioning Proceedings, Conference or Workshop becomes `@inproceedings` with `booktitle`, and a record without a venue becomes `@misc`; titles are double-braced so a style cannot flatten their capitalization; `&`, `%` and `_` are escaped. Records without a title are skipped and counted.
+
+### A readable overview: `--report`
+
+JSONL and CSV are for programs and the terminal summary scrolls away, while what a literature search actually has to hand over is prose. `--report` writes the merged records as a Markdown overview you can paste into a first draft:
+
+```sh
+scholar-digest out/*.jsonl --report out/report.md --report-title "Graph attention networks: a first pass"
+```
+
+It contains the size of the collection at a glance (records, total citations, year span, venues, first authors), the most-cited works with their original links, two grouped tables — by venue and by first author, each with records, citations, median, year span and the group's most-cited work — a text bar chart of records per year (which survives copy-paste), which query each record came from, and finally a "how much of this to trust" section that reuses the `--audit` checks to state the missing rates and doubtful fields outright.
+
+The report opens by saying that every number comes from what Scholar showed when the records were collected and that nothing was re-fetched, so nobody mistakes it for live data.
 
 ### Auditing what you collected: `--audit`
 
@@ -448,7 +461,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 241 tests, fully offline
+python3 -m pytest -q     # 253 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -460,6 +473,7 @@ All tests run offline (no network at all), grouped by area:
 - **Failure diagnosis**: nine classes of network error, retrying only failures a retry could survive, an unrecognized error keeping its text and still advising, every diagnosis naming the URL and a next step, 429/503 told apart from other 5xx, an unreadable page pointing at parser.py and the saved copy, repeated challenges reported as a block, and the render order
 - **End to end**: a real browser against the local fake Scholar — paging and the page budget, a takeover losing nothing, `--resume`, an author profile stored, no alarm on clean data, data kept on disk when headless refuses the takeover, plain-words diagnoses for a refused connection, an unreadable page and HTTP 429, and a zero-hit listing still reported as empty
 - **Auditing while crawling**: the incremental tally agrees exactly with the batch audit, one bad record stays quiet, a field failing across a run raises an alarm, missing-field warnings never do, and the alarm prints after the run's output
+- **The report**: stating that the numbers are as-collected, the counts at a glance, links only where a destination exists, the grouped tables, a chart scaled to the busiest year, which query each record came from, its own trust section, an escaped pipe in a title, an em dash for a missing field, and counting as output under `--quiet`
 - **Record audit**: a clean record trips nothing, page-range venues and leftover years, a year the byline never mentioned, citations without a link, negative counts, the severity of missing and lossy fields, citation-only records not blamed for a missing card id, counts with examples, and zero errors on records parsed from the real fixtures
 - **Documentation**: in-page links in both READMEs resolve to real sections, the navigation table covers at least seven situations, and both documents list exactly the modules that exist
 - **Modes**: all four modes driven without argparse (the rehearsal in a real headless Chromium), showing and forgetting state, and takeovers printed newest last
@@ -498,6 +512,7 @@ scholar_crawler/
   recipes.py    complete commands to copy
   digest.py     offline digest: merge, filter, command line
   analysis.py   offline analysis: overview counts and grouping
+  report.py     offline overview: the readable Markdown report
   audit.py      offline audit: implausible and missing fields
   bibsynth.py   offline bibliography: BibTeX from stored fields
   storage.py    JSONL/CSV writers, author profile records, the .bib file, resume state
