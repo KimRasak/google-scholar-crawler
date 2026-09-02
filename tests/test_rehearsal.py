@@ -16,6 +16,7 @@ from scholar_crawler.challenge import (  # noqa: E402
     ChallengeKind,
     ChallengeUnattended,
     HumanHandoff,
+    Takeover,
     detect_challenge,
 )
 from scholar_crawler.rehearsal import REHEARSAL_HTML, rehearse  # noqa: E402
@@ -43,8 +44,9 @@ def test_the_rehearsal_page_is_detected_and_clears_on_the_button(page: Page) -> 
 def test_a_full_rehearsal_reports_success(page: Page, capsys: pytest.CaptureFixture[str]) -> None:
     # The stand-in human presses the button as soon as the takeover starts.
     class _Handoff(HumanHandoff):
-        def resolve(self, target: Page, challenge: Challenge) -> None:
+        def resolve(self, target: Page, challenge: Challenge) -> Takeover:
             target.click("#rehearsal-clear")
+            return Takeover(waited=0.0, saw=(challenge.kind.value,))
 
     assert rehearse(page, _Handoff()) is True
     printed = capsys.readouterr().out
@@ -54,8 +56,9 @@ def test_a_full_rehearsal_reports_success(page: Page, capsys: pytest.CaptureFixt
 
 def test_a_page_that_never_clears_is_reported(page: Page, capsys: pytest.CaptureFixture[str]) -> None:
     class _Handoff(HumanHandoff):
-        def resolve(self, target: Page, challenge: Challenge) -> None:
-            return None  # the human walked away, but the wait returned anyway
+        def resolve(self, target: Page, challenge: Challenge) -> Takeover:
+            # the human walked away, but the wait returned anyway
+            return Takeover(waited=0.0, saw=(challenge.kind.value,))
 
     assert rehearse(page, _Handoff()) is False
     assert "still looks challenged" in capsys.readouterr().out

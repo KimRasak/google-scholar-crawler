@@ -68,8 +68,9 @@ def rehearse(page: Page, handoff: HumanHandoff, log: ChallengeLog | None = None)
     print(f"[rehearse] detected {challenge.kind.value}: {challenge.detail}", flush=True)
     started = time.monotonic()
     outcome = "rehearsed"
+    saw: tuple[str, ...] = (challenge.kind.value,)
     try:
-        handoff.resolve(page, challenge)
+        saw = handoff.resolve(page, challenge).saw
     except ChallengeUnattended:
         outcome = "unattended"
         raise
@@ -88,6 +89,7 @@ def rehearse(page: Page, handoff: HumanHandoff, log: ChallengeLog | None = None)
                 waited=waited,
                 outcome=outcome,
                 target="rehearsal",
+                saw=saw,
             )
             print(f"[rehearse] recorded -> {log.path}: {entry.describe()}", flush=True)
     if detect_challenge(page) is not None:

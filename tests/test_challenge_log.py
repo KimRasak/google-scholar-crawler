@@ -18,6 +18,7 @@ from scholar_crawler.challenge import (  # noqa: E402
     ChallengeKind,
     ChallengeUnattended,
     HumanHandoff,
+    Takeover,
 )
 from scholar_crawler.cli import main  # noqa: E402
 from scholar_crawler.crawler import ScholarCrawler  # noqa: E402
@@ -49,6 +50,15 @@ def _record(**overrides: object) -> ChallengeRecord:
     }
     fields.update(overrides)
     return ChallengeRecord(**fields)  # type: ignore[arg-type]
+
+
+def _cleared(_self: object, _page: object, challenge: Challenge) -> Takeover:
+    """Stand in for a human who clears the challenge at once.
+
+    :param challenge: the challenge handed over.
+    :returns: the summary a real wait returns.
+    """
+    return Takeover(waited=0.0, saw=(challenge.kind.value,))
 
 
 def test_a_logged_url_keeps_the_request_and_drops_the_session() -> None:
@@ -124,7 +134,7 @@ def test_a_takeover_during_a_crawl_is_recorded(
 ) -> None:
     outcomes = iter([CAPTCHA, None])
     monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: next(outcomes, None))
-    monkeypatch.setattr(crawler_module.HumanHandoff, "resolve", lambda *_args: None)
+    monkeypatch.setattr(crawler_module.HumanHandoff, "resolve", _cleared)
     monkeypatch.setattr(crawler_module.time, "sleep", lambda _seconds: None)
     log = ChallengeLog(tmp_path / "challenges.jsonl")
     page = _FakePage(iter([CAPTCHA_PAGE_HTML, RESULT_PAGE_HTML]))
@@ -149,7 +159,7 @@ def test_an_exhausted_takeover_budget_is_recorded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: CAPTCHA)
-    monkeypatch.setattr(crawler_module.HumanHandoff, "resolve", lambda *_args: None)
+    monkeypatch.setattr(crawler_module.HumanHandoff, "resolve", _cleared)
     monkeypatch.setattr(crawler_module.time, "sleep", lambda _seconds: None)
     log = ChallengeLog(tmp_path / "challenges.jsonl")
     crawler = ScholarCrawler(
@@ -191,10 +201,42 @@ def browser_page() -> Iterator[Page]:
         browser.close()
 
 
+def test_the_kinds_a_wait_observed_survive_a_round_trip(tmp_path: Path) -> None:
+    log = ChallengeLog(tmp_path / "challenges.jsonl")
+    log.record(
+        kind="captcha",
+        url="https://scholar.google.com/scholar?q=x",
+        reason="matched #gs_captcha_ccl",
+        request_index=4,
+        consecutive=1,
+        waited=42.0,
+        outcome="resolved",
+        target="page",
+        saw=("captcha", "sign_in"),
+    )
+    entry = log.entries()[0]
+    assert entry.saw == ("captcha", "sign_in")
+    assert "became sign_in" in entry.describe()
+
+
+def test_a_record_written_before_the_wait_reported_kinds_still_reads_back(tmp_path: Path) -> None:
+    path = tmp_path / "challenges.jsonl"
+    path.write_text(
+        '{"at": "2026-01-01T00:00:00+00:00", "kind": "captcha", "url": "u", "reason": "r", '
+        '"request_index": 1, "consecutive": 1, "waited": 3.0, "outcome": "resolved", '
+        '"target": "page"}\n',
+        encoding="utf-8",
+    )
+    entry = ChallengeLog(path).entries()[0]
+    assert entry.saw == ()
+    assert "became" not in entry.describe()
+
+
 def test_a_rehearsal_records_the_drill(browser_page: Page, tmp_path: Path) -> None:
     class _Handoff(HumanHandoff):
-        def resolve(self, target: Page, challenge: Challenge) -> None:
+        def resolve(self, target: Page, challenge: Challenge) -> Takeover:
             target.click("#rehearsal-clear")
+            return Takeover(waited=0.0, saw=(challenge.kind.value,))
 
     browser_page.set_content(REHEARSAL_HTML)
     log = ChallengeLog(tmp_path / "challenges.jsonl")

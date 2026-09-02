@@ -110,15 +110,29 @@ scholar-crawler --author "https://scholar.google.com/citations?user=kukA0LcAAAAJ
 scholar-crawler -q 'author:"Yoshua Bengio" source:"NeurIPS"' -p 2
 ```
 
-A takeover looks like this:
+A takeover looks like this (real output from a wait, with the URL replaced by a `/sorry/` one):
 
 ```
 [handoff] captcha: matched #gs_captcha_ccl
 [handoff] URL: https://www.google.com/sorry/index?continue=...
-[handoff] The browser window is yours. Solve the challenge ...
-[handoff] cleared — resuming automated crawl.
+[handoff] The browser window is yours. Solve the challenge (or accept the
+[handoff] consent/sign-in page) and leave it on the Scholar result page.
+[handoff] No keypress needed — the page is re-checked every 2s and crawling resumes by itself. You have 600s to act.
+[handoff] Press Ctrl+C to stop instead.
+[handoff] waiting 15s so far, 585s left; still showing captcha
+[handoff] the page is now a sign_in: account sign-in wall
+[handoff] still waiting; 60s left before the run gives up and stops with whatever it collected
+[handoff] cleared after 128s — resuming automated crawl.
 [pace] backing off to 6.4-17.6s between pages
 ```
+
+The wait does not go quiet on you, because the person it is waiting for has usually stepped away:
+
+- **No keypress is needed.** The page is re-inspected every `--poll` seconds and the crawl resumes by itself. The opening message states how long there is, or says the wait has no limit under `--handoff-timeout 0`.
+- **Progress is reported** — how long it has waited, how much is left, and which kind of challenge is still showing.
+- **A change of challenge is announced.** Clearing a captcha only to land on a sign-in wall asks something different of you, so the wait says `the page is now a sign_in`.
+- **It rings again before giving up**, 60 seconds ahead, saying the run will stop with whatever it collected. When the first bell went unheard, this is the one that matters.
+- **The timeout message names what happened**: `the window showed captcha -> sign_in` tells you afterwards which step actually blocked.
 
 ## Digesting collected results (no requests)
 
@@ -165,7 +179,7 @@ $ scholar-crawler --show-state
 [handoff]     matched form#captcha-form at about:blank
 ```
 
-Each record carries the time, the kind (`captcha`, `rate_limit`, `consent`), what the detector matched, the URL it was stopped on, how many requests the run had already made, whether challenges arrived back to back and which one this was, how long it waited for a human, and how it ended — `resolved` (solved, crawling continued), `unattended` (`--headless` refusal or the wait timed out), `budget` (`--max-handoffs` exhausted), `interrupted` (Ctrl+C) or `rehearsed` (a drill).
+Each record carries the time, the kind (`captcha`, `rate_limit`, `consent`), what the detector matched, the URL it was stopped on, how many requests the run had already made, whether challenges arrived back to back and which one this was, how long it waited for a human, which kinds the window showed while they worked (`became sign_in`), and how it ended — `resolved` (solved, crawling continued), `unattended` (`--headless` refusal or the wait timed out), `budget` (`--max-handoffs` exhausted), `interrupted` (Ctrl+C) or `rehearsed` (a drill).
 
 That answers the questions that actually matter afterwards: at which request the block arrived, whether solving one was immediately followed by another (the pacing is still too fast), or whether nobody was at the keyboard.
 
@@ -573,7 +587,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 323 tests, fully offline
+python3 -m pytest -q     # 332 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 

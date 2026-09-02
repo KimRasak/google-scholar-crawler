@@ -20,7 +20,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scholar_crawler import crawler as crawler_module  # noqa: E402
 from scholar_crawler.browser import BrowserOptions, Session, browser_session  # noqa: E402
-from scholar_crawler.challenge import Challenge, HumanHandoff, detect_challenge  # noqa: E402
+from scholar_crawler.challenge import (  # noqa: E402
+    Challenge,
+    HumanHandoff,
+    Takeover,
+    detect_challenge,
+)
 from scholar_crawler.crawler import Pacing, ScholarCrawler  # noqa: E402
 from scholar_crawler.expand import FollowPolicy  # noqa: E402
 from scholar_crawler.models import AuthorRequest, SearchRequest  # noqa: E402
@@ -46,15 +51,17 @@ class _StandInHuman(HumanHandoff):
         super().__init__(timeout=5.0, poll_interval=0.0)
         self.reloads = 0
 
-    def resolve(self, page: Page, challenge: Challenge) -> None:
+    def resolve(self, page: Page, challenge: Challenge) -> Takeover:
         """Reload until the page carries content again.
 
         :param page: the challenged page.
         :param challenge: the detected challenge.
+        :returns: the takeover summary a real wait would return.
         """
         self.reloads += 1
         page.reload(wait_until="domcontentloaded")
         assert detect_challenge(page) is None, "the stand-in human failed to clear the page"
+        return Takeover(waited=0.0, saw=(challenge.kind.value,))
 
 
 @pytest.fixture(autouse=True)
@@ -152,6 +159,7 @@ def test_a_challenge_hands_over_and_the_crawl_finishes(page: Page, tmp_path: Pat
     takeovers = json.loads((tmp_path / "challenges.jsonl").read_text(encoding="utf-8").strip())
     assert takeovers["kind"] == "captcha"
     assert takeovers["outcome"] == "resolved"
+    assert takeovers["saw"] == ["captcha"]
     assert takeovers["target"] == "10"
     # The logged URL keeps what explains the takeover and redacts everything else, so the
     # log stays safe to keep and share.

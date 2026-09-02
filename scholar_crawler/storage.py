@@ -320,6 +320,8 @@ class ChallengeRecord:
     :param waited: seconds spent waiting for the human.
     :param outcome: ``resolved``, ``unattended``, ``budget`` or ``interrupted``.
     :param target: the request that was being loaded, as a short tag.
+    :param saw: challenge kinds the window showed while the human worked, in order; empty in
+        records written before the wait reported this.
     """
 
     at: str
@@ -331,6 +333,7 @@ class ChallengeRecord:
     waited: float
     outcome: str
     target: str
+    saw: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Render the record for JSONL.
@@ -347,6 +350,7 @@ class ChallengeRecord:
             "waited": round(self.waited, 1),
             "outcome": self.outcome,
             "target": self.target,
+            "saw": list(self.saw),
         }
 
     def describe(self) -> str:
@@ -356,8 +360,9 @@ class ChallengeRecord:
         """
         streak = f" x{self.consecutive} in a row" if self.consecutive > 1 else ""
         waited = f", waited {self.waited:.0f}s" if self.waited >= 1 else ""
+        turned = f", became {' -> '.join(self.saw[1:])}" if len(self.saw) > 1 else ""
         return (
-            f"{self.at}  {self.kind}{streak} -> {self.outcome}{waited} "
+            f"{self.at}  {self.kind}{streak} -> {self.outcome}{waited}{turned} "
             f"(after {self.request_index} requests, loading {self.target})"
         )
 
@@ -386,6 +391,7 @@ class ChallengeLog:
         waited: float,
         outcome: str,
         target: str,
+        saw: tuple[str, ...] = (),
     ) -> ChallengeRecord:
         """Append one takeover to the log.
 
@@ -397,6 +403,7 @@ class ChallengeLog:
         :param waited: seconds spent waiting for the human.
         :param outcome: how the takeover ended.
         :param target: the request that was being loaded.
+        :param saw: challenge kinds the window showed while the human worked.
         :returns: the record as written.
         """
         entry = ChallengeRecord(
@@ -409,6 +416,7 @@ class ChallengeLog:
             waited=waited,
             outcome=outcome,
             target=target,
+            saw=saw,
         )
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as handle:
@@ -442,6 +450,7 @@ class ChallengeLog:
                         waited=float(data.get("waited", 0.0)),
                         outcome=str(data.get("outcome", "?")),
                         target=str(data.get("target", "")),
+                        saw=tuple(str(kind) for kind in data.get("saw") or ()),
                     )
                 )
         return records

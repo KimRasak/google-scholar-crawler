@@ -110,15 +110,29 @@ scholar-crawler --author "https://scholar.google.com/citations?user=kukA0LcAAAAJ
 scholar-crawler -q 'author:"Yoshua Bengio" source:"NeurIPS"' -p 2
 ```
 
-运行中出现验证时终端会打印：
+运行中出现验证时终端会打印（下面是真实等待过程的输出，只把 URL 换成了 `/sorry/`）：
 
 ```
 [handoff] captcha: matched #gs_captcha_ccl
 [handoff] URL: https://www.google.com/sorry/index?continue=...
-[handoff] The browser window is yours. Solve the challenge ...
-[handoff] cleared — resuming automated crawl.
+[handoff] The browser window is yours. Solve the challenge (or accept the
+[handoff] consent/sign-in page) and leave it on the Scholar result page.
+[handoff] No keypress needed — the page is re-checked every 2s and crawling resumes by itself. You have 600s to act.
+[handoff] Press Ctrl+C to stop instead.
+[handoff] waiting 15s so far, 585s left; still showing captcha
+[handoff] the page is now a sign_in: account sign-in wall
+[handoff] still waiting; 60s left before the run gives up and stops with whatever it collected
+[handoff] cleared after 128s — resuming automated crawl.
 [pace] backing off to 6.4-17.6s between pages
 ```
+
+等待期间它不会闷着不说话——这是给「人离开了一会儿」准备的：
+
+- **不需要按任何键**：程序自己每 `--poll` 秒重新看一眼页面，页面恢复正常就继续。开头就说清剩多少时间（`--handoff-timeout 0` 则说明「无限等」）。
+- **定期报进度**：已等多久、还剩多久、当前仍是哪一类验证。
+- **验证类型变了会说**：验证码点完却跳出登录墙时，你要做的事不一样，所以它明确报出来（`the page is now a sign_in`）。
+- **放弃前再响一次铃**：超时前 60 秒会重新响铃并说明「再不处理就带着已抓到的数据停机」——第一次铃没听见时，这一声才是真正有用的那声。
+- **超时信息带上经过**：`the window showed captcha -> sign_in`，事后能看出当时到底卡在哪一步。
 
 ## 汇总已抓到的结果（不发请求）
 
@@ -165,7 +179,7 @@ $ scholar-crawler --show-state
 [handoff]     matched form#captcha-form at about:blank
 ```
 
-一条记录包含：时间、类型（`captcha`/`rate_limit`/`consent`）、检测器命中的是什么、被拦在哪个 URL、这轮此前已发了多少次请求、是否连续被拦（第几次）、等了人多久、以及结局——`resolved`（人解完了，继续抓）、`unattended`（`--headless` 拒绝或等待超时）、`budget`（用满 `--max-handoffs` 停机）、`interrupted`（Ctrl+C）、`rehearsed`（演练）。
+一条记录包含：时间、类型（`captcha`/`rate_limit`/`consent`）、检测器命中的是什么、被拦在哪个 URL、这轮此前已发了多少次请求、是否连续被拦（第几次）、等了人多久、等待期间页面依次变成过哪些验证类型（`became sign_in`）、以及结局——`resolved`（人解完了，继续抓）、`unattended`（`--headless` 拒绝或等待超时）、`budget`（用满 `--max-handoffs` 停机）、`interrupted`（Ctrl+C）、`rehearsed`（演练）。
 
 有了这些，事后能回答真正要紧的问题：是抓到第几次请求被拦的、是不是解完一次又立刻被拦（说明当前节奏还是太快）、还是根本没人在电脑前。
 
@@ -573,7 +587,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 323 个用例，全部离线
+python3 -m pytest -q     # 332 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -596,7 +610,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **示例命令**：每条 recipe 都能被解析、能构造出目标、`--dry-run` 那条真跑一遍；输出格式与「无参数时提示前三条、有参数出错时只报错」
 - **跨运行学习**：演练不算证据、历史摘要（类型/位置/连续）、1 次只提示、重复被拦与提前被拦的倍数叠加与上限、只放慢不加快、手动传参不被覆盖、可关闭、空日志不改默认
 - **接管记录**：URL 脱敏（验证页令牌与检索参数区别对待）、单行摘要格式、追加与读回（跳过坏行）、抓取中被拦/接管额度用尽/headless 拒绝三种结局各自落账、演练也落账、`--show-state` 读回
-- **人工接管**：真实 headless Chromium DOM 上的验证页判定、等待超时/窗口被关/headless 拒绝、接管演练全链路（识别→清除→恢复）
+- **人工接管**：真实 headless Chromium DOM 上的验证页判定、等待超时/窗口被关/headless 拒绝、接管演练全链路（识别→清除→恢复）、等待期间按间隔报进度、验证类型变化被记录进 `saw`、放弃前只警告一次且只多响一次铃、超时信息带上经过、旧日志没有 `saw` 字段也能读回
 - **引文网络**：按被引排序选点、宽度上限、访问去重、被引下限、层级推进与提前收敛
 - **输出与断点**：JSONL 去重、CSV 导出、作者档案 upsert、`.bib` 去重、断点查看与清除（签名还原、时间戳、旧格式）、被 `-n` 截断的目标仍可续抓
 - **离线工具**：汇总的合并取舍/过滤/统计、分组统计与 venue 归一化、书目生成（转写与姓氏、截断作者列表、key 复用与撞车、条目类型、转义与双花括号）

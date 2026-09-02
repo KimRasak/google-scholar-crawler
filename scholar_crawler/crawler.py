@@ -435,6 +435,7 @@ class ScholarCrawler:
         self.challenge_counts[kind] = self.challenge_counts.get(kind, 0) + 1
         started = time.monotonic()
         outcome = "resolved"
+        saw: tuple[str, ...] = (kind,)
         try:
             if self.handoff_count > self._max_handoffs:
                 outcome = "budget"
@@ -442,7 +443,7 @@ class ScholarCrawler:
                     f"stopping after {self._max_handoffs} human takeovers; "
                     "increase --max-handoffs or slow the crawl down with --min-delay/--max-delay"
                 )
-            self._handoff.resolve(self._page, challenge)
+            saw = self._handoff.resolve(self._page, challenge).saw
         except ChallengeUnattended:
             outcome = "unattended"
             raise
@@ -450,11 +451,11 @@ class ScholarCrawler:
             outcome = "interrupted"
             raise
         finally:
-            self._record_challenge(challenge, tag, time.monotonic() - started, outcome)
+            self._record_challenge(challenge, tag, time.monotonic() - started, outcome, saw)
         self._pacing.after_handoff(self.consecutive_handoffs)
 
     def _record_challenge(
-        self, challenge: Challenge, tag: str, waited: float, outcome: str
+        self, challenge: Challenge, tag: str, waited: float, outcome: str, saw: tuple[str, ...]
     ) -> None:
         """Append one takeover to the challenge log, when logging is enabled.
 
@@ -462,6 +463,7 @@ class ScholarCrawler:
         :param tag: short label of the request that was being loaded.
         :param waited: seconds spent waiting for the human.
         :param outcome: how the takeover ended.
+        :param saw: challenge kinds the window showed while the human worked.
         """
         if self._challenge_log is None:
             return
@@ -474,6 +476,7 @@ class ScholarCrawler:
             waited=waited,
             outcome=outcome,
             target=tag,
+            saw=saw,
         )
         print(f"[handoff] recorded -> {self._challenge_log.path}: {entry.describe()}", flush=True)
 

@@ -74,6 +74,26 @@ class Challenge:
     detail: str
 
 
+@dataclass(slots=True, frozen=True)
+class Takeover:
+    """What happened while the human held the window.
+
+    :param waited: seconds the crawler waited.
+    :param saw: challenge kinds observed, in order, without repeats — a wait that began as a
+        captcha and ended at a sign-in wall required two different actions from the human.
+    """
+
+    waited: float
+    saw: tuple[str, ...]
+
+    def describe(self) -> str:
+        """Summarize the wait in one line.
+
+        :returns: how long the human took, and what the page showed while they worked.
+        """
+        return f"cleared after {self.waited:.0f}s (saw {' -> '.join(self.saw)})"
+
+
 def detect_challenge(page: Page) -> Challenge | None:
     """Classify the page currently loaded in ``page``.
 
@@ -121,17 +141,22 @@ class HumanHandoff:
     :param timeout: seconds to wait for the human; 0 waits indefinitely.
     :param poll_interval: seconds between page re-inspections.
     :param headless: when True there is no window to hand over, so challenges abort the run.
+    :param status_every: seconds between progress lines while waiting.
+    :param warn_before: ring and warn again this long before the timeout elapses.
     """
 
     timeout: float = 600.0
     poll_interval: float = 2.0
     headless: bool = False
+    status_every: float = 15.0
+    warn_before: float = 60.0
 
-    def resolve(self, page: Page, challenge: Challenge) -> None:
+    def resolve(self, page: Page, challenge: Challenge) -> Takeover:
         """Wait until the human clears ``challenge`` on ``page``.
 
         :param page: the page showing the challenge; brought to the front for the human.
         :param challenge: the detected challenge being handed over.
+        :returns: how long the human took and what the window showed while they worked.
         :raises ChallengeUnattended: when running headless, or when ``timeout`` elapses first.
         """
         if self.headless:
@@ -141,25 +166,77 @@ class HumanHandoff:
                 "the persistent profile keeps the cleared cookies for later runs"
             )
         _bell()
+        budget = (
+            f"{self.timeout:.0f}s to act" if self.timeout else "no time limit; it waits as long as needed"
+        )
         print(
             f"\n[handoff] {challenge.kind.value}: {challenge.detail}\n"
             f"[handoff] URL: {challenge.url}\n"
             "[handoff] The browser window is yours. Solve the challenge (or accept the\n"
             "[handoff] consent/sign-in page) and leave it on the Scholar result page.\n"
-            "[handoff] Crawling resumes automatically; press Ctrl+C to stop.",
+            f"[handoff] No keypress needed — the page is re-checked every {self.poll_interval:g}s "
+            f"and crawling resumes by itself. You have {budget}.\n"
+            "[handoff] Press Ctrl+C to stop instead.",
             flush=True,
         )
         with suppress(PlaywrightError):  # window already gone; the wait below reports it
             page.bring_to_front()
-        deadline = time.monotonic() + self.timeout if self.timeout else None
+        return self._wait_out(page, challenge)
+
+    def _wait_out(self, page: Page, challenge: Challenge) -> Takeover:
+        """Poll until the challenge is gone, keeping the human informed while waiting.
+
+        A silent terminal is the worst thing to leave in front of someone who stepped away, so
+        the wait reports how long is left, says when the page turns into a different challenge,
+        and rings again before it gives up.
+
+        :param page: the page showing the challenge.
+        :param challenge: the challenge that was handed over.
+        :returns: what the wait observed.
+        :raises ChallengeUnattended: when the page is closed or the timeout elapses.
+        """
+        started = time.monotonic()
+        deadline = started + self.timeout if self.timeout else None
+        seen = [challenge.kind.value]
+        spoken = started
+        warned = False
         while True:
             time.sleep(self.poll_interval)
             if page.is_closed():
                 raise ChallengeUnattended("browser page was closed during handoff")
-            if detect_challenge(page) is None:
-                print("[handoff] cleared — resuming automated crawl.", flush=True)
-                return
-            if deadline is not None and time.monotonic() > deadline:
+            now = time.monotonic()
+            waited = now - started
+            current = detect_challenge(page)
+            if current is None:
+                print(f"[handoff] cleared after {waited:.0f}s — resuming automated crawl.", flush=True)
+                return Takeover(waited=waited, saw=tuple(seen))
+            if current.kind.value != seen[-1]:
+                seen.append(current.kind.value)
+                print(
+                    f"[handoff] the page is now a {current.kind.value}: {current.detail}",
+                    flush=True,
+                )
+                spoken = now
+            left = None if deadline is None else deadline - now
+            if left is not None and not warned and left <= self.warn_before:
+                warned = True
+                spoken = now
+                _bell()
+                print(
+                    f"[handoff] still waiting; {left:.0f}s left before the run gives up "
+                    "and stops with whatever it collected",
+                    flush=True,
+                )
+            elif now - spoken >= self.status_every:
+                spoken = now
+                remaining = "" if left is None else f", {left:.0f}s left"
+                print(
+                    f"[handoff] waiting {waited:.0f}s so far{remaining}; "
+                    f"still showing {current.kind.value}",
+                    flush=True,
+                )
+            if left is not None and left <= 0:
                 raise ChallengeUnattended(
-                    f"challenge still present after {self.timeout:.0f}s of waiting for a human"
+                    f"challenge still present after {self.timeout:.0f}s of waiting for a human; "
+                    f"the window showed {' -> '.join(seen)}"
                 )

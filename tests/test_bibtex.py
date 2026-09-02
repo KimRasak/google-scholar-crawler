@@ -10,7 +10,12 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scholar_crawler import crawler as crawler_module  # noqa: E402
-from scholar_crawler.challenge import Challenge, ChallengeKind, HumanHandoff  # noqa: E402
+from scholar_crawler.challenge import (  # noqa: E402
+    Challenge,
+    ChallengeKind,
+    HumanHandoff,
+    Takeover,
+)
 from scholar_crawler.crawler import Pacing, ScholarCrawler  # noqa: E402
 from scholar_crawler.models import ScholarResult  # noqa: E402
 from scholar_crawler.parser import (  # noqa: E402
@@ -123,6 +128,17 @@ def test_fetch_bibtex_loads_popup_then_export(monkeypatch: pytest.MonkeyPatch) -
     assert "scholar.bib" in page.visited[1]
 
 
+def _seen(seen: list[str], challenge: Challenge) -> Takeover:
+    """Record the challenge a stand-in human was handed, and clear it.
+
+    :param seen: list collecting the kinds handed over.
+    :param challenge: the challenge handed over.
+    :returns: the summary a real wait returns.
+    """
+    seen.append(challenge.kind.value)
+    return Takeover(waited=0.0, saw=(challenge.kind.value,))
+
+
 def test_profile_records_resolve_their_card_id_first(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: None)
     page = _FakePage([RESULT_PAGE_HTML, CITE_POPUP_HTML, BIBTEX_EXPORT_HTML])
@@ -171,7 +187,7 @@ def test_a_challenge_on_the_popup_hands_over_then_resumes(monkeypatch: pytest.Mo
     monkeypatch.setattr(
         crawler_module.HumanHandoff,
         "resolve",
-        lambda _self, _page, challenge: resolved.append(challenge.kind.value),
+        lambda _self, _page, challenge: _seen(resolved, challenge),
     )
     page = _FakePage(["<html><body>captcha</body></html>", CITE_POPUP_HTML, BIBTEX_EXPORT_HTML])
     crawler = _crawler(page)

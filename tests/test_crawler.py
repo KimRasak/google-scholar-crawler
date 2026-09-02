@@ -11,7 +11,12 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scholar_crawler import crawler as crawler_module  # noqa: E402
-from scholar_crawler.challenge import Challenge, ChallengeKind, HumanHandoff  # noqa: E402
+from scholar_crawler.challenge import (  # noqa: E402
+    Challenge,
+    ChallengeKind,
+    HumanHandoff,
+    Takeover,
+)
 from scholar_crawler.crawler import Pacing, ScholarCrawler  # noqa: E402
 from scholar_crawler.diagnose import CrawlFailure, Failure
 from scholar_crawler.models import AuthorRequest, SearchRequest  # noqa: E402
@@ -83,6 +88,15 @@ def _crawler(page: _FakePage, **kwargs: object) -> ScholarCrawler:
     return ScholarCrawler(page, handoff, NO_DELAY, **kwargs)  # type: ignore[arg-type]
 
 
+def _cleared(_self: object, _page: object, challenge: Challenge) -> Takeover:
+    """Stand in for a human who clears the challenge at once.
+
+    :param challenge: the challenge handed over.
+    :returns: the summary a real wait returns.
+    """
+    return Takeover(waited=0.0, saw=(challenge.kind.value,))
+
+
 def test_pagination_advances_by_ten_and_stops_on_last_page(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: None)
     page = _FakePage(iter([RESULT_PAGE_HTML, RESULT_PAGE_HTML, RESULT_PAGE_HTML]))
@@ -107,7 +121,7 @@ def test_challenge_hands_over_then_refetches(monkeypatch: pytest.MonkeyPatch) ->
     outcomes = iter([CAPTCHA, None])
     monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: next(outcomes, None))
     monkeypatch.setattr(
-        crawler_module.HumanHandoff, "resolve", lambda _self, _page, _challenge: None
+        crawler_module.HumanHandoff, "resolve", _cleared
     )
     page = _FakePage(iter([CAPTCHA_PAGE_HTML, RESULT_PAGE_HTML]))
     crawler = _crawler(page)
@@ -120,7 +134,7 @@ def test_challenge_hands_over_then_refetches(monkeypatch: pytest.MonkeyPatch) ->
 def test_handoff_budget_stops_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: CAPTCHA)
     monkeypatch.setattr(
-        crawler_module.HumanHandoff, "resolve", lambda _self, _page, _challenge: None
+        crawler_module.HumanHandoff, "resolve", _cleared
     )
     page = _FakePage(iter([CAPTCHA_PAGE_HTML] * 10))
     with pytest.raises(RuntimeError, match="1 human takeovers"):
@@ -149,7 +163,7 @@ def test_max_results_truncates_the_last_page(monkeypatch: pytest.MonkeyPatch) ->
 def test_takeover_widens_the_delay_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
     outcomes = iter([CAPTCHA, None])
     monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: next(outcomes, None))
-    monkeypatch.setattr(crawler_module.HumanHandoff, "resolve", lambda _self, _page, _challenge: None)
+    monkeypatch.setattr(crawler_module.HumanHandoff, "resolve", _cleared)
     pacing = Pacing(min_delay=4.0, max_delay=10.0, cooldown_every=0, backoff_factor=2.0)
     page = _FakePage(iter([CAPTCHA_PAGE_HTML, RESULT_PAGE_HTML]))
     ScholarCrawler(page, HumanHandoff(), pacing).fetch_page(SearchRequest(query="t"), 0)  # type: ignore[arg-type]
@@ -198,7 +212,7 @@ def test_the_cooldown_can_be_switched_off(monkeypatch: pytest.MonkeyPatch) -> No
 def test_run_stats_count_requests_takeovers_and_kinds(monkeypatch: pytest.MonkeyPatch) -> None:
     outcomes = iter([CAPTCHA, CAPTCHA, None, None])
     monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: next(outcomes, None))
-    monkeypatch.setattr(crawler_module.HumanHandoff, "resolve", lambda _self, _page, _challenge: None)
+    monkeypatch.setattr(crawler_module.HumanHandoff, "resolve", _cleared)
     monkeypatch.setattr(crawler_module.time, "sleep", lambda _seconds: None)
     pacing = Pacing(min_delay=0.0, max_delay=0.0, cooldown_every=0, challenge_cooldown=30.0)
     page = _FakePage(iter([CAPTCHA_PAGE_HTML, CAPTCHA_PAGE_HTML, RESULT_PAGE_HTML, RESULT_PAGE_HTML]))
@@ -237,7 +251,7 @@ def test_short_runs_report_seconds_and_long_runs_report_a_rate() -> None:
 def test_dump_html_writes_pages_and_challenges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     outcomes = iter([CAPTCHA, None])
     monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: next(outcomes, None))
-    monkeypatch.setattr(crawler_module.HumanHandoff, "resolve", lambda _self, _page, _challenge: None)
+    monkeypatch.setattr(crawler_module.HumanHandoff, "resolve", _cleared)
     page = _FakePage(iter([CAPTCHA_PAGE_HTML, RESULT_PAGE_HTML]))
     crawler = ScholarCrawler(page, HumanHandoff(), NO_DELAY, dump_dir=tmp_path / "dump")  # type: ignore[arg-type]
     crawler.fetch_page(SearchRequest(query="t"), 0)
