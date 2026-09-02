@@ -46,6 +46,10 @@ scholar-crawler --queries-file queries.example.txt -p 10 --resume -o out/batch.j
 scholar-crawler --cites "https://scholar.google.com/scholar?cites=2454404157773228931" -p 5 -o out/citing.jsonl
 scholar-crawler --cluster 2454404157773228931 -o out/versions.jsonl
 
+# 沿引文网络往外走一层：先跑关键词，再抓被引最多的 3 篇各自的引证文献
+scholar-crawler -q "chain of thought prompting" -p 1 \
+  --follow-cites 1 --follow-breadth 3 --follow-min-citations 50 -o out/graph.jsonl
+
 # 顺手导出 BibTeX（每条多 2 次页面加载，慢但可直接进文献管理器）
 scholar-crawler -q "diffusion models" -p 2 --bibtex out/refs.bib -o out/diffusion.jsonl
 
@@ -75,6 +79,7 @@ scholar-crawler -q 'author:"Yoshua Bengio" source:"NeurIPS"' -p 2
 | `--cites`、`--cluster` | 抓某文的引证文献 / 全部版本；接受数字 id 或结果里的 `cited_by_url`、`versions_url`，可重复 |
 | `--author` | 抓作者主页论文列表；接受 12 位 user id 或主页 URL，可重复；配合 `--sort-by-date` 按年份排序 |
 | `-p/--pages`、`-n/--max-results` | 每个入口抓几页 / 最多抓几条（末页精确截断）。检索页每页 10 条，作者主页每页 100 篇 |
+| `--follow-cites`、`--follow-breadth`、`--follow-min-citations` | 抓完种子入口后，继续抓「引用它们的文献」若干层；每层只展开被引最多的 N 条，且低于引用下限的直接跳过 |
 | `--start`、`--resume` | 起始 offset；从 state 断点继续 |
 | `--year-from/--year-to`、`--sort-by-date`、`--review-only` | 年份区间、按日期排序、只要综述 |
 | `--no-citations`、`--no-patents` | 排除仅引用条目、排除专利 |
@@ -118,6 +123,15 @@ JSONL 每行一条记录：
  "i10_index":1106,"i10_index_recent":947,"fetched_at":"..."}
 ```
 
+## 关于引文网络展开
+
+`--follow-cites DEPTH` 会在种子入口跑完之后，把已抓到的记录按被引数从高到低取前 `--follow-breadth` 条，各自打开「被引用次数」列表继续抓，逐层向外。
+
+- 请求数是乘法增长：1 个种子、深度 2、宽度 5 就是最多 31 个列表（每个列表还要按 `-p` 翻页）。启动时会先打印本轮的上限估算。
+- 同一个 cites id 在整轮里只抓一次，重复的分支会被跳过；每条记录写入 `extra.follow_depth` 标明它来自第几层。
+- 展开出来的列表沿用命令行上的年份、语言、排序等过滤条件，`--resume` 也照常按每个列表的签名记断点。
+- 作者主页抓到的论文同样可以作为展开起点。
+
 ## 关于 BibTeX 导出
 
 `--bibtex` 每条记录要多走两次页面加载：先打开 Scholar 的 "Cite" 弹窗，再打开弹窗里带签名的 `scholar.bib` 链接（签名参数无法自己拼出来）。因此：
@@ -136,11 +150,11 @@ JSONL 每行一条记录：
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 79 个用例，全部离线
+python3 -m pytest -q     # 93 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
-测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、BibTeX 链接识别（按 href 而非按标签文字）与 `<pre>` 内容提取、`.bib` 去重、导出过程中的接管、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
+测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、BibTeX 链接识别（按 href 而非按标签文字）与 `<pre>` 内容提取、`.bib` 去重、导出过程中的接管、引文网络展开（按被引排序、宽度上限、访问去重、引用下限、逐层推进与提前收敛）、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
 
 ## 合规
 
@@ -154,7 +168,8 @@ scholar_crawler/
   parser.py     结果页与作者主页 HTML → 结构化记录
   challenge.py  验证页判定 + 人工接管等待
   browser.py    持久化 profile 的浏览器会话
-  crawler.py    抓取循环：节奏、接管、翻页/分批、HTML dump
+  crawler.py    抓取循环：节奏、接管、翻页/分批、BibTeX 取用、HTML dump
+  expand.py     引文网络展开：选点、上限、去重
   storage.py    JSONL/CSV 写入、作者主页记录、BibTeX 文件、断点状态
   cli.py        命令行入口
 tests/          离线测试（含 headless Chromium 判定测试）

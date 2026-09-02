@@ -46,6 +46,10 @@ scholar-crawler --queries-file queries.example.txt -p 10 --resume -o out/batch.j
 scholar-crawler --cites "https://scholar.google.com/scholar?cites=2454404157773228931" -p 5 -o out/citing.jsonl
 scholar-crawler --cluster 2454404157773228931 -o out/versions.jsonl
 
+# Walk one level out along the citation graph
+scholar-crawler -q "chain of thought prompting" -p 1 \
+  --follow-cites 1 --follow-breadth 3 --follow-min-citations 50 -o out/graph.jsonl
+
 # Export BibTeX along the way (two extra page loads per record)
 scholar-crawler -q "diffusion models" -p 2 --bibtex out/refs.bib -o out/diffusion.jsonl
 
@@ -75,6 +79,7 @@ A takeover looks like this:
 | `--cites`, `--cluster` | crawl citing works / all versions of one work; accepts a numeric id or a `cited_by_url`/`versions_url`, repeatable |
 | `--author` | crawl an author's publication list; accepts a 12-character user id or a profile URL, repeatable; `--sort-by-date` orders by year |
 | `-p/--pages`, `-n/--max-results` | pages per entry point / hard result cap (last page truncated exactly). Search pages hold 10 results, profile pages 100 publications |
+| `--follow-cites`, `--follow-breadth`, `--follow-min-citations` | after the seed entry points, keep crawling the works that cite them for this many levels; each level expands only the most-cited N records, skipping anything below the citation floor |
 | `--start`, `--resume` | first offset; continue from the saved cursor |
 | `--year-from/--year-to`, `--sort-by-date`, `--review-only` | year range, date order, reviews only |
 | `--no-citations`, `--no-patents` | exclude citation-only records / patents |
@@ -118,6 +123,15 @@ Author publications land in the same JSONL (with Scholar's citation id in `extra
  "i10_index":1106,"i10_index_recent":947,"fetched_at":"..."}
 ```
 
+## About citation-graph expansion
+
+`--follow-cites DEPTH` takes the records already collected, keeps the `--follow-breadth` most-cited of them, opens each one's "Cited by" listing, and repeats for the requested number of levels.
+
+- Requests grow multiplicatively: one seed at depth 2 and breadth 5 is up to 31 listings, each still paged by `-p`. The worst-case count is printed before the run starts.
+- Every cites id is crawled at most once per run, so repeated branches are skipped; each record records the level it came from in `extra.follow_depth`.
+- Expanded listings inherit the year, language and sorting filters given on the command line, and `--resume` tracks each one by its own signature.
+- Publications collected from an author profile can seed the expansion too.
+
 ## About the BibTeX export
 
 `--bibtex` costs two extra page loads per record: Scholar's "Cite" popup, then the signed `scholar.bib` link inside it (the signature cannot be constructed locally). So:
@@ -136,11 +150,11 @@ Author publications land in the same JSONL (with Scholar's citation id in `extra
 ## Development
 
 ```sh
-python3 -m pytest -q     # 79 tests, fully offline
+python3 -m pytest -q     # 93 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
-Tests cover result parsing (citation-only cards, PDF side links, cited-by/version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author-profile parsing (header lines, the position-read summary table, publication rows, zero citations and missing years, the "show more" state), URL and filter assembly, id/URL parsing, JSONL dedup and CSV export, profile upserts, resume state, challenge detection (real headless Chromium DOM), the takeover wait including timeout, closed window and headless refusal, BibTeX link discovery (by href, not label) and `<pre>` extraction, `.bib` dedup, a takeover during export, pagination and author batching, result-cap truncation, unknown profile layouts failing loudly, post-takeover slowdown, HTML dumps, and CLI argument assembly. GitHub Actions runs the same suite on Python 3.10 and 3.13.
+Tests cover result parsing (citation-only cards, PDF side links, cited-by/version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author-profile parsing (header lines, the position-read summary table, publication rows, zero citations and missing years, the "show more" state), URL and filter assembly, id/URL parsing, JSONL dedup and CSV export, profile upserts, resume state, challenge detection (real headless Chromium DOM), the takeover wait including timeout, closed window and headless refusal, BibTeX link discovery (by href, not label) and `<pre>` extraction, `.bib` dedup, a takeover during export, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, result-cap truncation, unknown profile layouts failing loudly, post-takeover slowdown, HTML dumps, and CLI argument assembly. GitHub Actions runs the same suite on Python 3.10 and 3.13.
 
 ## Compliance
 
@@ -154,7 +168,7 @@ scholar_crawler/
   parser.py     result-page and profile HTML -> structured records
   challenge.py  challenge detection + human takeover wait
   browser.py    persistent-profile browser session
-  crawler.py    crawl loop: pacing, takeover, pagination and author batching, HTML dumps
+  crawler.py    crawl loop: pacing, takeover, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, HTML dumps
   storage.py    JSONL/CSV writers, author profile records, the .bib file, resume state
   cli.py        command-line entry point
 tests/          offline tests, including headless-Chromium detection tests

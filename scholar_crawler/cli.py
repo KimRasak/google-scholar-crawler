@@ -9,6 +9,7 @@ from pathlib import Path
 from .browser import BrowserOptions, browser_session
 from .challenge import ChallengeUnattended, HumanHandoff
 from .crawler import Pacing, ScholarCrawler
+from .expand import FollowPolicy, next_level
 from .models import AuthorProfile, AuthorRequest, ScholarResult, SearchRequest
 from .parser import bibtex_key
 from .storage import BibtexSink, ProfileStore, ResultSink, StateStore
@@ -59,6 +60,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     paging.add_argument("-n", "--max-results", type=int, help="stop each query after this many results")
     paging.add_argument("--start", type=int, default=0, help="first result offset, default 0")
+    paging.add_argument(
+        "--follow-cites",
+        type=int,
+        default=0,
+        metavar="DEPTH",
+        help="after the seed listings, crawl the works citing them, this many levels deep; "
+        "each level multiplies requests, so keep it small",
+    )
+    paging.add_argument(
+        "--follow-breadth",
+        type=int,
+        default=5,
+        metavar="N",
+        help="records expanded per level, most-cited first (default: 5)",
+    )
+    paging.add_argument(
+        "--follow-min-citations",
+        type=int,
+        default=0,
+        metavar="N",
+        help="skip expanding records cited fewer times than this",
+    )
     paging.add_argument("--resume", action="store_true", help="continue each query from the saved cursor")
     paging.add_argument("--host", default=SCHOLAR_HOST, help="Scholar host, e.g. https://scholar.google.de")
 
@@ -158,6 +181,24 @@ def build_targets(args: argparse.Namespace) -> tuple[list[SearchRequest], list[A
     return listings, authors
 
 
+def filter_template(args: argparse.Namespace) -> SearchRequest:
+    """Build a request carrying only the filters, used as the template for expansion.
+
+    :param args: parsed arguments.
+    :returns: a ``cites`` request whose id is replaced for each expanded record.
+    """
+    return SearchRequest(
+        cites="0",
+        year_low=args.year_from,
+        year_high=args.year_to,
+        language=args.lang,
+        sort_by_date=args.sort_by_date,
+        include_citations=not args.no_citations,
+        include_patents=not args.no_patents,
+        review_only=args.review_only,
+    )
+
+
 def _report(page_start: int, parsed: int, new: int, total: str) -> None:
     """Print one progress line for a fetched page.
 
@@ -176,7 +217,8 @@ def _crawl_listing(
     sink: ResultSink,
     state: StateStore,
     bibtex: BibtexSink | None = None,
-) -> None:
+    depth: int = 0,
+) -> list[ScholarResult]:
     """Crawl one keyword, citation or version listing into ``sink``.
 
     :param crawler: the bound crawler.
@@ -185,19 +227,27 @@ def _crawl_listing(
     :param sink: JSONL writer for parsed records.
     :param state: resume cursor store.
     :param bibtex: when set, each record's BibTeX entry is exported as well.
+    :param depth: citation-graph level this listing came from, recorded on every record.
+    :returns: every record parsed from this listing, for the next expansion level.
     """
     signature = request.signature()
     start = state.next_start(signature, args.start) if args.resume else args.start
-    print(f"\n[query] {request.label!r} from offset {start}", flush=True)
+    label = f"[query] {request.label!r} from offset {start}"
+    print(f"\n{label}" + (f" (level {depth})" if depth else ""), flush=True)
+    collected: list[ScholarResult] = []
     for page in crawler.search(
         request, max_pages=args.pages, start=start, max_results=args.max_results
     ):
+        for result in page.results:
+            result.extra["follow_depth"] = depth
         if bibtex is not None:
             _export_bibtex(crawler, page.results, args, bibtex)
         new = sum(1 for result in page.results if sink.write(result))
         total = f"~{page.total_estimate}" if page.total_estimate else "unknown"
         _report(page.start, len(page.results), new, total)
         state.record(signature, page.start + len(page.results), exhausted=not page.has_next)
+        collected += page.results
+    return collected
 
 
 def _export_bibtex(
@@ -231,7 +281,7 @@ def _crawl_author(
     sink: ResultSink,
     state: StateStore,
     profiles: ProfileStore,
-) -> None:
+) -> list[ScholarResult]:
     """Crawl one author profile into ``sink`` and its header into ``profiles``.
 
     :param crawler: the bound crawler.
@@ -240,15 +290,18 @@ def _crawl_author(
     :param sink: JSONL writer for the publication records.
     :param state: resume cursor store.
     :param profiles: writer for the profile header record.
+    :returns: every publication record parsed, for the next expansion level.
     """
     signature = request.signature()
     start = state.next_start(signature, args.start) if args.resume else args.start
     print(f"\n[author] {request.user_id} from publication {start}", flush=True)
     latest: AuthorProfile | None = None
+    collected: list[ScholarResult] = []
     for batch in crawler.crawl_author(
         request, max_pages=args.pages, cstart=start, max_results=args.max_results
     ):
         latest = batch.profile
+        collected += batch.results
         profiles.write(batch.profile)
         new = sum(1 for result in batch.results if sink.write(result))
         _report(batch.cstart, len(batch.results), new, f"~{batch.profile.cited_by_total} citations")
@@ -259,6 +312,42 @@ def _crawl_author(
             f"h-index {latest.h_index} -> {profiles.path}",
             flush=True,
         )
+    return collected
+
+
+def _follow_citations(
+    crawler: ScholarCrawler,
+    seeds: list[ScholarResult],
+    args: argparse.Namespace,
+    policy: FollowPolicy,
+    sink: ResultSink,
+    state: StateStore,
+    bibtex: BibtexSink | None,
+) -> None:
+    """Walk the citation graph outward from records already collected.
+
+    :param crawler: the bound crawler.
+    :param seeds: records collected from the seed listings and profiles.
+    :param args: parsed arguments supplying paging limits.
+    :param policy: how deep and how wide to expand.
+    :param sink: JSONL writer for parsed records.
+    :param state: resume cursor store.
+    :param bibtex: when set, each record's BibTeX entry is exported as well.
+    """
+    if not policy.enabled:
+        return
+    template = filter_template(args)
+    visited: set[str] = set()
+    frontier = seeds
+    for level in range(1, policy.depth + 1):
+        requests = next_level(frontier, template, policy, visited)
+        if not requests:
+            print(f"[follow] level {level}: nothing left to expand", flush=True)
+            return
+        print(f"[follow] level {level}: {len(requests)} citation listings", flush=True)
+        frontier = []
+        for request in requests:
+            frontier += _crawl_listing(crawler, request, args, sink, state, bibtex, depth=level)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -270,6 +359,11 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         listings, authors = build_targets(args)
+        follow = FollowPolicy(
+            depth=args.follow_cites,
+            breadth=args.follow_breadth,
+            min_citations=args.follow_min_citations,
+        )
         pacing = Pacing(
             min_delay=args.min_delay,
             max_delay=args.max_delay,
@@ -296,6 +390,12 @@ def main(argv: list[str] | None = None) -> int:
                 "BibTeX is exported for keyword, --cites and --cluster records only",
                 flush=True,
             )
+    if follow.enabled:
+        print(
+            f"[follow] depth {follow.depth} x breadth {follow.breadth}: up to "
+            f"{follow.estimate(len(listings) + len(authors))} listings this run",
+            flush=True,
+        )
     options = BrowserOptions(
         user_data_dir=args.profile,
         headless=args.headless,
@@ -317,10 +417,12 @@ def main(argv: list[str] | None = None) -> int:
                 max_handoffs=args.max_handoffs,
                 dump_dir=args.dump_html,
             )
+            harvest: list[ScholarResult] = []
             for listing in listings:
-                _crawl_listing(crawler, listing, args, sink, state, bibtex)
+                harvest += _crawl_listing(crawler, listing, args, sink, state, bibtex)
             for author in authors:
-                _crawl_author(crawler, author, args, sink, state, profiles)
+                harvest += _crawl_author(crawler, author, args, sink, state, profiles)
+            _follow_citations(crawler, harvest, args, follow, sink, state, bibtex)
     except KeyboardInterrupt:
         print("\n[stop] interrupted by user", flush=True)
         exit_code = 130

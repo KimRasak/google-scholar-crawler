@@ -5,6 +5,7 @@ from __future__ import annotations
 from .browser import BrowserOptions, browser_session
 from .challenge import Challenge, ChallengeKind, ChallengeUnattended, HumanHandoff, detect_challenge
 from .crawler import Pacing, ScholarCrawler
+from .expand import FollowPolicy, next_level
 from .models import (
     AuthorPage,
     AuthorProfile,
@@ -26,6 +27,7 @@ __all__ = [
     "Challenge",
     "ChallengeKind",
     "ChallengeUnattended",
+    "FollowPolicy",
     "HumanHandoff",
     "Pacing",
     "PageResult",
@@ -41,6 +43,7 @@ __all__ = [
     "browser_session",
     "cite_url",
     "detect_challenge",
+    "next_level",
     "parse_author_page",
     "parse_bibtex",
     "parse_cluster_id",
