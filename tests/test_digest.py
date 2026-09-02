@@ -178,7 +178,7 @@ def test_quiet_prints_only_what_was_written(tmp_path: Path, capsys: pytest.Captu
 
 def test_quiet_without_an_output_file_is_refused(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["a.jsonl", "--quiet"]) == 1
-    assert "--quiet needs --out or --csv" in capsys.readouterr().out
+    assert "--quiet needs --out, --csv or --bibtex" in capsys.readouterr().out
 
 
 def test_parser_defaults() -> None:

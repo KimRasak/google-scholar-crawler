@@ -90,11 +90,12 @@ When the same work appears in several files, the higher citation count wins as t
 | Option | Effect |
 | --- | --- |
 | `-o`, `--csv` | write the merged records as JSONL / CSV |
+| `--bibtex` | build a bibliography offline (no requests) |
 | `--min-citations`, `--year-from`, `--year-to` | filters; a year range drops records without a year |
 | `--top` | how many most-cited records the overview lists (default: 5) |
 | `--group-by` | group by `author`, `venue`, `year` or `level` |
 | `--min-group`, `--groups` | hide groups below N records; how many groups to list (default: 10) |
-| `--quiet` | print only what was written; needs `-o` or `--csv` |
+| `--quiet` | print only what was written; needs `-o`, `--csv` or `--bibtex` |
 
 ## Reviewing and resetting resume state
 
@@ -134,6 +135,41 @@ $ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
 ```
 
 Every number is an upper bound: listings that run out of results and expansions with nothing left to expand cost less. Bad arguments still fail under `--dry-run`, so it doubles as an argument check.
+
+### Building a bibliography offline
+
+Exporting BibTeX during a crawl costs two extra page loads per record, the most expensive part of a run. But the title, authors, venue, year and link from the result card are already stored, so a usable bibliography can be assembled afterwards without contacting Scholar:
+
+```sh
+scholar-digest out/all.jsonl --min-citations 500 --bibtex out/refs.bib
+[out] 42 entries -> out/refs.bib (7 keys from the crawl, 35 generated, 12 truncated author lists)
+```
+
+These are reconstructions, not Scholar's own export, and the difference is worth knowing:
+
+```bibtex
+% exported by Scholar (--bibtex during the crawl, 2 requests per record)
+@article{velivckovic2017graph,
+  title={Graph attention networks},
+  author={Veli{\v{c}}kovi{\'c}, Petar and Cucurull, Guillem and Casanova, Arantxa and ...},
+  journal={arXiv preprint arXiv:1710.10903},
+  year={2017}
+}
+
+% assembled offline (0 requests)
+@article{velickovic2017graph,
+  title = {{Graph attention networks}},
+  author = {P Veličković and G Cucurull and A Casanova and others},
+  journal = {arXiv preprint},
+  year = {2017},
+  url = {https://arxiv.org/abs/1710.10903},
+  note = {cited by 41135 on Google Scholar},
+}
+```
+
+So: author names keep Scholar's initials, a list Scholar truncated gains `and others`, and the arXiv identifier may be missing — in exchange for zero requests, plus the original link and the citation count. Export during the crawl when you need exact entries; build offline when you want a usable bibliography without waiting hours again.
+
+Details: a record exported during the crawl reuses its key, so both files name the same work identically; `Veličković` transliterates to `velickovic` (`ł`, `ø`, `ß`, `æ` are handled too); colliding keys gain `a`, `b`, …; a venue mentioning Proceedings, Conference or Workshop becomes `@inproceedings` with `booktitle`, and a record without a venue becomes `@misc`; titles are double-braced so a style cannot flatten their capitalization; `&`, `%` and `_` are escaped. Records without a title are skipped and counted.
 
 ### Grouping
 
@@ -281,11 +317,20 @@ The slowdown has two stages: every takeover widens the delays by `--backoff-fact
 ## Development
 
 ```sh
-python3 -m pytest -q     # 161 tests, fully offline
+python3 -m pytest -q     # 173 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
-Tests cover result parsing (citation-only cards, PDF side links, cited-by/version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author-profile parsing (header lines, the position-read summary table, publication rows, zero citations and missing years, the "show more" state), URL and filter assembly, id/URL parsing, JSONL dedup and CSV export, profile upserts, resume state, challenge detection (real headless Chromium DOM), the takeover wait including timeout, closed window and headless refusal, BibTeX link discovery (by href, not label) and `<pre>` extraction, `.bib` dedup, a takeover during export, grouping (first-author extraction, venue normalization, labels for all four dimensions, citation ranking and medians, hidden small groups, table alignment), real-page regression (all ten self-checks on a real result page, field completeness, profile stats and publication rows, cite popup to BibTeX, the sanitizing rules and a no-credentials scan of the fixtures), resume-state review and reset (signatures rendered back, timestamps, older files, substring removal, a capped target staying resumable), the run plan (page budget narrowed by `-n`, profiles counted in hundreds, the multiplicative cost of expansion and BibTeX, duration formats, `--dry-run` writing no files), the run summary (short and long duration formats, takeovers by kind), the back-to-back challenge wait and its off switch, the takeover rehearsal (detected as a challenge in a real DOM, cleared by the button, uncleared and undetected reporting, headless refusal), the offline digest (merge precedence, `extra` merging, shallowest level, combined filters, summary counts and ranking, file writing, flag validation), the self-check report (healthy page, zero-hit page, pinpointed missing fields, last page, output format), card-id resolution for profile records, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, result-cap truncation, unknown profile layouts failing loudly, post-takeover slowdown, HTML dumps, and CLI argument assembly. GitHub Actions runs the same suite on Python 3.10 and 3.13.
+All tests run offline (no network at all), grouped by area:
+
+- **Parsing**: result cards (citation-only records, PDF side links, cited-by and version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author profiles (header lines, the position-read summary table, publication rows, missing years and zero citations, the "show more" state), real-page fixtures (all ten self-checks on a real result page, field completeness, the sanitizing rules, a no-credentials scan)
+- **URLs and filters**: query and profile URL assembly, filter parameters, id and URL parsing, cite-popup addresses
+- **Crawl loop**: pagination and author batching, pacing and cooldowns, the back-to-back challenge wait and its off switch, both run-summary duration formats, HTML dumps, a challenge during export
+- **Human takeover**: challenge detection against a real headless-Chromium DOM, the wait's timeout, closed window and headless refusal, the full rehearsal path (detected, cleared, resumed)
+- **Citation graph**: most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence
+- **Output and resume state**: JSONL dedup, CSV export, profile upserts, `.bib` dedup, state review and reset (signatures rendered back, timestamps, older files), a target capped by `-n` staying resumable
+- **Offline tools**: digest merge precedence, filters and summaries, grouping with venue normalization, bibliography building (transliteration and surnames, truncated author lists, key reuse and collisions, entry types, escaping and double braces)
+- **Command line**: argument validation, `--dry-run` numbers with no files written, `--self-check`, BibTeX link discovery (by href, not label) and `<pre>` extraction, `--quiet` combinations
 
 ## Compliance
 
@@ -299,7 +344,13 @@ scholar_crawler/
   parser.py     result-page and profile HTML -> structured records
   challenge.py  challenge detection + human takeover wait
   browser.py    persistent-profile browser session
-  crawler.py    crawl loop: pacing, takeover, grouping (first-author extraction, venue normalization, labels for all four dimensions, citation ranking and medians, hidden small groups, table alignment), real-page regression (all ten self-checks on a real result page, field completeness, profile stats and publication rows, cite popup to BibTeX, the sanitizing rules and a no-credentials scan of the fixtures), resume-state review and reset (signatures rendered back, timestamps, older files, substring removal, a capped target staying resumable), the run plan (page budget narrowed by `-n`, profiles counted in hundreds, the multiplicative cost of expansion and BibTeX, duration formats, `--dry-run` writing no files), the run summary (short and long duration formats, takeovers by kind), the back-to-back challenge wait and its off switch, the takeover rehearsal (detected as a challenge in a real DOM, cleared by the button, uncleared and undetected reporting, headless refusal), the offline digest (merge precedence, `extra` merging, shallowest level, combined filters, summary counts and ranking, file writing, flag validation), the self-check report (healthy page, zero-hit page, pinpointed missing fields, last page, output format), card-id resolution for profile records, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, HTML dumps
+  crawler.py    crawl loop: pacing, takeover, pagination and author batching, BibTeX loads, HTML dumps
+  expand.py     citation-graph expansion: seed choice, caps, dedup
+  plan.py       run plan: pages, loads and duration estimates
+  selfcheck.py  parser self-check: per-field health report
+  rehearsal.py  takeover rehearsal: local challenge page, full-path drill
+  digest.py     offline digest: merge, filter, summarize, export
+  bibsynth.py   offline bibliography: BibTeX from stored fields
   storage.py    JSONL/CSV writers, author profile records, the .bib file, resume state
   cli.py        command-line entry point
 tests/          offline tests, including headless-Chromium detection tests

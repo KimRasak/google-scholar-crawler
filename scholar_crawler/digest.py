@@ -17,6 +17,7 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
+from .bibsynth import write_bibtex
 from .storage import CSV_COLUMNS
 
 Record = dict[str, Any]
@@ -416,6 +417,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-o", "--out", type=Path, help="write the merged records to this JSONL file")
     parser.add_argument("--csv", type=Path, help="write the merged records to this CSV file")
     parser.add_argument(
+        "--bibtex",
+        type=Path,
+        metavar="FILE",
+        help="build a BibTeX file from the stored fields, without contacting Scholar",
+    )
+    parser.add_argument(
         "--min-citations", type=int, default=0, metavar="N", help="drop records cited fewer times"
     )
     parser.add_argument("--year-from", type=int, metavar="YEAR", help="drop records published earlier")
@@ -451,8 +458,11 @@ def main(argv: list[str] | None = None) -> int:
         would produce no output at all.
     """
     args = build_parser().parse_args(argv)
-    if args.quiet and not (args.out or args.csv):
-        print("error: --quiet needs --out or --csv, otherwise the run prints nothing", flush=True)
+    if args.quiet and not (args.out or args.csv or args.bibtex):
+        print(
+            "error: --quiet needs --out, --csv or --bibtex, otherwise the run prints nothing",
+            flush=True,
+        )
         return 1
     try:
         records, malformed = load_records(args.inputs)
@@ -487,6 +497,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[out] {write_jsonl(kept, args.out)} records -> {args.out}", flush=True)
     if args.csv:
         print(f"[out] {write_csv(kept, args.csv)} rows -> {args.csv}", flush=True)
+    if args.bibtex:
+        report = write_bibtex(kept, args.bibtex)
+        print(
+            f"[out] {report.written} entries -> {args.bibtex} ({report.describe()})",
+            flush=True,
+        )
     return 0
 
 

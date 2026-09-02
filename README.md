@@ -90,11 +90,12 @@ scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.js
 | 参数 | 作用 |
 | --- | --- |
 | `-o`、`--csv` | 写出合并后的 JSONL / CSV |
+| `--bibtex` | 离线拼出参考文献文件（不发请求） |
 | `--min-citations`、`--year-from`、`--year-to` | 过滤条件；带年份区间时会丢掉没有年份的记录 |
 | `--top` | 概览里列出的高被引条数（默认 5） |
 | `--group-by` | 按 `author`/`venue`/`year`/`level` 分组统计 |
 | `--min-group`、`--groups` | 隐藏记录数少于 N 的组；最多列出几组（默认 10） |
-| `--quiet` | 只打印写出结果，需要配合 `-o` 或 `--csv` |
+| `--quiet` | 只打印写出结果，需要配合 `-o`、`--csv` 或 `--bibtex` |
 
 ## 查看与重置断点
 
@@ -133,6 +134,41 @@ $ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
 ```
 
 所有数字都是上限：列表提前抓完、引文网络无可展开时都会更少。目标写错（比如一个入口都没给）在 `--dry-run` 下同样会报错，所以它也能当参数检查用。
+
+### 离线生成参考文献
+
+抓取时加 `--bibtex` 会向 Scholar 多要两次页面（每条记录），是整轮里最贵的部分。但结果页上的题名、作者、期刊、年份、链接其实都已经存下来了，所以事后可以离线拼出可用的条目：
+
+```sh
+scholar-digest out/all.jsonl --min-citations 500 --bibtex out/refs.bib
+[out] 42 entries -> out/refs.bib (7 keys from the crawl, 35 generated, 12 truncated author lists)
+```
+
+这是重建，不是 Scholar 的官方导出，差别值得知道：
+
+```bibtex
+% Scholar 自己导出的（抓取时 --bibtex，每条 2 次请求）
+@article{velivckovic2017graph,
+  title={Graph attention networks},
+  author={Veli{\v{c}}kovi{\'c}, Petar and Cucurull, Guillem and Casanova, Arantxa and ...},
+  journal={arXiv preprint arXiv:1710.10903},
+  year={2017}
+}
+
+% 离线拼出来的（0 次请求）
+@article{velickovic2017graph,
+  title = {{Graph attention networks}},
+  author = {P Veličković and G Cucurull and A Casanova and others},
+  journal = {arXiv preprint},
+  year = {2017},
+  url = {https://arxiv.org/abs/1710.10903},
+  note = {cited by 41135 on Google Scholar},
+}
+```
+
+也就是说：作者名只有 Scholar 显示的缩写、被它截断的作者列表补 `and others`、arXiv 编号可能缺失；换来的是零请求，外加原始链接与被引数。要精确条目就在抓取时导；要一份能直接用的书目、又不想再等几小时，就离线生成。
+
+其他细节：已经在抓取时导出过的记录会沿用同一个 key（两份文件指同一篇论文时名字一致）；`Veličković` 这类会正确转写成 `velickovic`（`ł`、`ø`、`ß`、`æ` 也都处理）；key 撞车时追加 `a`、`b`；venue 里出现 Proceedings/Conference/Workshop 的记为 `@inproceedings` 并用 `booktitle`，没有 venue 的记为 `@misc`；题名用双花括号包住，避免某些样式把大小写压平；`&`、`%`、`_` 等会转义。没有题名的记录会被跳过并计数。
 
 ### 分组统计
 
@@ -280,11 +316,20 @@ scholar-crawler --rehearse-handoff
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 161 个用例，全部离线
+python3 -m pytest -q     # 173 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
-测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、BibTeX 链接识别（按 href 而非按标签文字）与 `<pre>` 内容提取、`.bib` 去重、导出过程中的接管、分组统计（第一作者取法、期刊名归一化、四个维度的标签、按被引排序与中位数、小组隐藏、表格对齐）、真实页面回归（结果页 10 项自检全过、字段完整性、作者统计与论文行、cite 弹窗到 BibTeX、脱敏规则与「夹具不含凭证」扫描）、断点查看与清除（签名还原、时间戳、旧格式兼容、按子串清除、被 `-n` 截断的目标仍可续抓）、抓取计划（页数被 `-n` 收窄、作者按 100 条一页、展开与 BibTeX 的乘法成本、时长格式、`--dry-run` 不落地任何文件）、运行摘要（长短两种时长格式、按类型统计接管）、连续被拦时的静默等待与关闭开关、接管演练（真实 DOM 里被识别为验证页、按钮按下后恢复、未恢复与未识别的报告、headless 拒绝）、离线汇总（合并取舍、`extra` 合并、层级取最浅、过滤组合、统计与排序、写文件、参数校验）、自检报告（健康页面、空结果页、字段缺失定位、末页判定、输出格式）、作者条目的 `data-cid` 解析回退、引文网络展开（按被引排序、宽度上限、访问去重、引用下限、逐层推进与提前收敛）、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
+测试全部离线（不发任何网络请求），按模块分组：
+
+- **解析**：结果卡片（仅引用条目、PDF 侧链、被引/版本计数、词中加粗、第二页的结果计数、零结果页）、作者主页（头部各行、按行位置读统计表、论文行、缺年份与零被引、「显示更多」状态）、真实页面夹具（结果页 10 项自检全过、字段完整性、脱敏规则、夹具不含凭证）
+- **URL 与过滤**：查询/主页地址拼装、过滤参数、id 与 URL 解析、cite 弹窗地址
+- **抓取循环**：翻页与作者分批、节奏与冷却、连续被拦的静默等待与关闭开关、运行摘要的长短两种格式、HTML dump、导出过程中被拦
+- **人工接管**：真实 headless Chromium DOM 上的验证页判定、等待超时/窗口被关/headless 拒绝、接管演练全链路（识别→清除→恢复）
+- **引文网络**：按被引排序选点、宽度上限、访问去重、被引下限、层级推进与提前收敛
+- **输出与断点**：JSONL 去重、CSV 导出、作者档案 upsert、`.bib` 去重、断点查看与清除（签名还原、时间戳、旧格式）、被 `-n` 截断的目标仍可续抓
+- **离线工具**：汇总的合并取舍/过滤/统计、分组统计与 venue 归一化、书目生成（转写与姓氏、截断作者列表、key 复用与撞车、条目类型、转义与双花括号）
+- **命令行**：参数校验、`--dry-run` 的计划数字且不落地文件、`--self-check`、BibTeX 链接发现（按 href 而非文案）与 `<pre>` 提取、`--quiet` 的组合校验
 
 ## 合规
 
@@ -304,6 +349,7 @@ scholar_crawler/
   selfcheck.py  解析自检：逐字段体检与报告
   rehearsal.py  接管演练：本地验证页与全链路空演
   digest.py     离线汇总：合并去重、过滤、统计、导出
+  bibsynth.py   离线书目：由已存字段拼出 BibTeX
   storage.py    JSONL/CSV 写入、作者主页记录、BibTeX 文件、断点状态
   cli.py        命令行入口
 tests/          离线测试（含 headless Chromium 判定测试）
