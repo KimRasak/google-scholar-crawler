@@ -16,10 +16,10 @@ from scholar_crawler.digest import (  # noqa: E402
     load_records,
     main,
     merge_records,
-    record_key,
     write_csv,
     write_jsonl,
 )
+from scholar_crawler.models import record_key  # noqa: E402
 
 
 def _record(**overrides: object) -> dict[str, object]:
@@ -147,7 +147,8 @@ def test_quiet_prints_only_what_was_written(tmp_path: Path, capsys: pytest.Captu
 
 def test_quiet_without_an_output_file_is_refused(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["a.jsonl", "--quiet"]) == 1
-    assert "--quiet needs --out, --csv, --bibtex, --report or --refresh-list" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "--quiet needs --out, --csv, --bibtex, --report, --refresh-list or --graph" in printed
 
 
 def test_parser_defaults() -> None:

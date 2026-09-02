@@ -22,6 +22,8 @@ from .analysis import (
 )
 from .audit import audit_records, render_audit
 from .bibsynth import write_bibtex
+from .graph import FORMATS, build_graph, format_for, render_graph, render_network
+from .models import record_key
 from .refresh import (
     DEFAULT_REFRESH_LIMIT,
     DEFAULT_STALE_DAYS,
@@ -34,15 +36,6 @@ from .report import build_report
 from .storage import CSV_COLUMNS
 
 Record = dict[str, Any]
-
-
-def record_key(record: Record) -> str:
-    """Identify a record the way the crawler's sink does.
-
-    :param record: a stored record.
-    :returns: Scholar's card id when present, otherwise title and link.
-    """
-    return record.get("cluster_id") or f"{record.get('title')}::{record.get('link') or ''}"
 
 
 def load_records(paths: list[Path]) -> tuple[list[Record], int]:
@@ -266,6 +259,23 @@ def build_parser() -> argparse.ArgumentParser:
         f"(default: {DEFAULT_REFRESH_LIMIT})",
     )
     parser.add_argument(
+        "--network",
+        action="store_true",
+        help="report the citation graph the records already carry: who cites whom inside the "
+        "collection, its components, and which records stand alone",
+    )
+    parser.add_argument(
+        "--graph",
+        type=Path,
+        metavar="FILE",
+        help="export the citation graph; .graphml for Gephi/yEd/networkx, .dot for Graphviz",
+    )
+    parser.add_argument(
+        "--graph-format",
+        choices=FORMATS,
+        help="override the format --graph infers from the file suffix",
+    )
+    parser.add_argument(
         "--audit",
         action="store_true",
         help="report fields that parsed into something implausible (missing, out of range, "
@@ -283,9 +293,11 @@ def main(argv: list[str] | None = None) -> int:
         would produce no output at all.
     """
     args = build_parser().parse_args(argv)
-    if args.quiet and not (args.out or args.csv or args.bibtex or args.report or args.refresh_list):
+    if args.quiet and not (
+        args.out or args.csv or args.bibtex or args.report or args.refresh_list or args.graph
+    ):
         print(
-            "error: --quiet needs --out, --csv, --bibtex, --report or --refresh-list, "
+            "error: --quiet needs --out, --csv, --bibtex, --report, --refresh-list or --graph, "
             "otherwise the run prints nothing",
             flush=True,
         )
@@ -318,6 +330,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.audit:
             for line in render_audit(audit_records(kept), len(kept)):
                 print(f"  {line}", flush=True)
+        if args.network:
+            for line in render_network(build_graph(records, kept), top=args.top or 10):
+                print(f"  {line}", flush=True)
         if args.stale is not None:
             for line in render_staleness(kept, days=args.stale, top=args.top or 10):
                 print(f"  {line}", flush=True)
@@ -335,6 +350,23 @@ def main(argv: list[str] | None = None) -> int:
         args.report.write_text(markdown, encoding="utf-8")
         counted = f"{len(kept)} record" + ("" if len(kept) == 1 else "s")
         print(f"[out] report on {counted} -> {args.report}", flush=True)
+    if args.graph:
+        fmt = args.graph_format or format_for(args.graph.suffix)
+        if fmt is None:
+            print(
+                f"error: cannot tell the format of {args.graph.name}; "
+                f"use a .graphml or .dot suffix, or pass --graph-format",
+                flush=True,
+            )
+            return 1
+        graph = build_graph(records, kept)
+        args.graph.parent.mkdir(parents=True, exist_ok=True)
+        args.graph.write_text(render_graph(graph, fmt), encoding="utf-8")
+        print(
+            f"[out] {len(graph.nodes)} nodes and {len(graph.edges)} edges as {fmt} "
+            f"-> {args.graph}",
+            flush=True,
+        )
     if args.refresh_list:
         days = args.stale if args.stale is not None else float(DEFAULT_STALE_DAYS)
         aged = rank_stale(kept, days=days)

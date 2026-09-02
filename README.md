@@ -68,7 +68,7 @@ $ scholar-crawler --doctor
 
 ## 快速开始
 
-不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十三条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、单查询、先算账、批量+CSV、作者主页、引文网络、断点续抓、数据体检、判旧与重抓、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
+不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十四条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、单查询、先算账、批量+CSV、作者主页、抓引文网络、断点续抓、数据体检、导出引文网络、判旧与重抓、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
 
 ```sh
 $ scholar-crawler --recipes
@@ -145,6 +145,8 @@ scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.js
 | `--group-by` | 按 `author`/`venue`/`year`/`level` 分组统计 |
 | `--audit` | 体检字段：可疑值与缺失率，分 error/warn 两档 |
 | `--report` `--report-title` | 输出一份可读的 Markdown 综述 |
+| `--network` | 报告记录里已有的引文网络：谁引用了谁、连通分量、孤立记录 |
+| `--graph` `--graph-format` | 导出引文网络为 GraphML 或 DOT |
 | `--stale [天数]` | 报告数据有多旧，并按「最可能变了」排序 |
 | `--refresh-list` `--refresh-limit` | 写出该重抓的 cluster id 清单 |
 | `--min-group`、`--groups` | 隐藏记录数少于 N 的组；最多列出几组（默认 10） |
@@ -306,6 +308,31 @@ scholar-digest out/*.jsonl --report out/report.md --report-title "图注意力�
 包含：一眼看完的规模（记录数、总被引、年份跨度、期刊数、第一作者数）、高被引清单（标题带原始链接）、按期刊/会议与按第一作者的两张分组表（记录数、总被引、中位数、年份跨度、代表作）、逐年分布的文本柱状图（复制粘贴不会坏）、这些记录分别来自哪个查询，最后是一节「这份报告有多可信」——直接复用 `--audit` 的检查结果，把缺失率和可疑字段摊开写。
 
 报告开头写明「所有数字都来自抓取当时 Scholar 显示的内容，生成报告没有重新请求」，避免读者把它当成实时数据。
+
+### 把引文网络导出来：`--network` 与 `--graph`
+
+`--cites X` 这种列表的含义是「这一页上的每条记录都引用了 X」，而每条记录自己的 `cited_by_url` 里就带着它自己的那个 X。所以引文关系其实早就存在 JSONL 里了——不用多发一个请求，之前几轮抓的老数据也照样能出图。
+
+```sh
+$ scholar-digest out/graph.jsonl --network --graph out/graph.graphml
+  38 records and 0 uncollected works, 28 edges
+  10 component(s), largest 11 works; 7 record(s) neither cite nor are cited here
+  most cited from inside this collection:
+      10 here     41,135 on Scholar  Graph attention networks
+       9 here      4,408 on Scholar  Heterogeneous graph attention network
+[out] 38 nodes and 28 edges as graphml -> out/graph.graphml
+```
+
+「in this collection」是关键：`10 here` 指这 38 条里有 10 条引用了它，`41,135 on Scholar` 是全网被引数。前者才说明它在**你这个主题范围内**有多中心。
+
+`--graph` 按后缀选格式：`.graphml` 给 Gephi / yEd / networkx，`.dot`/`.gv` 给 Graphviz（`dot -Tsvg out/graph.dot -o graph.svg`）。后缀认不出来就报错并让你用 `--graph-format`，不会猜。节点带 label、year、citations、depth（扩展层数）和 collected 五个属性。
+
+两个如实说明的边界：
+
+- 用 `--cites <id>` 直接起抓时，被引的那篇本身并不在集合里。这种目标会以虚线的 `uncollected work <id>` 节点出现——否则整张图会因为「一条边都没有」看起来像坏了。
+- 一篇论文可能出现在多个 `--cites` 列表里，而合并后只剩一个 `query` 值。所以出图时边取自**合并前**的全部观测，节点取自合并、过滤后的集合，边不会因为去重而丢。
+
+关键词检索出来的集合没有引文边，这时它会直接说清楚，而不是画一张空图。
 
 ### 维护一个持续更新的文献库：`--stale` 与 `--refresh-list`
 
@@ -546,7 +573,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 305 个用例，全部离线
+python3 -m pytest -q     # 323 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -558,6 +585,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **失败诊断**：九类网络错误各自归类、只重试可能是暂时的失败、认不出的错误保留原文并仍给建议、每条诊断都带 URL 与下一步、429/503 与其他 5xx 区分、无法解析的页面指向 parser.py 与存盘副本、连续验证被判为封锁、渲染顺序
 - **全链路**：真实浏览器打本地假 Scholar——翻页与页数上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、干净数据不报警、headless 拒绝接管时已抓数据仍在、连接被拒/不可解析页面/429 各自给出人话、零结果页仍是零结果
 - **抓取时体检**：逐条累加与整批体检结果完全一致、单条坏记录不报警、一个字段大面积失败才报警、缺失类警告永不报警、运行结束时打印在输出之后
+- **引文网络**：边的方向、未抓到的目标变虚线节点、自引不成环、合并前后边不丢、重复观测只留一条边、连通分量忽略方向、GraphML 能被 XML 解析器解析且恶意标题被转义、DOT 用反斜杠转义、后缀认不出来时报错
 - **判旧与重抓**：时间戳缺失/写坏/无时区各自处理、只有超期的入选、排序把「数字真的变了的」排前面、能按 id 重抓与只能重跑查询分开统计、清单去重、写出的文件真的能被 `--clusters-file` 读回、重抓不丢已有字段
 - **命令自述**：目标与文件逐条列出、创建与追加分开、十三种可疑组合各有一条用例、`warn` 排在 `note` 前、`--explain` 不写任何文件、可与 `--dry-run` 同时用
 - **环境体检**：依赖过旧算失败、缺 Chrome 只算警告、不存在的目录如实报告且绝不创建、上级目录不可读也不崩、profile 有无 cookie、`--doctor` 走一遍 CLI
@@ -603,6 +631,7 @@ scholar_crawler/
   digest.py     离线汇总：合并去重、过滤、命令行
   analysis.py   离线分析：概览统计与分组
   refresh.py    离线判旧：该重抓哪些记录
+  graph.py      离线引文网络：还原边、体检、导出 GraphML/DOT
   report.py     离线综述：可读的 Markdown 报告
   audit.py      离线体检：字段可疑值与缺失率
   bibsynth.py   离线书目：由已存字段拼出 BibTeX

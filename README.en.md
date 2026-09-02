@@ -68,7 +68,7 @@ Once the machine is sound, `--self-check` goes on to test the network.
 
 ## Usage
 
-Rather than reading the flag table, start from `--recipes`: thirteen complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, one topic, costing a run, batch plus CSV, an author, the citation graph, resuming, auditing, staleness and refreshing, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
+Rather than reading the flag table, start from `--recipes`: fourteen complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, one topic, costing a run, batch plus CSV, an author, crawling the citation graph, resuming, auditing, exporting that graph, staleness and refreshing, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
 
 ```sh
 $ scholar-crawler --recipes
@@ -145,6 +145,8 @@ When the same work appears in several files, the higher citation count wins as t
 | `--group-by` | group by `author`, `venue`, `year` or `level` |
 | `--audit` | audit fields: implausible values and missing rates, as errors and warnings |
 | `--report` `--report-title` | write a readable Markdown overview |
+| `--network` | report the citation graph the records already carry |
+| `--graph` `--graph-format` | export that graph as GraphML or DOT |
 | `--stale [DAYS]` | report how old the collection is, most-moved records first |
 | `--refresh-list` `--refresh-limit` | write the cluster ids worth re-listing |
 | `--min-group`, `--groups` | hide groups below N records; how many groups to list (default: 10) |
@@ -307,6 +309,31 @@ scholar-digest out/*.jsonl --report out/report.md --report-title "Graph attentio
 It contains the size of the collection at a glance (records, total citations, year span, venues, first authors), the most-cited works with their original links, two grouped tables — by venue and by first author, each with records, citations, median, year span and the group's most-cited work — a text bar chart of records per year (which survives copy-paste), which query each record came from, and finally a "how much of this to trust" section that reuses the `--audit` checks to state the missing rates and doubtful fields outright.
 
 The report opens by saying that every number comes from what Scholar showed when the records were collected and that nothing was re-fetched, so nobody mistakes it for live data.
+
+### Exporting the citation graph: `--network` and `--graph`
+
+A `--cites X` listing means every record on it cites the work whose citing-works id is `X`, and each record's own `cited_by_url` carries that id for itself. The citation relation is therefore already in the JSONL a crawl wrote: no extra request, and collections made before this existed still yield their graph.
+
+```sh
+$ scholar-digest out/graph.jsonl --network --graph out/graph.graphml
+  38 records and 0 uncollected works, 28 edges
+  10 component(s), largest 11 works; 7 record(s) neither cite nor are cited here
+  most cited from inside this collection:
+      10 here     41,135 on Scholar  Graph attention networks
+       9 here      4,408 on Scholar  Heterogeneous graph attention network
+[out] 38 nodes and 28 edges as graphml -> out/graph.graphml
+```
+
+"From inside this collection" is the point: `10 here` means ten of these 38 records cite it, while `41,135 on Scholar` is its global count. Only the first says how central it is **to the topic you collected**.
+
+`--graph` picks the format from the suffix: `.graphml` for Gephi, yEd and networkx, `.dot`/`.gv` for Graphviz (`dot -Tsvg out/graph.dot -o graph.svg`). An unrecognized suffix is refused with a pointer to `--graph-format` rather than guessed. Nodes carry label, year, citations, depth (expansion level) and collected.
+
+Two limits, stated plainly:
+
+- Seeding with `--cites <id>` means the cited work itself is not in the collection. Such targets appear as dashed `uncollected work <id>` nodes, because otherwise the graph would come out with no edges at all and look broken.
+- One paper can appear under several `--cites` listings while merging keeps only one of its `query` values. Edges are therefore taken from every observation **before** merging, and nodes from the merged, filtered set, so deduplication cannot drop an edge.
+
+A keyword-only collection has no citation edges, and the report says exactly that instead of drawing an empty graph.
 
 ### Keeping a collection current: `--stale` and `--refresh-list`
 
@@ -546,7 +573,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 305 tests, fully offline
+python3 -m pytest -q     # 323 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -600,6 +627,7 @@ scholar_crawler/
   digest.py     offline digest: merge, filter, command line
   analysis.py   offline analysis: overview counts and grouping
   refresh.py    offline staleness: which records to collect again
+  graph.py      offline citation graph: edges, report, GraphML/DOT export
   report.py     offline overview: the readable Markdown report
   audit.py      offline audit: implausible and missing fields
   bibsynth.py   offline bibliography: BibTeX from stored fields

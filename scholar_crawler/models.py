@@ -140,6 +140,18 @@ class ScholarResult:
         return self.cluster_id or f"{self.title}::{self.link or ''}"
 
 
+def record_key(record: dict[str, Any]) -> str:
+    """Identify a stored record the way :meth:`ScholarResult.dedup_key` identifies a live one.
+
+    Records read back from JSONL are plain mappings, and every offline tool that groups them —
+    merging, graph building — must agree with the crawler's sink on what one work is.
+
+    :param record: a stored record.
+    :returns: Scholar's card id when present, otherwise title and link.
+    """
+    return record.get("cluster_id") or f"{record.get('title')}::{record.get('link') or ''}"
+
+
 @dataclass(slots=True)
 class PageResult:
     """Outcome of fetching one result page.
