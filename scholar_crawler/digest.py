@@ -37,6 +37,15 @@ from .storage import CSV_COLUMNS
 
 Record = dict[str, Any]
 
+DEFAULT_TOP = 5
+"""Entries in every printed list, so one number governs what the terminal shows."""
+
+DEFAULT_REPORT_TITLE = "Literature overview"
+"""Heading of the Markdown report when the caller names none."""
+
+DEFAULT_REPORT_TOP = 15
+"""Records listed in the Markdown report, which has room for more than the terminal."""
+
 
 def load_records(paths: list[Path]) -> tuple[list[Record], int]:
     """Read JSONL records from every input file, in the order given.
@@ -191,50 +200,63 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="scholar-digest",
         description="Merge, filter and summarize crawled JSONL files. Reads local files only.",
+        epilog=(
+            "Records are merged and deduplicated first; every report and file below covers the "
+            "same selected set."
+        ),
     )
     parser.add_argument("inputs", nargs="+", type=Path, metavar="FILE", help="JSONL files to read")
-    parser.add_argument("-o", "--out", type=Path, help="write the merged records to this JSONL file")
-    parser.add_argument("--csv", type=Path, help="write the merged records to this CSV file")
-    parser.add_argument(
-        "--bibtex",
-        type=Path,
-        metavar="FILE",
-        help="build a BibTeX file from the stored fields, without contacting Scholar",
+    parser.add_argument("--quiet", action="store_true", help="print only what was written")
+
+    selection = parser.add_argument_group(
+        "selection", "which of the merged records everything below covers"
     )
-    parser.add_argument(
+    selection.add_argument(
         "--min-citations", type=int, default=0, metavar="N", help="drop records cited fewer times"
     )
-    parser.add_argument("--year-from", type=int, metavar="YEAR", help="drop records published earlier")
-    parser.add_argument("--year-to", type=int, metavar="YEAR", help="drop records published later")
-    parser.add_argument(
-        "--top", type=int, default=5, metavar="N", help="most-cited records to list (default: 5)"
+    selection.add_argument("--year-from", type=int, metavar="YEAR", help="drop records published earlier")
+    selection.add_argument("--year-to", type=int, metavar="YEAR", help="drop records published later")
+
+    printed = parser.add_argument_group(
+        "printed reports", "read the collection in the terminal; these write nothing"
     )
-    parser.add_argument(
+    printed.add_argument(
+        "--top",
+        type=int,
+        default=DEFAULT_TOP,
+        metavar="N",
+        help=f"entries in every printed list: most cited, stale, cited from inside "
+        f"(default: {DEFAULT_TOP}; 0 lists none)",
+    )
+    printed.add_argument(
         "--group-by",
         choices=GROUP_KEYS,
         metavar="DIMENSION",
         help=f"also print a per-group table ({', '.join(GROUP_KEYS)})",
     )
-    parser.add_argument(
-        "--min-group",
+    printed.add_argument(
+        "--min-group-size",
         type=int,
         default=1,
         metavar="N",
         help="hide groups holding fewer records than this (default: 1)",
     )
-    parser.add_argument(
+    printed.add_argument(
         "--groups", type=int, default=10, metavar="N", help="groups to list (default: 10)"
     )
-    parser.add_argument(
-        "--report",
-        type=Path,
-        metavar="FILE",
-        help="write a readable Markdown overview of the merged records to this file",
+    printed.add_argument(
+        "--audit",
+        action="store_true",
+        help="report fields that parsed into something implausible (missing, out of range, "
+        "a venue that is really a page range) before trusting the numbers",
     )
-    parser.add_argument(
-        "--report-title", default="Literature overview", metavar="TEXT", help="heading for --report"
+    printed.add_argument(
+        "--network",
+        action="store_true",
+        help="report the citation graph the records already carry: who cites whom inside the "
+        "collection, its components, and which records stand alone",
     )
-    parser.add_argument(
+    printed.add_argument(
         "--stale",
         type=float,
         nargs="?",
@@ -243,14 +265,46 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"report how current the collection is, counting records older than DAYS as "
         f"stale (default: {DEFAULT_STALE_DAYS})",
     )
-    parser.add_argument(
+
+    written = parser.add_argument_group(
+        "written outputs", "hand the collection to something else: a spreadsheet, LaTeX, Gephi"
+    )
+    written.add_argument("-o", "--out", type=Path, help="write the merged records to this JSONL file")
+    written.add_argument("--csv", type=Path, help="write the merged records to this CSV file")
+    written.add_argument(
+        "--bibtex",
+        type=Path,
+        metavar="FILE",
+        help="build a BibTeX file from the stored fields, without contacting Scholar",
+    )
+    written.add_argument(
+        "--report",
+        type=Path,
+        metavar="FILE",
+        help="write a readable Markdown overview of the merged records to this file",
+    )
+    written.add_argument(
+        "--report-title",
+        default=DEFAULT_REPORT_TITLE,
+        metavar="TEXT",
+        help=f"heading for --report (default: {DEFAULT_REPORT_TITLE!r})",
+    )
+    written.add_argument(
+        "--report-top",
+        type=int,
+        default=DEFAULT_REPORT_TOP,
+        metavar="N",
+        help=f"records listed in --report, which has room for more than the terminal "
+        f"(default: {DEFAULT_REPORT_TOP})",
+    )
+    written.add_argument(
         "--refresh-list",
         type=Path,
         metavar="FILE",
         help="write the stale records' cluster ids here, most-moved first; feed the file back "
         "with scholar-crawler --clusters-file",
     )
-    parser.add_argument(
+    written.add_argument(
         "--refresh-limit",
         type=int,
         default=DEFAULT_REFRESH_LIMIT,
@@ -258,30 +312,17 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"ids to write for --refresh-list; each costs one page load "
         f"(default: {DEFAULT_REFRESH_LIMIT})",
     )
-    parser.add_argument(
-        "--network",
-        action="store_true",
-        help="report the citation graph the records already carry: who cites whom inside the "
-        "collection, its components, and which records stand alone",
-    )
-    parser.add_argument(
+    written.add_argument(
         "--graph",
         type=Path,
         metavar="FILE",
         help="export the citation graph; .graphml for Gephi/yEd/networkx, .dot for Graphviz",
     )
-    parser.add_argument(
+    written.add_argument(
         "--graph-format",
         choices=FORMATS,
         help="override the format --graph infers from the file suffix",
     )
-    parser.add_argument(
-        "--audit",
-        action="store_true",
-        help="report fields that parsed into something implausible (missing, out of range, "
-        "a venue that is really a page range) before trusting the numbers",
-    )
-    parser.add_argument("--quiet", action="store_true", help="print only what was written")
     return parser
 
 
@@ -331,13 +372,13 @@ def main(argv: list[str] | None = None) -> int:
             for line in render_audit(audit_records(kept), len(kept)):
                 print(f"  {line}", flush=True)
         if args.network:
-            for line in render_network(build_graph(records, kept), top=args.top or 10):
+            for line in render_network(build_graph(records, kept), top=args.top):
                 print(f"  {line}", flush=True)
         if args.stale is not None:
-            for line in render_staleness(kept, days=args.stale, top=args.top or 10):
+            for line in render_staleness(kept, days=args.stale, top=args.top):
                 print(f"  {line}", flush=True)
         if args.group_by:
-            groups = group_records(kept, args.group_by, min_size=args.min_group)
+            groups = group_records(kept, args.group_by, min_size=args.min_group_size)
             for line in render_groups(groups, args.group_by, limit=args.groups):
                 print(f"  {line}", flush=True)
     if args.out:
@@ -346,7 +387,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[out] {write_csv(kept, args.csv)} rows -> {args.csv}", flush=True)
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
-        markdown = build_report(kept, title=args.report_title, top=args.top or 15)
+        markdown = build_report(kept, title=args.report_title, top=args.report_top)
         args.report.write_text(markdown, encoding="utf-8")
         counted = f"{len(kept)} record" + ("" if len(kept) == 1 else "s")
         print(f"[out] report on {counted} -> {args.report}", flush=True)

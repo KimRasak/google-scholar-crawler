@@ -35,7 +35,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    query = parser.add_argument_group("query")
+    query = parser.add_argument_group(
+        "query", "what to crawl, or one of the offline modes that crawl nothing"
+    )
     query.add_argument("-q", "--query", action="append", default=[], help="search query; repeatable")
     query.add_argument("--queries-file", type=Path, help="file with one query per line")
     query.add_argument(
@@ -104,18 +106,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     query.add_argument("--year-from", type=int, help="earliest publication year")
     query.add_argument("--year-to", type=int, help="latest publication year")
-    query.add_argument("--lang", default="en", help="Scholar interface language (hl), default en")
+    query.add_argument("--lang", default="en", help="Scholar interface language (hl) (default: en)")
     query.add_argument("--sort-by-date", action="store_true", help="sort by date instead of relevance")
     query.add_argument("--no-citations", action="store_true", help="exclude citation-only records")
     query.add_argument("--no-patents", action="store_true", help="exclude patents")
     query.add_argument("--review-only", action="store_true", help="review articles only")
 
-    paging = parser.add_argument_group("paging")
+    paging = parser.add_argument_group(
+        "paging", "how far each target goes; every extra page is another request"
+    )
     paging.add_argument(
-        "-p", "--pages", type=int, default=3, help="pages per query (10 results each), default 3"
+        "-p", "--pages", type=int, default=3, help="pages per query, 10 results each (default: 3)"
     )
     paging.add_argument("-n", "--max-results", type=int, help="stop each query after this many results")
-    paging.add_argument("--start", type=int, default=0, help="first result offset, default 0")
+    paging.add_argument("--start", type=int, default=0, help="first result offset (default: 0)")
     paging.add_argument(
         "--follow-cites",
         type=int,
@@ -139,9 +143,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip expanding records cited fewer times than this",
     )
     paging.add_argument("--resume", action="store_true", help="continue each query from the saved cursor")
-    paging.add_argument("--host", default=SCHOLAR_HOST, help="Scholar host, e.g. https://scholar.google.de")
+    paging.add_argument(
+        "--host",
+        default=SCHOLAR_HOST,
+        help=f"Scholar host, e.g. https://scholar.google.de (default: {SCHOLAR_HOST})",
+    )
 
-    output = parser.add_argument_group("output")
+    output = parser.add_argument_group(
+        "output", "where the run writes; records are appended page by page, so nothing is lost"
+    )
     output.add_argument("-o", "--out", type=Path, default=Path("out/results.jsonl"), help="JSONL output path")
     output.add_argument("--csv", type=Path, help="also export collected records to this CSV path")
     output.add_argument("--state", type=Path, default=Path("out/state.json"), help="resume-state path")
@@ -172,27 +182,44 @@ def build_parser() -> argparse.ArgumentParser:
         "will touch, and which flags contradict each other — and stop",
     )
 
-    browser = parser.add_argument_group("browser")
+    browser = parser.add_argument_group(
+        "browser", "the window a human takes over, and the profile that remembers cleared cookies"
+    )
     browser.add_argument(
         "--profile", type=Path, default=Path(".scholar-profile"), help="persistent profile dir"
     )
     browser.add_argument("--headless", action="store_true", help="no window; a challenge then aborts the run")
     browser.add_argument(
-        "--channel", default="chrome", help="browser channel; empty string uses bundled Chromium"
+        "--channel",
+        default="chrome",
+        help="browser channel (default: chrome); empty string uses bundled Chromium"
     )
-    browser.add_argument("--locale", default="en-US", help="browser locale")
-    browser.add_argument("--timezone", default="America/Los_Angeles", help="IANA timezone")
+    browser.add_argument("--locale", default="en-US", help="browser locale (default: en-US)")
+    browser.add_argument(
+        "--timezone",
+        default="America/Los_Angeles",
+        help="IANA timezone (default: America/Los_Angeles)",
+    )
     browser.add_argument("--proxy", help="proxy server URL")
-    browser.add_argument("--slow-mo", type=float, default=0.0, help="ms delay per browser action")
+    browser.add_argument(
+        "--slow-mo", type=float, default=0.0, help="ms delay per browser action (default: 0)"
+    )
 
-    pace = parser.add_argument_group("pacing and handoff")
+    pace = parser.add_argument_group(
+        "pacing and handoff",
+        "leave these alone unless you are being challenged; slower is what keeps a run alive",
+    )
     # Left unset so the run can tell an explicit choice from the default and never widen
     # a rhythm the user asked for; see _resolve_pacing.
     pace.add_argument(
-        "--min-delay", type=float, help=f"min seconds between page requests (default: {DEFAULT_MIN_DELAY})"
+        "--min-delay",
+        type=float,
+        help=f"min seconds between page requests (default: {DEFAULT_MIN_DELAY})",
     )
     pace.add_argument(
-        "--max-delay", type=float, help=f"max seconds between page requests (default: {DEFAULT_MAX_DELAY})"
+        "--max-delay",
+        type=float,
+        help=f"max seconds between page requests (default: {DEFAULT_MAX_DELAY})",
     )
     pace.add_argument(
         "--no-learn-from-history",
@@ -206,12 +233,27 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="SECONDS",
         help="give up on one page load after this long (default: 45)",
     )
-    pace.add_argument("--cooldown-every", type=int, default=10, help="long pause every N pages; 0 disables")
-    pace.add_argument("--cooldown-seconds", type=float, default=90.0, help="length of the long pause")
     pace.add_argument(
-        "--handoff-timeout", type=float, default=600.0, help="seconds to wait for a human; 0 waits forever"
+        "--cooldown-every",
+        type=int,
+        default=10,
+        help="long pause every N pages; 0 disables (default: 10)",
     )
-    pace.add_argument("--max-handoffs", type=int, default=5, help="abort after this many takeovers")
+    pace.add_argument(
+        "--cooldown-seconds",
+        type=float,
+        default=90.0,
+        help="length of the long pause in seconds (default: 90)",
+    )
+    pace.add_argument(
+        "--handoff-timeout",
+        type=float,
+        default=600.0,
+        help="seconds to wait for a human; 0 waits forever (default: 600)",
+    )
+    pace.add_argument(
+        "--max-handoffs", type=int, default=5, help="abort after this many takeovers (default: 5)"
+    )
     pace.add_argument(
         "--challenge-cooldown",
         type=float,
@@ -224,7 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--backoff-factor",
         type=float,
         default=1.6,
-        help="multiply page delays by this after each takeover; 1.0 keeps the rhythm",
+        help="multiply page delays by this after each takeover; 1.0 keeps the rhythm (default: 1.6)",
     )
     return parser
 

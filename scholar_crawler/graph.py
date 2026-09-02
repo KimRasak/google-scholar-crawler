@@ -224,6 +224,8 @@ def render_network(graph: Graph, *, top: int = 10) -> list[str]:
         f"{len(isolated)} record(s) neither cite nor are cited here",
     ]
     ranked = sorted(inside.items(), key=lambda item: item[1], reverse=True)[:top]
+    if not ranked:
+        return lines
     lines.append("most cited from inside this collection:")
     for key, count in ranked:
         node = graph.nodes[key]

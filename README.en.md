@@ -150,21 +150,36 @@ By default it prints an overview: record count, total citations, how many alread
 
 When the same work appears in several files, the higher citation count wins as the fresher observation, the fuller record wins ties, `extra.bibtex_key` survives, and `follow_depth` keeps the shallowest level.
 
+`--help` is ordered as "which records → read in the terminal → write to a file", and each group says when to use it.
+
+**Selection** — everything below covers this set
+
+| Option | Effect |
+| --- | --- |
+| `--min-citations`, `--year-from`, `--year-to` | filters; a year range drops records without a year |
+
+**Printed reports** — these write nothing
+
+| Option | Effect |
+| --- | --- |
+| `--top` | entries in every printed list: most cited, stale, cited from inside (default: 5; `0` keeps the counts and drops the lists) |
+| `--group-by`, `--min-group-size`, `--groups` | group by `author`, `venue`, `year` or `level`; hide groups below N records; how many groups to list (default: 10) |
+| `--audit` | audit fields: implausible values and missing rates, as errors and warnings |
+| `--network` | report the citation graph the records already carry |
+| `--stale [DAYS]` | report how old the collection is, most-moved records first |
+
+**Written outputs** — hand the collection to something else
+
 | Option | Effect |
 | --- | --- |
 | `-o`, `--csv` | write the merged records as JSONL / CSV |
 | `--bibtex` | build a bibliography offline (no requests) |
-| `--min-citations`, `--year-from`, `--year-to` | filters; a year range drops records without a year |
-| `--top` | how many most-cited records the overview lists (default: 5) |
-| `--group-by` | group by `author`, `venue`, `year` or `level` |
-| `--audit` | audit fields: implausible values and missing rates, as errors and warnings |
-| `--report` `--report-title` | write a readable Markdown overview |
-| `--network` | report the citation graph the records already carry |
-| `--graph` `--graph-format` | export that graph as GraphML or DOT |
-| `--stale [DAYS]` | report how old the collection is, most-moved records first |
-| `--refresh-list` `--refresh-limit` | write the cluster ids worth re-listing |
-| `--min-group`, `--groups` | hide groups below N records; how many groups to list (default: 10) |
-| `--quiet` | print only what was written; needs `-o`, `--csv` or `--bibtex` |
+| `--report`, `--report-title`, `--report-top` | write a readable Markdown overview; how many records it lists (default: 15) |
+| `--refresh-list`, `--refresh-limit` | write the cluster ids worth re-listing |
+| `--graph`, `--graph-format` | export that graph as GraphML or DOT |
+| `--quiet` | print only what was written; needs one of the writing options |
+
+`--top` governs terminal lists only and `--report-top` the Markdown report, so shortening what you read does not shorten what you wrote. `--min-group-size` is a threshold and `--groups` is a count — a size and a number, named apart.
 
 ## The takeover log
 
@@ -425,7 +440,7 @@ $ scholar-digest out/all.jsonl --group-by venue --groups 4
     ... and 4 more groups
 ```
 
-The `median` column is there for fair comparison: it tells a group carried by one runaway paper apart from a group that is well cited throughout. `--min-group 3` folds away the long tail of one-off groups.
+The `median` column is there for fair comparison: it tells a group carried by one runaway paper apart from a group that is well cited throughout. `--min-group-size 3` folds away the long tail of one-off groups.
 
 Two normalizations keep one venue from being split across groups: every arXiv preprint becomes `arXiv preprint` (Scholar writes the identifier into the venue), and profile-style venues like `nature 521 (7553), 436-444, 2015` lose the volume and pages to become `nature`. Grouping is case-insensitive and displays the first spelling seen. The overview's venue list uses the same normalization.
 
@@ -587,7 +602,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 332 tests, fully offline
+python3 -m pytest -q     # 353 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -602,6 +617,7 @@ All tests run offline (no network at all), grouped by area:
 - **The report**: stating that the numbers are as-collected, the counts at a glance, links only where a destination exists, the grouped tables, a chart scaled to the busiest year, which query each record came from, its own trust section, an escaped pipe in a title, an em dash for a missing field, and counting as output under `--quiet`
 - **Record audit**: a clean record trips nothing, page-range venues and leftover years, a year the byline never mentioned, citations without a link, negative counts, the severity of missing and lossy fields, citation-only records not blamed for a missing card id, counts with examples, and zero errors on records parsed from the real fixtures
 - **Documentation**: in-page links in both READMEs resolve to real sections, the navigation table covers at least seven situations, and both documents list exactly the modules that exist
+- **The interface**: both parsers are read back and compared — a shared flag parses the same way in both commands, every flag has help, every flag sits in a described group, a flag with a default states it, and terminal lists and the written report are governed by separate options
 - **Modes**: all four modes driven without argparse (the rehearsal in a real headless Chromium), showing and forgetting state, and takeovers printed newest last
 - **Recipes**: every recipe parses, builds a target and (for the `--dry-run` one) actually runs; the print format, the first three shown for a bare invocation, and a terse error when arguments were passed
 - **Cross-run learning**: rehearsals excluded as evidence, the history summary (kinds, position, streaks), one block only warning, factors stacking for repeated and early blocks with a cap, never speeding a run up, hand-passed delays left alone, the off switch, an empty log leaving defaults

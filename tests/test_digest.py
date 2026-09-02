@@ -166,7 +166,7 @@ def test_group_table_is_printed_on_request(tmp_path: Path, capsys: pytest.Captur
             _record(cluster_id="c", authors="G Hinton", cited_by_count=900),
         ],
     )
-    assert main([str(path), "--group-by", "author", "--min-group", "2"]) == 0
+    assert main([str(path), "--group-by", "author", "--min-group-size", "2"]) == 0
     printed = capsys.readouterr().out
     assert "by author" in printed
     assert "Y Bengio" in printed

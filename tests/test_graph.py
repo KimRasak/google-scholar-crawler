@@ -126,6 +126,14 @@ def test_the_network_report_names_the_hubs_and_the_records_standing_alone() -> N
     assert any("3 here" in line and "40,000 on Scholar" in line for line in lines)
 
 
+def test_asking_for_no_entries_drops_the_heading_too() -> None:
+    seed = _record("seed", cited_by_url="?cites=111", cited_by_count=40000)
+    citing = [_record(f"c{index}", query="cites:111") for index in range(3)]
+    lines = render_network(build_graph([seed, *citing]), top=0)
+    assert len(lines) == 2, "a list of nothing needs no heading"
+    assert not any("most cited" in line for line in lines)
+
+
 def test_a_collection_without_citation_listings_says_so_instead_of_drawing_nothing() -> None:
     lines = render_network(build_graph([_record("a"), _record("b")]))
     assert lines == [
