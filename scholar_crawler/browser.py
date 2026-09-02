@@ -14,6 +14,10 @@ from pathlib import Path
 
 from playwright.sync_api import BrowserContext, Page, sync_playwright
 
+from .challenge import HumanHandoff
+from .storage import ChallengeLog
+from .urls import SCHOLAR_HOST
+
 _INIT_SCRIPT = """
 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 """
@@ -67,3 +71,25 @@ def browser_session(options: BrowserOptions) -> Iterator[tuple[BrowserContext, P
             yield context, page
         finally:
             context.close()
+
+
+@dataclass(slots=True, frozen=True)
+class Session:
+    """The browser-backed settings a crawl shares with the modes that replace it.
+
+    :param options: launch settings for the crawling profile.
+    :param handoff: takeover policy; its ``headless`` flag decides whether a human can act.
+    :param log: takeover log, written by everything that opens a browser.
+    :param host: Scholar host or regional mirror.
+    :param max_handoffs: give up after this many takeovers.
+    :param dump_dir: when set, fetched HTML is saved here.
+    :param language: Scholar interface language (``hl``).
+    """
+
+    options: BrowserOptions
+    handoff: HumanHandoff
+    log: ChallengeLog
+    host: str = SCHOLAR_HOST
+    max_handoffs: int = 5
+    dump_dir: Path | None = None
+    language: str = "en"

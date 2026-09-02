@@ -7,6 +7,20 @@ Runs academic searches on Google Scholar in a real browser (Playwright + your in
 
 The code never tries to solve, bypass or hide a verification challenge. Verification is done by a human, in a window they can see.
 
+## Where to start
+
+| Your situation | Sections to read |
+| --- | --- |
+| First time | [Install](#install) → [Usage](#usage) (run `--recipes` and `--self-check` first) |
+| Collecting a batch | [Usage](#usage) → [Counting the cost first](#counting-the-cost-first---dry-run) → [Options](#options) → [Output](#output) |
+| Using what you collected | [Digesting collected results](#digesting-collected-results-no-requests) → [Building a bibliography offline](#building-a-bibliography-offline) → [Grouping](#grouping) |
+| Getting blocked | [The takeover log](#the-takeover-log) → [Learning to slow down across runs](#learning-to-slow-down-across-runs) → [Getting challenged less](#getting-challenged-less) → [Rehearsing the human takeover](#rehearsing-the-human-takeover) |
+| Parsing looks wrong | [Self-check](#self-check) → [Real-structure regression fixtures](#real-structure-regression-fixtures) → `--dump-html` |
+| Interrupted run | [Reviewing and resetting resume state](#reviewing-and-resetting-resume-state) → `--resume` |
+| Changing the code | [Development](#development) → [Layout](#layout) → [How it works](#how-it-works) |
+
+The short version: `scholar-crawler --recipes` hands you working commands; come back to the matching section when something goes wrong.
+
 ## How it works
 
 1. Launches headed Chrome with a **persistent profile** (`--profile`, default `.scholar-profile`). Cookies earned by solving a challenge survive restarts, so takeovers get rarer over time.
@@ -372,7 +386,7 @@ The slowdown has two stages: every takeover widens the delays by `--backoff-fact
 ## Development
 
 ```sh
-python3 -m pytest -q     # 200 tests, fully offline
+python3 -m pytest -q     # 206 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -381,6 +395,8 @@ All tests run offline (no network at all), grouped by area:
 - **Parsing**: result cards (citation-only records, PDF side links, cited-by and version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author profiles (header lines, the position-read summary table, publication rows, missing years and zero citations, the "show more" state), real-page fixtures (all ten self-checks on a real result page, field completeness, the sanitizing rules, a no-credentials scan)
 - **URLs and filters**: query and profile URL assembly, filter parameters, id and URL parsing, cite-popup addresses
 - **Crawl loop**: pagination and author batching, pacing and cooldowns, the back-to-back challenge wait and its off switch, both run-summary duration formats, HTML dumps, a challenge during export
+- **Documentation**: in-page links in both READMEs resolve to real sections, the navigation table covers at least seven situations, and both documents list exactly the modules that exist
+- **Modes**: all four modes driven without argparse (the rehearsal in a real headless Chromium), showing and forgetting state, and takeovers printed newest last
 - **Recipes**: every recipe parses, builds a target and (for the `--dry-run` one) actually runs; the print format, the first three shown for a bare invocation, and a terse error when arguments were passed
 - **Cross-run learning**: rehearsals excluded as evidence, the history summary (kinds, position, streaks), one block only warning, factors stacking for repeated and early blocks with a cap, never speeding a run up, hand-passed delays left alone, the off switch, an empty log leaving defaults
 - **Takeover log**: URL redaction (challenge tokens and search parameters treated differently), the one-line summary, appending and reading back (skipping bad lines), all three outcomes during a crawl (solved, budget exhausted, headless refusal), a recorded rehearsal, and `--show-state` reading it back
@@ -399,12 +415,14 @@ Google Scholar's terms do not allow automated scraping, and collected metadata r
 
 ```
 scholar_crawler/
+  models.py     data structures for records and requests (search, result, profile, page)
   urls.py       query and profile URLs, filters, id/URL parsing
   parser.py     result-page and profile HTML -> structured records
   challenge.py  challenge detection + human takeover wait
   browser.py    persistent-profile browser session
   crawler.py    crawl loop: pacing, takeover, pagination and author batching, BibTeX loads, HTML dumps
-  run.py        executing one run: crawling targets, expanding, opening and reporting outputs
+  run.py        executing one run: opening the browser, crawling targets, expanding, reporting outputs
+  modes.py      the four modes that replace a crawl: self-check, rehearsal, show and forget state
   expand.py     citation-graph expansion: seed choice, caps, dedup
   plan.py       run plan: pages, loads and duration estimates
   selfcheck.py  parser self-check: per-field health report
@@ -415,7 +433,8 @@ scholar_crawler/
   analysis.py   offline analysis: overview counts and grouping
   bibsynth.py   offline bibliography: BibTeX from stored fields
   storage.py    JSONL/CSV writers, author profile records, the .bib file, resume state
-  cli.py        command-line entry point
+  cli.py        command-line entry point: flag definitions and mode dispatch
+  __main__.py   makes python3 -m scholar_crawler equivalent to scholar-crawler
 tests/          offline tests, including headless-Chromium detection tests
 ```
 

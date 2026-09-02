@@ -6,10 +6,13 @@ crawl can be driven — and tested — without argparse.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .crawler import ScholarCrawler
+from .browser import Session, browser_session
+from .challenge import ChallengeUnattended
+from .crawler import Pacing, ScholarCrawler
 from .expand import FollowPolicy, next_level
 from .models import AuthorProfile, AuthorRequest, ScholarResult, SearchRequest
 from .parser import bibtex_key
@@ -305,3 +308,53 @@ def crawl_targets(
     for author in authors:
         harvest += crawl_author(crawler, author, limits, sink, state, outputs.profiles, bibtex)
     follow_citations(crawler, harvest, limits, follow, template, sink, state, bibtex)
+
+
+def crawl(
+    session: Session,
+    pacing: Pacing,
+    limits: CrawlLimits,
+    listings: list[SearchRequest],
+    authors: list[AuthorRequest],
+    follow: FollowPolicy,
+    template: SearchRequest,
+    outputs: Outputs,
+) -> int:
+    """Open the browser and crawl every target, reporting the run whatever happens.
+
+    Interruption and failure are ordinary endings here: whatever was collected has already
+    been written, so the outputs are closed and the run summary is printed either way.
+
+    :param session: browser settings and the takeover policy.
+    :param pacing: request rhythm.
+    :param limits: paging limits for this run.
+    :param listings: seed listings.
+    :param authors: seed profiles.
+    :param follow: expansion policy.
+    :param template: the filters generated citation listings inherit.
+    :param outputs: the opened output files.
+    :returns: process exit code — 0 on success, 1 on a crawl failure, 130 on Ctrl+C.
+    """
+    exit_code = 0
+    crawler: ScholarCrawler | None = None
+    try:
+        with browser_session(session.options) as (_context, page):
+            crawler = ScholarCrawler(
+                page,
+                session.handoff,
+                pacing,
+                host=session.host,
+                max_handoffs=session.max_handoffs,
+                dump_dir=session.dump_dir,
+                challenge_log=session.log,
+            )
+            crawl_targets(crawler, limits, listings, authors, follow, template, outputs)
+    except KeyboardInterrupt:
+        print("\n[stop] interrupted by user", flush=True)
+        exit_code = 130
+    except (ChallengeUnattended, RuntimeError) as error:
+        print(f"\n[stop] {error}", file=sys.stderr)
+        exit_code = 1
+    finally:
+        outputs.close_and_report(crawler)
+    return exit_code

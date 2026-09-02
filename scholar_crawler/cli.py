@@ -4,21 +4,19 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections import Counter
 from pathlib import Path
 
-from .browser import BrowserOptions, browser_session
-from .challenge import ChallengeUnattended, HumanHandoff
-from .crawler import Pacing, ScholarCrawler
+from .browser import BrowserOptions, Session
+from .challenge import HumanHandoff
+from .crawler import Pacing
 from .expand import FollowPolicy
 from .history import advise
 from .models import AuthorRequest, SearchRequest
+from .modes import forget_state, rehearse_takeover, self_check, show_state
 from .plan import RunPlan, plan_run
 from .recipes import getting_started, render
-from .rehearsal import rehearse
-from .run import CrawlLimits, Outputs, crawl_targets
-from .selfcheck import check_page, report
-from .storage import ChallengeLog, StateStore
+from .run import CrawlLimits, Outputs, crawl
+from .storage import ChallengeLog
 from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
 
 
@@ -293,120 +291,21 @@ DEFAULT_MIN_DELAY = 4.0
 DEFAULT_MAX_DELAY = 11.0
 """Starting maximum delay, widened when the challenge log shows previous blocks."""
 
-SELF_CHECK_QUERY = "machine learning"
-"""Broad query used by ``--self-check``: many hits, PDFs, citations and a next page."""
+def _session_of(args: argparse.Namespace) -> Session:
+    """Collect the browser-backed settings the offline modes share with a crawl.
 
-
-def _run_self_check(args: argparse.Namespace) -> int:
-    """Fetch one page and report whether the parser still finds every field.
-
-    :param args: parsed arguments supplying browser and pacing settings.
-    :returns: process exit code — 0 when every check passed, 1 otherwise.
+    :param args: parsed arguments.
+    :returns: the session settings.
     """
-    options = _browser_options(args)
-    handoff = HumanHandoff(timeout=args.handoff_timeout, headless=args.headless)
-    print(f"[check] fetching one page for {SELF_CHECK_QUERY!r}", flush=True)
-    try:
-        with browser_session(options) as (_context, page):
-            crawler = ScholarCrawler(
-                page,
-                handoff,
-                host=args.host,
-                max_handoffs=args.max_handoffs,
-                dump_dir=args.dump_html,
-                challenge_log=ChallengeLog(args.challenge_log),
-            )
-            fetched = crawler.fetch_page(SearchRequest(query=SELF_CHECK_QUERY, language=args.lang), 0)
-    except KeyboardInterrupt:
-        print("\n[stop] interrupted by user", flush=True)
-        return 130
-    except (ChallengeUnattended, RuntimeError) as error:
-        print(f"\n[stop] {error}", file=sys.stderr)
-        return 1
-    return 0 if report(check_page(fetched)) else 1
-
-
-def _show_state(args: argparse.Namespace) -> int:
-    """Print the resume progress stored in the state file.
-
-    :param args: parsed arguments supplying the state path.
-    :returns: process exit code — always 0, including for an empty state file.
-    """
-    state = StateStore(args.state)
-    state.load()
-    entries = state.entries()
-    if entries:
-        done = sum(1 for entry in entries if entry.exhausted)
-        print(f"[state] {len(entries)} targets in {args.state} ({done} finished)", flush=True)
-        for entry in entries:
-            print(f"[state]   {entry.describe()}", flush=True)
-    else:
-        print(f"[state] nothing stored in {args.state}", flush=True)
-    _show_challenges(args.challenge_log)
-    return 0
-
-
-def _show_challenges(path: Path, limit: int = 5) -> None:
-    """Print the most recent human takeovers recorded in the challenge log.
-
-    :param path: challenge-log path; a missing file prints nothing.
-    :param limit: how many of the most recent takeovers to print.
-    """
-    takeovers = ChallengeLog(path).entries()
-    if not takeovers:
-        return
-    kinds = Counter(entry.kind for entry in takeovers)
-    breakdown = ", ".join(f"{kind} x{count}" for kind, count in sorted(kinds.items()))
-    print(f"[handoff] {len(takeovers)} takeovers in {path} ({breakdown})", flush=True)
-    for entry in takeovers[-limit:]:
-        print(f"[handoff]   {entry.describe()}", flush=True)
-        print(f"[handoff]     {entry.reason} at {entry.url}", flush=True)
-
-
-def _forget_state(args: argparse.Namespace) -> int:
-    """Drop stored progress for the targets matching ``--forget``.
-
-    :param args: parsed arguments supplying the state path and the pattern.
-    :returns: process exit code — always 0, including when nothing matched.
-    """
-    state = StateStore(args.state)
-    state.load()
-    removed = state.forget(args.forget)
-    if not removed:
-        print(f"[state] no stored target matches {args.forget!r}", flush=True)
-        return 0
-    print(f"[state] dropped {len(removed)} target(s) from {args.state}", flush=True)
-    for entry in removed:
-        print(f"[state]   {entry.describe()}", flush=True)
-    print("[state] those targets will be crawled from the start again", flush=True)
-    return 0
-
-
-def _run_rehearsal(args: argparse.Namespace) -> int:
-    """Exercise the human-takeover path against a local page, without requesting anything.
-
-    :param args: parsed arguments supplying browser and handoff settings.
-    :returns: process exit code — 0 when the takeover path worked (or refused as designed
-        under ``--headless``), 1 when it did not, 130 on Ctrl+C.
-    """
-    handoff = HumanHandoff(timeout=args.handoff_timeout, headless=args.headless)
-    print(
-        "[rehearse] opening a local challenge page in the crawling profile; "
-        "no request is sent to Google",
-        flush=True,
+    return Session(
+        options=_browser_options(args),
+        handoff=HumanHandoff(timeout=args.handoff_timeout, headless=args.headless),
+        log=ChallengeLog(args.challenge_log),
+        host=args.host,
+        max_handoffs=args.max_handoffs,
+        dump_dir=args.dump_html,
+        language=args.lang,
     )
-    try:
-        with browser_session(_browser_options(args)) as (_context, page):
-            return 0 if rehearse(page, handoff, ChallengeLog(args.challenge_log)) else 1
-    except KeyboardInterrupt:
-        print("\n[stop] interrupted by user", flush=True)
-        return 130
-    except ChallengeUnattended as error:
-        if args.headless:
-            print(f"[rehearse] refused without a window, as designed: {error}", flush=True)
-            return 0
-        print(f"\n[stop] {error}", file=sys.stderr)
-        return 1
 
 
 def _resolve_pacing(args: argparse.Namespace) -> Pacing:
@@ -472,13 +371,13 @@ def _run_offline_mode(args: argparse.Namespace) -> int | None:
             print(line, flush=True)
         return 0
     if args.show_state:
-        return _show_state(args)
+        return show_state(args.state, args.challenge_log)
     if args.forget is not None:
-        return _forget_state(args)
+        return forget_state(args.state, args.forget)
     if args.self_check:
-        return _run_self_check(args)
+        return self_check(_session_of(args))
     if args.rehearse_handoff:
-        return _run_rehearsal(args)
+        return rehearse_takeover(_session_of(args))
     return None
 
 
@@ -523,7 +422,6 @@ def main(argv: list[str] | None = None) -> int:
         return offline
     try:
         listings, authors = build_targets(args)
-
         follow = FollowPolicy(
             depth=args.follow_cites,
             breadth=args.follow_breadth,
@@ -564,38 +462,16 @@ def main(argv: list[str] | None = None) -> int:
             f"{follow.estimate(len(listings) + len(authors))} listings this run",
             flush=True,
         )
-    handoff = HumanHandoff(timeout=args.handoff_timeout, headless=args.headless)
-    exit_code = 0
-    crawler: ScholarCrawler | None = None
-    try:
-        with browser_session(_browser_options(args)) as (_context, page):
-            crawler = ScholarCrawler(
-                page,
-                handoff,
-                pacing,
-                host=args.host,
-                max_handoffs=args.max_handoffs,
-                dump_dir=args.dump_html,
-                challenge_log=outputs.challenges,
-            )
-            crawl_targets(
-                crawler,
-                _limits_of(args),
-                listings,
-                authors,
-                follow,
-                filter_template(args),
-                outputs,
-            )
-    except KeyboardInterrupt:
-        print("\n[stop] interrupted by user", flush=True)
-        exit_code = 130
-    except (ChallengeUnattended, RuntimeError) as error:
-        print(f"\n[stop] {error}", file=sys.stderr)
-        exit_code = 1
-    finally:
-        outputs.close_and_report(crawler)
-    return exit_code
+    return crawl(
+        _session_of(args),
+        pacing,
+        _limits_of(args),
+        listings,
+        authors,
+        follow,
+        filter_template(args),
+        outputs,
+    )
 
 
 if __name__ == "__main__":
