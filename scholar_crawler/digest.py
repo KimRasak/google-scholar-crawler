@@ -22,6 +22,7 @@ from .analysis import (
 )
 from .audit import audit_records, render_audit
 from .bibsynth import write_bibtex
+from .collection import SUFFIX, collection_files, compare, render_delta
 from .graph import FORMATS, build_graph, format_for, render_graph, render_network
 from .models import record_key
 from .refresh import (
@@ -192,6 +193,28 @@ def write_csv(records: list[Record], path: Path) -> int:
     return len(records)
 
 
+def _resolve_inputs(args: argparse.Namespace) -> list[Path]:
+    """Decide which files this run reads.
+
+    :param args: parsed arguments.
+    :returns: the input files, collection first and named files after.
+    :raises NotADirectoryError: when ``--collection`` is not a directory.
+    :raises ValueError: when nothing was given to read, or a collection holds no result files.
+    """
+    if args.collection is None:
+        if not args.inputs:
+            raise ValueError("give some JSONL files to read, or a folder with --collection DIR")
+        return args.inputs
+    written = [path for path in (args.out, args.since) if path is not None]
+    found = collection_files(args.collection, exclude=written)
+    if not found and not args.inputs:
+        raise ValueError(
+            f"{args.collection} holds no {SUFFIX} files to read"
+            + (f" besides {', '.join(str(path) for path in written)}" if written else "")
+        )
+    return found + args.inputs
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the ``scholar-digest`` argument parser.
 
@@ -205,8 +228,25 @@ def build_parser() -> argparse.ArgumentParser:
             "same selected set."
         ),
     )
-    parser.add_argument("inputs", nargs="+", type=Path, metavar="FILE", help="JSONL files to read")
+    parser.add_argument("inputs", nargs="*", type=Path, metavar="FILE", help="JSONL files to read")
     parser.add_argument("--quiet", action="store_true", help="print only what was written")
+
+    collection = parser.add_argument_group(
+        "collection", "treat a directory as one collection instead of listing files by hand"
+    )
+    collection.add_argument(
+        "--collection",
+        type=Path,
+        metavar="DIR",
+        help="read every .jsonl in this directory, excluding the files this run writes",
+    )
+    collection.add_argument(
+        "--since",
+        type=Path,
+        metavar="FILE",
+        help="report what changed against an earlier merged file: new works, works no longer "
+        "here, and citation counts that moved",
+    )
 
     selection = parser.add_argument_group(
         "selection", "which of the merged records everything below covers"
@@ -334,6 +374,12 @@ def main(argv: list[str] | None = None) -> int:
         would produce no output at all.
     """
     args = build_parser().parse_args(argv)
+    try:
+        inputs = _resolve_inputs(args)
+    except (NotADirectoryError, ValueError) as error:
+        print(f"error: {error}", flush=True)
+        return 1
+    args.inputs = inputs
     if args.quiet and not (
         args.out or args.csv or args.bibtex or args.report or args.refresh_list or args.graph
     ):
@@ -353,6 +399,16 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     merged, duplicates = merge_records(records)
+    earlier: list[Record] | None = None
+    if args.since is not None:
+        try:
+            earlier, _ = load_records([args.since])
+        except FileNotFoundError:
+            print(f"error: {args.since}: no earlier merge to compare against", flush=True)
+            return 1
+        except OSError as error:
+            print(f"error: {error}", flush=True)
+            return 1
     kept = filter_records(
         merged,
         min_citations=args.min_citations,
@@ -373,6 +429,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  {line}", flush=True)
         if args.network:
             for line in render_network(build_graph(records, kept), top=args.top):
+                print(f"  {line}", flush=True)
+        if earlier is not None:
+            for line in render_delta(compare(earlier, kept), top=args.top, since=args.since):
                 print(f"  {line}", flush=True)
         if args.stale is not None:
             for line in render_staleness(kept, days=args.stale, top=args.top):

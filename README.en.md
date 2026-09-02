@@ -68,7 +68,7 @@ Once the machine is sound, `--self-check` goes on to test the network.
 
 ## Usage
 
-Rather than reading the flag table, start from `--recipes`: fifteen complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, a settings file, one topic, costing a run, batch plus CSV, an author, crawling the citation graph, resuming, auditing, exporting that graph, staleness and refreshing, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
+Rather than reading the flag table, start from `--recipes`: sixteen complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, a settings file, one topic, costing a run, batch plus CSV, an author, crawling the citation graph, resuming, auditing, exporting that graph, staleness and refreshing, keeping a collection current, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
 
 ```sh
 $ scholar-crawler --recipes
@@ -151,6 +151,14 @@ By default it prints an overview: record count, total citations, how many alread
 When the same work appears in several files, the higher citation count wins as the fresher observation, the fuller record wins ties, `extra.bibtex_key` survives, and `follow_depth` keeps the shallowest level.
 
 `--help` is ordered as "which records → read in the terminal → write to a file", and each group says when to use it.
+
+**Inputs**
+
+| Option | Effect |
+| --- | --- |
+| `FILE ...` | JSONL files to read, named directly |
+| `--collection DIR` | treat a folder as one collection: read every `.jsonl` in it, excluding the files this run writes |
+| `--since FILE` | compare against an earlier merge: what arrived, what is no longer here, which counts moved |
 
 **Selection** — everything below covers this set
 
@@ -411,6 +419,45 @@ Two limits, stated plainly:
 
 A keyword-only collection has no citation edges, and the report says exactly that instead of drawing an empty graph.
 
+### A folder as one collection: `--collection` and `--since`
+
+After a few weeks a topic is a pile of files under `out/`, and remembering which one came from which session — and which one was last run's merge — is bookkeeping nobody should do by hand. `--collection` makes the folder the unit, and `--since` answers what changed:
+
+```sh
+$ scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl
+[in] 11 records from 2 file(s), 3 duplicates merged, 0 filtered out
+  ...
+  6 works since out/merged.jsonl -> 8 now: 2 new, 0 no longer here, 2 with a new citation count
+  citations gained across the works in both: +41
+  biggest movers:
+    +    40  now      140  Work 0
+    +     1  now      111  Work 1
+  new:
+    Work 6
+    Work 7
+[out] 8 records -> out/merged.jsonl
+```
+
+There is a trap `--collection` exists for: run `scholar-digest out/*.jsonl -o out/merged.jsonl` a second time and the glob **includes the merge it wrote last time**. Deduplication hides the damage, but the "how many files, how many duplicates" line stops meaning anything, and a collection that reads its own output back always looks complete. `--collection` excludes the files this run writes (`-o` and `--since`), which is what `11 records from 2 file(s)` above proves: the folder holds three `.jsonl` files and two were read.
+
+`--since` keys both sides exactly as the crawler deduplicates, so a work stays the same work when its count, venue or snippet changed. The three outcomes mean:
+
+- **new** — in this run's inputs, absent from the earlier merge.
+- **with a new citation count** — present on both sides with a different number, sorted by how far it moved. A fall is reported as a fall (`-32`); Scholar does revise counts down. Note that merging keeps the higher count when one work appears in several inputs, so a fall shows only when the current inputs really report fewer.
+- **no longer here** — in the earlier merge, absent now. This is **not** Scholar dropping a paper: its file was moved away, or the current filters (`--min-citations`, `--year-from`) now exclude it. The report says so in place, so the line cannot be misread as data loss.
+
+When nothing moved, that is one line: `nothing changed since out/merged.jsonl: the same 20 works, same counts`.
+
+Together with the refresh loop above, keeping a collection current is three commands and no mental bookkeeping:
+
+```sh
+scholar-digest --collection out --stale 60 --refresh-list out/refresh.txt   # offline: what to collect again
+scholar-crawler --clusters-file out/refresh.txt -p 1 -o out/refresh-1.jsonl # one page load per id
+scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl --min-citations 1
+```
+
+Other files may sit in the folder: only `.jsonl` is read and subdirectories are not walked. Named files still work and are read after the folder.
+
 ### Keeping a collection current: `--stale` and `--refresh-list`
 
 Every record carries `fetched_at`, the UTC moment it was collected, so how old a set is can be answered offline. Citation counts only grow, and the number stored three months ago is no longer quotable.
@@ -650,7 +697,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 388 tests, fully offline
+python3 -m pytest -q     # 406 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -665,6 +712,7 @@ All tests run offline (no network at all), grouped by area:
 - **The report**: stating that the numbers are as-collected, the counts at a glance, links only where a destination exists, the grouped tables, a chart scaled to the busiest year, which query each record came from, its own trust section, an escaped pipe in a title, an em dash for a missing field, and counting as output under `--quiet`
 - **Record audit**: a clean record trips nothing, page-range venues and leftover years, a year the byline never mentioned, citations without a link, negative counts, the severity of missing and lossy fields, citation-only records not blamed for a missing card id, counts with examples, and zero errors on records parsed from the real fixtures
 - **Documentation**: in-page links in both READMEs resolve to real sections, the navigation table covers at least seven situations, and both documents list exactly the modules that exist
+- **Collections**: only `.jsonl` is read and subdirectories are not walked, the files this run writes are excluded from its inputs, the diff pairs records by the crawler's own dedup key (new, no longer here, counts moved including falls), movements sort by size either way, a record without a count is not a movement, an unchanged collection is one line, long lists are cut with a count, and an emptied folder, a non-directory, no inputs at all and a missing `--since` file each fail by name
 - **Settings files**: a table and a top-level key mean the same thing, dashes and underscores both work, a flag beats the file and the override is reported, a repeated flag replaces the file's list, a misspelled key suggests the closest real one, modes are refused, every type mismatch is refused by name (number-as-string, switch-as-string, list-versus-single, outside choices), a nested table, a key set twice, broken TOML, a missing file, and the shipped `scholar.toml.example` reading back in full and running its recipe as written under `--explain`
 - **The interface**: both parsers are read back and compared — a shared flag parses the same way in both commands, every flag has help, every flag sits in a described group, a flag with a default states it, and terminal lists and the written report are governed by separate options
 - **Modes**: all four modes driven without argparse (the rehearsal in a real headless Chromium), showing and forgetting state, and takeovers printed newest last
@@ -703,6 +751,7 @@ scholar_crawler/
   rehearsal.py  takeover rehearsal: local challenge page, full-path drill
   history.py    takeover log -> starting-rhythm advice
   recipes.py    complete commands to copy
+  collection.py a folder as one collection: input discovery, diff against the last merge
   digest.py     offline digest: merge, filter, command line
   analysis.py   offline analysis: overview counts and grouping
   refresh.py    offline staleness: which records to collect again

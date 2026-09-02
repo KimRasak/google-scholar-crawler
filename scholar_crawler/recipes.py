@@ -96,6 +96,11 @@ RECIPES: tuple[Recipe, ...] = (
         note="no requests; feed the file back with scholar-crawler --clusters-file, one load per id",
     ),
     Recipe(
+        purpose="Keep a collection current and see what changed since last time",
+        command="scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl",
+        note="no requests; the folder is the unit, and the merge it writes is not one of its inputs",
+    ),
+    Recipe(
         purpose="Turn what you collected into a readable overview and a bibliography, offline",
         command="scholar-digest out/*.jsonl --report out/report.md --bibtex out/refs.bib",
         note="no requests at all; merges duplicates across files first",

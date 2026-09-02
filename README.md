@@ -68,7 +68,7 @@ $ scholar-crawler --doctor
 
 ## 快速开始
 
-不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十五条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、设置文件、单查询、先算账、批量+CSV、作者主页、抓引文网络、断点续抓、数据体检、导出引文网络、判旧与重抓、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
+不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十六条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、设置文件、单查询、先算账、批量+CSV、作者主页、抓引文网络、断点续抓、数据体检、导出引文网络、判旧与重抓、维护文献库、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
 
 ```sh
 $ scholar-crawler --recipes
@@ -151,6 +151,14 @@ scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.js
 同一篇论文在多份文件里重复时，保留被引数更高（也就是更新）的那条，字段更全的那条优先，`extra` 里的 `bibtex_key` 不会丢，`follow_depth` 取最浅的一层。
 
 `--help` 按「选什么记录 → 在终端里看 → 写成文件」三组排列，每组开头一句话说明什么时候用它。
+
+**读哪些文件**
+
+| 参数 | 作用 |
+| --- | --- |
+| `FILE ...` | 直接列出要读的 JSONL |
+| `--collection DIR` | 把目录当作一个文献库：读其中所有 `.jsonl`，自动排除这一轮要写的文件 |
+| `--since FILE` | 和上一次的合并结果比：新增了什么、哪些不在了、被引数怎么动的 |
 
 **选什么记录**（下面所有报告与文件都只覆盖这批）
 
@@ -410,6 +418,45 @@ $ scholar-digest out/graph.jsonl --network --graph out/graph.graphml
 
 关键词检索出来的集合没有引文边，这时它会直接说清楚，而不是画一张空图。
 
+### 把一个目录当作文献库：`--collection` 与 `--since`
+
+抓上几周之后，一个课题的产出就是 `out/` 下的一堆文件，靠人记住「哪个是哪次抓的、上次合并的结果是哪个」。`--collection` 让目录本身成为单位，`--since` 回答「和上次比变了什么」：
+
+```sh
+$ scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl
+[in] 11 records from 2 file(s), 3 duplicates merged, 0 filtered out
+  ...
+  6 works since out/merged.jsonl -> 8 now: 2 new, 0 no longer here, 2 with a new citation count
+  citations gained across the works in both: +41
+  biggest movers:
+    +    40  now      140  Work 0
+    +     1  now      111  Work 1
+  new:
+    Work 6
+    Work 7
+[out] 8 records -> out/merged.jsonl
+```
+
+这里有一个容易中招的坑，`--collection` 专门为它而存在：`scholar-digest out/*.jsonl -o out/merged.jsonl` 跑第二遍时，`out/*.jsonl` 已经**包含上次写出的 merged.jsonl**。去重让它看起来没事，但「几个文件、多少重复」的统计从此没有意义，而一个只读回自己上次结果的库看起来永远是完整的。`--collection` 会把这一轮要写的文件（`-o` 与 `--since`）从输入里排除，上面那行 `11 records from 2 file(s)` 就是证据——目录里有三个 `.jsonl`，只读了两个。
+
+`--since` 的比较口径和抓取时的去重完全一致（同一个 `record_key`），所以被引数、期刊、摘要变了仍算同一篇。三类结果各自的含义：
+
+- **new**：这次输入里有、上次合并里没有的。
+- **with a new citation count**：两边都有但数字变了，按变化幅度绝对值排序。**降**也会如实报（`-32`）：Scholar 自己会下修被引数。注意合并规则是「同一篇在多份输入里出现时保留被引数更高的那条」，所以只有当前输入确实报了更小的数字时才会看到降。
+- **no longer here**：上次有、这次没有。这**不是** Scholar 删了论文，而是那条记录所在的文件被移走了，或者当前的过滤条件（`--min-citations`/`--year-from`）把它排除了——输出里就直接这么写着，免得被误读成数据丢失。
+
+什么都没变时只有一行：`nothing changed since out/merged.jsonl: the same 20 works, same counts`。
+
+和上一节的重抓闭环拼起来，维护一个库就是三条命令，不需要人脑记账：
+
+```sh
+scholar-digest --collection out --stale 60 --refresh-list out/refresh.txt   # 离线：该重抓哪些
+scholar-crawler --clusters-file out/refresh.txt -p 1 -o out/refresh-1.jsonl # 每条一次加载
+scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl --min-citations 1
+```
+
+目录里可以混着别的文件：只有 `.jsonl` 会被读，子目录不递归。命令行上再补几个文件也行，它们接在目录之后。
+
 ### 维护一个持续更新的文献库：`--stale` 与 `--refresh-list`
 
 每条记录都带 `fetched_at`（抓取时刻，UTC），所以「这批数据有多旧」是离线就能算的。被引数会一直涨，抓过三个月的记录里那个数字已经不能引用了。
@@ -650,7 +697,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 388 个用例，全部离线
+python3 -m pytest -q     # 406 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -669,6 +716,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **综述报告**：说明数字来自抓取当时、规模统计、链接只在有目标时生成、分组表、柱状图按最忙的一年缩放、查询来源、自带可信度一节、标题里的竖线被转义、缺失字段显示为破折号、`--quiet` 下也算输出
 - **数据体检**：干净记录不误报、页码型 venue 与残留年份、与灰字矛盾的年份、有被引数无链接、负计数、缺失与有损字段的档位、仅引用条目不因缺 card id 被判错、占比与例子、真实夹具记录零 error
 - **文档导航**：两份 README 的页内链接都指向真实小节、导航表覆盖至少 7 种情况、两份文档的模块清单一致且与实际模块完全对应
+- **文献库**：目录里只读 `.jsonl` 且不递归、这一轮要写的文件被排除在输入之外、差异按抓取时的同一口径配对（新增/不在了/被引数变动，含下降）、变动按幅度绝对值排序、缺被引数的记录不算变动、什么都没变时只有一行、列表过长时给出「还有几条」、目录空了/路径不是目录/没给任何输入/`--since` 文件不存在各自报错
 - **设置文件**：表与顶层键等价、键名可用横线或下划线、命令行覆盖文件且被记录、可重复参数是替换而非追加、拼错的键给出最接近的建议、模式类参数被拒、类型不符（数字写成字符串、开关写成字符串、列表与单值互换、超出 choices）各自报错、表嵌套过深、同键两次、坏 TOML、文件不存在、随仓库发布的 `scholar.toml.example` 能被完整读入，并按 recipe 原样跑通一次 `--explain`
 - **命令行界面**：两条命令的参数表直接读回来比对——同名参数在两边的取值方式一致、每个参数都有说明、每个参数都在有说明的分组里、有默认值的参数必须在帮助里写出来、终端列表与写出综述各归各的参数管
 - **模式**：四种模式脱离 argparse 直接调用（演练在真实 headless Chromium 上跑）、断点查看与清除、接管记录按时间倒数打印
@@ -707,6 +755,7 @@ scholar_crawler/
   rehearsal.py  接管演练：本地验证页与全链路空演
   history.py    接管记录 → 起始节奏建议
   recipes.py    可直接复制的完整命令
+  collection.py 把目录当作一个文献库：输入发现、与上次合并的差异
   digest.py     离线汇总：合并去重、过滤、命令行
   analysis.py   离线分析：概览统计与分组
   refresh.py    离线判旧：该重抓哪些记录
