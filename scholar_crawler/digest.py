@@ -10,9 +10,11 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 from .storage import CSV_COLUMNS
@@ -175,7 +177,9 @@ def summarize(records: list[Record], *, top: int = 5, venues: int = 5) -> Summar
     years = Counter(record["year"] for record in records if record.get("year"))
     levels = Counter(int((record.get("extra") or {}).get("follow_depth", 0)) for record in records)
     venue_counts = Counter(
-        record["venue"] for record in records if record.get("venue") and not record.get("citation_only")
+        normalize_venue(record["venue"])
+        for record in records
+        if record.get("venue") and not record.get("citation_only")
     )
     ranked = sorted(records, key=lambda record: record.get("cited_by_count") or 0, reverse=True)
     return Summary(
@@ -218,6 +222,155 @@ def render_summary(summary: Summary) -> list[str]:
     for index, (citations, year, title) in enumerate(summary.top):
         year_text = str(year) if year else "----"
         lines.append(f"{'most cited' if index == 0 else '':<16} {citations:>6}  {year_text}  {title}")
+    return lines
+
+
+GROUP_KEYS = ("author", "venue", "year", "level")
+"""Dimensions records can be grouped along."""
+
+ARXIV_VENUE = re.compile(r"^arxiv preprint\b", re.IGNORECASE)
+"""Scholar spells arXiv venues out with the identifier, which would split every preprint."""
+
+VOLUME_TAIL = re.compile(r"\s+\d+\s*(\([^)]*\))?\s*(,.*)?$")
+"""Profile rows append volume, issue, pages and year to the journal name."""
+
+
+def first_author(record: Record) -> str | None:
+    """Read the first author of a record.
+
+    :param record: a stored record.
+    :returns: the first author as Scholar abbreviates them, or None when the byline is empty.
+    """
+    line = (record.get("authors") or record.get("byline") or "").split(" - ")[0]
+    first = line.split(",")[0].strip().strip("…").strip()
+    return first or None
+
+
+def normalize_venue(venue: str) -> str:
+    """Collapse the spellings Scholar uses for one venue.
+
+    Two spellings would otherwise split one venue: every arXiv preprint carries its own
+    identifier, and profile rows append volume, issue, pages and year to the journal name.
+
+    :param venue: the venue as parsed.
+    :returns: the venue used for grouping.
+    """
+    cleaned = venue.strip().strip("…").strip(" ,.")
+    if ARXIV_VENUE.match(cleaned):
+        return "arXiv preprint"
+    trimmed = VOLUME_TAIL.sub("", cleaned).strip(" ,.")
+    return trimmed or cleaned
+
+
+def group_label(record: Record, key: str) -> str | None:
+    """Read the grouping label of a record along one dimension.
+
+    :param record: a stored record.
+    :param key: one of :data:`GROUP_KEYS`.
+    :returns: the label, or None when the record carries nothing for this dimension.
+    :raises ValueError: when ``key`` is not a known dimension.
+    """
+    if key == "author":
+        return first_author(record)
+    if key == "venue":
+        venue = record.get("venue")
+        return normalize_venue(venue) if venue and not record.get("citation_only") else None
+    if key == "year":
+        year = record.get("year")
+        return str(year) if year else None
+    if key == "level":
+        return f"L{int((record.get('extra') or {}).get('follow_depth', 0))}"
+    raise ValueError(f"unknown group key {key!r}; choose from {', '.join(GROUP_KEYS)}")
+
+
+@dataclass(slots=True)
+class Group:
+    """Records sharing one label, with the numbers worth comparing across groups.
+
+    :param label: the shared author, venue, year or graph level.
+    :param records: how many records fall in the group.
+    :param citations: sum of citation counts.
+    :param median_citations: median citation count, which a single famous paper cannot skew.
+    :param first_year: earliest publication year present, when any.
+    :param last_year: latest publication year present, when any.
+    :param best: the most-cited record as (citations, title).
+    """
+
+    label: str
+    records: int
+    citations: int
+    median_citations: int
+    first_year: int | None
+    last_year: int | None
+    best: tuple[int, str]
+
+
+def group_records(records: list[Record], key: str, *, min_size: int = 1) -> list[Group]:
+    """Group records along one dimension, most-cited group first.
+
+    :param records: records to group.
+    :param key: one of :data:`GROUP_KEYS`.
+    :param min_size: drop groups holding fewer records than this.
+    :returns: the groups, ordered by total citations then record count.
+    :raises ValueError: when ``key`` is not a known dimension.
+    """
+    # Grouping is case-insensitive — Scholar writes "nature" and "Nature" for one journal —
+    # while the first spelling seen is kept for display.
+    buckets: dict[str, tuple[str, list[Record]]] = {}
+    for record in records:
+        label = group_label(record, key)
+        if label:
+            display, members = buckets.setdefault(label.casefold(), (label, []))
+            members.append(record)
+    groups = []
+    for label, members in buckets.values():
+        if len(members) < min_size:
+            continue
+        counts = [record.get("cited_by_count") or 0 for record in members]
+        years = sorted(record["year"] for record in members if record.get("year"))
+        best = max(members, key=lambda record: record.get("cited_by_count") or 0)
+        groups.append(
+            Group(
+                label=label,
+                records=len(members),
+                citations=sum(counts),
+                median_citations=int(median(counts)),
+                first_year=years[0] if years else None,
+                last_year=years[-1] if years else None,
+                best=(best.get("cited_by_count") or 0, best.get("title") or ""),
+            )
+        )
+    return sorted(groups, key=lambda group: (group.citations, group.records), reverse=True)
+
+
+def render_groups(groups: list[Group], key: str, *, limit: int = 10) -> list[str]:
+    """Format groups as an aligned table.
+
+    :param groups: the groups to print, already ordered.
+    :param key: the dimension they were grouped along, used in the header.
+    :param limit: how many groups to list.
+    :returns: a header line followed by one line per group.
+    """
+    if not groups:
+        return [f"by {key}: nothing to group"]
+    shown = groups[:limit]
+    width = min(max(max(len(group.label) for group in shown), 12), 40)
+    lines = [
+        f"  {'by ' + key:<{width}} {'count':>5} {'citations':>10} "
+        f"{'median':>7}  {'years':<9}  most cited"
+    ]
+    for group in shown:
+        span = ""
+        if group.first_year:
+            span = str(group.first_year)
+            if group.last_year and group.last_year != group.first_year:
+                span += f"-{group.last_year}"
+        lines.append(
+            f"  {group.label[:width]:<{width}} {group.records:>5} {group.citations:>10} "
+            f"{group.median_citations:>7}  {span:<9}  {group.best[1][:44]}"
+        )
+    if len(groups) > limit:
+        lines.append(f"  ... and {len(groups) - limit} more groups")
     return lines
 
 
@@ -270,6 +423,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--top", type=int, default=5, metavar="N", help="most-cited records to list (default: 5)"
     )
+    parser.add_argument(
+        "--group-by",
+        choices=GROUP_KEYS,
+        metavar="DIMENSION",
+        help=f"also print a per-group table ({', '.join(GROUP_KEYS)})",
+    )
+    parser.add_argument(
+        "--min-group",
+        type=int,
+        default=1,
+        metavar="N",
+        help="hide groups holding fewer records than this (default: 1)",
+    )
+    parser.add_argument(
+        "--groups", type=int, default=10, metavar="N", help="groups to list (default: 10)"
+    )
     parser.add_argument("--quiet", action="store_true", help="print only what was written")
     return parser
 
@@ -310,6 +479,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         for line in render_summary(summarize(kept, top=args.top)):
             print(f"  {line}", flush=True)
+        if args.group_by:
+            groups = group_records(kept, args.group_by, min_size=args.min_group)
+            for line in render_groups(groups, args.group_by, limit=args.groups):
+                print(f"  {line}", flush=True)
     if args.out:
         print(f"[out] {write_jsonl(kept, args.out)} records -> {args.out}", flush=True)
     if args.csv:

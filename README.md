@@ -92,6 +92,8 @@ scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.js
 | `-o`、`--csv` | 写出合并后的 JSONL / CSV |
 | `--min-citations`、`--year-from`、`--year-to` | 过滤条件；带年份区间时会丢掉没有年份的记录 |
 | `--top` | 概览里列出的高被引条数（默认 5） |
+| `--group-by` | 按 `author`/`venue`/`year`/`level` 分组统计 |
+| `--min-group`、`--groups` | 隐藏记录数少于 N 的组；最多列出几组（默认 10） |
 | `--quiet` | 只打印写出结果，需要配合 `-o` 或 `--csv` |
 
 ## 查看与重置断点
@@ -131,6 +133,24 @@ $ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
 ```
 
 所有数字都是上限：列表提前抓完、引文网络无可展开时都会更少。目标写错（比如一个入口都没给）在 `--dry-run` 下同样会报错，所以它也能当参数检查用。
+
+### 分组统计
+
+`--group-by` 把合并后的结果按第一作者、期刊/会议、年份或引文层级分组，按被引总数排序：
+
+```
+$ scholar-digest out/all.jsonl --group-by venue --groups 4
+  by venue                                 count  citations  median  years      most cited
+    Advances in neural information processin     1     119743  119743  2014       Generative adversarial nets
+    nature                                       1     118913  118913  2015       Deep learning
+    arXiv preprint                               2      44564   22282  2017-2021  Graph attention networks
+    The world wide web                           1       4408    4408  2019       Heterogeneous graph attention network
+    ... and 4 more groups
+```
+
+`median`（组内被引中位数）是为了公平比较：某组只靠一篇爆款撑起来，还是整体都被引得多，看中位数才分得清。`--min-group 3` 之类可以把只有一两条的长尾折掉。
+
+分组时会做两处归一化，否则同一个去处会被拆散：所有 arXiv 预印本归为 `arXiv preprint`（Scholar 会把 arXiv 编号写进 venue），作者主页那种 `nature 521 (7553), 436-444, 2015` 会去掉卷号页码归为 `nature`；大小写不同也算同一组（显示时保留先出现的写法）。默认概览里的「出现最多的期刊」现在也用同一套归一化。
 
 ## 真实结构回归夹具
 
@@ -260,11 +280,11 @@ scholar-crawler --rehearse-handoff
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 154 个用例，全部离线
+python3 -m pytest -q     # 161 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
-测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、BibTeX 链接识别（按 href 而非按标签文字）与 `<pre>` 内容提取、`.bib` 去重、导出过程中的接管、真实页面回归（结果页 10 项自检全过、字段完整性、作者统计与论文行、cite 弹窗到 BibTeX、脱敏规则与「夹具不含凭证」扫描）、断点查看与清除（签名还原、时间戳、旧格式兼容、按子串清除、被 `-n` 截断的目标仍可续抓）、抓取计划（页数被 `-n` 收窄、作者按 100 条一页、展开与 BibTeX 的乘法成本、时长格式、`--dry-run` 不落地任何文件）、运行摘要（长短两种时长格式、按类型统计接管）、连续被拦时的静默等待与关闭开关、接管演练（真实 DOM 里被识别为验证页、按钮按下后恢复、未恢复与未识别的报告、headless 拒绝）、离线汇总（合并取舍、`extra` 合并、层级取最浅、过滤组合、统计与排序、写文件、参数校验）、自检报告（健康页面、空结果页、字段缺失定位、末页判定、输出格式）、作者条目的 `data-cid` 解析回退、引文网络展开（按被引排序、宽度上限、访问去重、引用下限、逐层推进与提前收敛）、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
+测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、BibTeX 链接识别（按 href 而非按标签文字）与 `<pre>` 内容提取、`.bib` 去重、导出过程中的接管、分组统计（第一作者取法、期刊名归一化、四个维度的标签、按被引排序与中位数、小组隐藏、表格对齐）、真实页面回归（结果页 10 项自检全过、字段完整性、作者统计与论文行、cite 弹窗到 BibTeX、脱敏规则与「夹具不含凭证」扫描）、断点查看与清除（签名还原、时间戳、旧格式兼容、按子串清除、被 `-n` 截断的目标仍可续抓）、抓取计划（页数被 `-n` 收窄、作者按 100 条一页、展开与 BibTeX 的乘法成本、时长格式、`--dry-run` 不落地任何文件）、运行摘要（长短两种时长格式、按类型统计接管）、连续被拦时的静默等待与关闭开关、接管演练（真实 DOM 里被识别为验证页、按钮按下后恢复、未恢复与未识别的报告、headless 拒绝）、离线汇总（合并取舍、`extra` 合并、层级取最浅、过滤组合、统计与排序、写文件、参数校验）、自检报告（健康页面、空结果页、字段缺失定位、末页判定、输出格式）、作者条目的 `data-cid` 解析回退、引文网络展开（按被引排序、宽度上限、访问去重、引用下限、逐层推进与提前收敛）、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
 
 ## 合规
 
