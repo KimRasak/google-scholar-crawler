@@ -14,6 +14,7 @@ from .expand import FollowPolicy
 from .history import advise
 from .models import AuthorRequest, SearchRequest
 from .plan import RunPlan, plan_run
+from .recipes import getting_started, render
 from .rehearsal import rehearse
 from .run import CrawlLimits, Outputs, crawl_targets
 from .selfcheck import check_page, report
@@ -29,6 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="scholar-crawler",
         description="Search Google Scholar in a real browser; hand the window to a human on CAPTCHA.",
+        epilog=(
+            "Most of these flags exist to be left alone. Run --recipes for complete commands "
+            "to copy,\nand --dry-run to see what a run would cost before it starts."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     query = parser.add_argument_group("query")
     query.add_argument("-q", "--query", action="append", default=[], help="search query; repeatable")
@@ -50,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         help="crawl this author profile; accepts a user id or a profile URL; repeatable",
+    )
+    query.add_argument(
+        "--recipes",
+        action="store_true",
+        help="print ready-to-run commands for the usual tasks and stop",
     )
     query.add_argument(
         "--self-check",
@@ -456,6 +467,10 @@ def _run_offline_mode(args: argparse.Namespace) -> int | None:
     :param args: parsed arguments.
     :returns: the exit code of that mode, or None when a crawl should run.
     """
+    if args.recipes:
+        for line in render():
+            print(line, flush=True)
+        return 0
     if args.show_state:
         return _show_state(args)
     if args.forget is not None:
@@ -501,12 +516,14 @@ def main(argv: list[str] | None = None) -> int:
     :param argv: argument vector; defaults to ``sys.argv[1:]``.
     :returns: process exit code — 0 on success, 1 on usage or crawl failure, 130 on Ctrl+C.
     """
+    given = argv if argv is not None else sys.argv[1:]
     args = build_parser().parse_args(argv)
     offline = _run_offline_mode(args)
     if offline is not None:
         return offline
     try:
         listings, authors = build_targets(args)
+
         follow = FollowPolicy(
             depth=args.follow_cites,
             breadth=args.follow_breadth,
@@ -515,6 +532,10 @@ def main(argv: list[str] | None = None) -> int:
         pacing = _resolve_pacing(args)
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
+        if not given:
+            print("\nStart from one of these, or see --recipes:\n", file=sys.stderr)
+            for line in getting_started():
+                print(line, file=sys.stderr)
         return 1
 
     if args.dry_run:

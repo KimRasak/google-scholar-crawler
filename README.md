@@ -31,6 +31,18 @@ python3 -m playwright install chromium   # 若不用本机 Chrome（--channel ""
 
 ## 快速开始
 
+不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出九条可以直接复制的完整命令（自检、演练接管、单查询、先算账、批量+CSV、作者主页、引文网络、断点续抓、离线出书目）。什么都不传时，报错后也会顺手列出前三条。
+
+```sh
+$ scholar-crawler --recipes
+1. Check the parser against Scholar before trusting a long run
+   $ scholar-crawler --self-check
+     one request; reports per field whether Scholar's layout still parses
+...
+```
+
+这些命令由测试保证仍然可用：每条都会被真实解析器解析、能构造出抓取目标，带 `--dry-run` 的那条会被真的跑一遍。参数被改名或写错时测试会先失败，而不是让你复制到一条跑不起来的命令。
+
 ```sh
 # 关键词检索，抓 3 页（每页 10 条）
 scholar-crawler -q "large language model agents" -p 3 -o out/agents.jsonl
@@ -273,6 +285,7 @@ scholar-crawler --self-check
 | `--min-delay/--max-delay`、`--cooldown-every/--cooldown-seconds` | 抓取节奏（默认 4-11s；不传时会按接管记录自动放慢） |
 | `--no-learn-from-history` | 不读接管记录，按默认节奏起跑 |
 | `--handoff-timeout`、`--max-handoffs`、`--backoff-factor`、`--challenge-cooldown` | 等人多久（0 = 无限等）、最多接管几次、每次接管后延迟放大倍数、连续被拦时恢复前的静默等待 |
+| `--recipes` | 打印可直接复制的完整命令（不发请求） |
 | `--show-state`、`--forget PATTERN` | 查看断点进度与最近的接管记录；按签名子串清除断点（空串清空全部） |
 | `--dry-run` | 只打印这轮的抓取计划与用时估算，不发任何请求 |
 | `--self-check` | 跑一次解析自检（一个请求），逐项报告哪些字段还能正常解析 |
@@ -358,7 +371,7 @@ scholar-crawler --rehearse-handoff
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 193 个用例，全部离线
+python3 -m pytest -q     # 200 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -367,6 +380,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **解析**：结果卡片（仅引用条目、PDF 侧链、被引/版本计数、词中加粗、第二页的结果计数、零结果页）、作者主页（头部各行、按行位置读统计表、论文行、缺年份与零被引、「显示更多」状态）、真实页面夹具（结果页 10 项自检全过、字段完整性、脱敏规则、夹具不含凭证）
 - **URL 与过滤**：查询/主页地址拼装、过滤参数、id 与 URL 解析、cite 弹窗地址
 - **抓取循环**：翻页与作者分批、节奏与冷却、连续被拦的静默等待与关闭开关、运行摘要的长短两种格式、HTML dump、导出过程中被拦
+- **示例命令**：每条 recipe 都能被解析、能构造出目标、`--dry-run` 那条真跑一遍；输出格式与「无参数时提示前三条、有参数出错时只报错」
 - **跨运行学习**：演练不算证据、历史摘要（类型/位置/连续）、1 次只提示、重复被拦与提前被拦的倍数叠加与上限、只放慢不加快、手动传参不被覆盖、可关闭、空日志不改默认
 - **接管记录**：URL 脱敏（验证页令牌与检索参数区别对待）、单行摘要格式、追加与读回（跳过坏行）、抓取中被拦/接管额度用尽/headless 拒绝三种结局各自落账、演练也落账、`--show-state` 读回
 - **人工接管**：真实 headless Chromium DOM 上的验证页判定、等待超时/窗口被关/headless 拒绝、接管演练全链路（识别→清除→恢复）
@@ -395,6 +409,7 @@ scholar_crawler/
   selfcheck.py  解析自检：逐字段体检与报告
   rehearsal.py  接管演练：本地验证页与全链路空演
   history.py    接管记录 → 起始节奏建议
+  recipes.py    可直接复制的完整命令
   digest.py     离线汇总：合并去重、过滤、命令行
   analysis.py   离线分析：概览统计与分组
   bibsynth.py   离线书目：由已存字段拼出 BibTeX

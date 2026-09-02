@@ -31,6 +31,18 @@ Python 3.10+. Keep the default `--channel chrome` when Chrome is installed. `sch
 
 ## Usage
 
+Rather than reading the flag table, start from `--recipes`: nine complete commands to copy, ordered from safest to most expensive (self-check, takeover rehearsal, one topic, costing a run, batch plus CSV, an author, the citation graph, resuming, offline digest). A run given nothing to do prints the first three after the error.
+
+```sh
+$ scholar-crawler --recipes
+1. Check the parser against Scholar before trusting a long run
+   $ scholar-crawler --self-check
+     one request; reports per field whether Scholar's layout still parses
+...
+```
+
+The tests keep these honest: every recipe is parsed by the real parser and must build a crawl target, and the `--dry-run` one is actually executed. A renamed flag or a typo fails the suite instead of handing you a command that does not run.
+
 ```sh
 # Keyword search, three pages (10 results each)
 scholar-crawler -q "large language model agents" -p 3 -o out/agents.jsonl
@@ -274,6 +286,7 @@ It fetches one page of a broad query and reports, field by field, whether titles
 | `--no-learn-from-history` | start at the default rhythm instead of reading the takeover log |
 | `--min-delay/--max-delay`, `--cooldown-every/--cooldown-seconds` | request rhythm |
 | `--handoff-timeout`, `--max-handoffs`, `--backoff-factor`, `--challenge-cooldown` | how long to wait for a human (0 = forever), takeover budget, slowdown per takeover, wait-out after back-to-back challenges |
+| `--recipes` | print complete commands to copy (no requests) |
 | `--show-state`, `--forget PATTERN` | review stored progress and recent takeovers; drop cursors by signature substring (empty pattern drops all) |
 | `--dry-run` | print the run plan and duration estimate, then stop without requesting anything |
 | `--self-check` | run the parser self-check (one request) and report field by field what still parses |
@@ -359,7 +372,7 @@ The slowdown has two stages: every takeover widens the delays by `--backoff-fact
 ## Development
 
 ```sh
-python3 -m pytest -q     # 193 tests, fully offline
+python3 -m pytest -q     # 200 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -368,6 +381,7 @@ All tests run offline (no network at all), grouped by area:
 - **Parsing**: result cards (citation-only records, PDF side links, cited-by and version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author profiles (header lines, the position-read summary table, publication rows, missing years and zero citations, the "show more" state), real-page fixtures (all ten self-checks on a real result page, field completeness, the sanitizing rules, a no-credentials scan)
 - **URLs and filters**: query and profile URL assembly, filter parameters, id and URL parsing, cite-popup addresses
 - **Crawl loop**: pagination and author batching, pacing and cooldowns, the back-to-back challenge wait and its off switch, both run-summary duration formats, HTML dumps, a challenge during export
+- **Recipes**: every recipe parses, builds a target and (for the `--dry-run` one) actually runs; the print format, the first three shown for a bare invocation, and a terse error when arguments were passed
 - **Cross-run learning**: rehearsals excluded as evidence, the history summary (kinds, position, streaks), one block only warning, factors stacking for repeated and early blocks with a cap, never speeding a run up, hand-passed delays left alone, the off switch, an empty log leaving defaults
 - **Takeover log**: URL redaction (challenge tokens and search parameters treated differently), the one-line summary, appending and reading back (skipping bad lines), all three outcomes during a crawl (solved, budget exhausted, headless refusal), a recorded rehearsal, and `--show-state` reading it back
 - **Human takeover**: challenge detection against a real headless-Chromium DOM, the wait's timeout, closed window and headless refusal, the full rehearsal path (detected, cleared, resumed)
@@ -396,6 +410,7 @@ scholar_crawler/
   selfcheck.py  parser self-check: per-field health report
   rehearsal.py  takeover rehearsal: local challenge page, full-path drill
   history.py    takeover log -> starting-rhythm advice
+  recipes.py    complete commands to copy
   digest.py     offline digest: merge, filter, command line
   analysis.py   offline analysis: overview counts and grouping
   bibsynth.py   offline bibliography: BibTeX from stored fields

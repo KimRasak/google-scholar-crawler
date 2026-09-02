@@ -1,0 +1,102 @@
+"""The printed recipes: every command must still parse and mean what it says."""
+
+from __future__ import annotations
+
+import shlex
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scholar_crawler import digest  # noqa: E402
+from scholar_crawler.cli import build_parser, build_targets, main  # noqa: E402
+from scholar_crawler.recipes import RECIPES, getting_started, render  # noqa: E402
+
+PROGRAMS = ("scholar-crawler", "scholar-digest")
+
+
+@pytest.fixture
+def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A directory holding the files the recipes refer to."""
+    (tmp_path / "queries.txt").write_text("graph attention networks\n", encoding="utf-8")
+    (tmp_path / "out").mkdir()
+    (tmp_path / "out" / "collected.jsonl").write_text(
+        '{"title": "A paper", "cluster_id": "AAA", "query": "x"}\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
+
+
+def test_every_recipe_names_a_real_command_and_parses(workspace: Path) -> None:
+    assert RECIPES, "the recipe list must not be empty"
+    for recipe in RECIPES:
+        argv = shlex.split(recipe.command)
+        assert argv[0] in PROGRAMS, recipe.command
+        rest = [
+            # the shell expands the glob before the program sees it
+            *(("out/collected.jsonl",) if argv[1:2] == ["out/*.jsonl"] else ()),
+            *(argument for argument in argv[1:] if argument != "out/*.jsonl"),
+        ]
+        parser = build_parser() if argv[0] == "scholar-crawler" else digest.build_parser()
+        parsed = parser.parse_args(rest)  # argparse exits on an unknown or malformed flag
+        assert parsed is not None
+
+
+def test_every_crawler_recipe_describes_a_buildable_run(workspace: Path) -> None:
+    for recipe in RECIPES:
+        argv = shlex.split(recipe.command)
+        if argv[0] != "scholar-crawler":
+            continue
+        args = build_parser().parse_args(argv[1:])
+        if args.self_check or args.rehearse_handoff:
+            continue  # these modes carry no target by design
+        listings, authors = build_targets(args)
+        assert listings or authors, recipe.command
+
+
+def test_the_dry_run_recipe_runs_as_written(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dry = [recipe for recipe in RECIPES if "--dry-run" in recipe.command]
+    assert dry, "keep a recipe that costs a run without sending anything"
+    for recipe in dry:
+        assert main(shlex.split(recipe.command)[1:]) == 0
+        printed = capsys.readouterr().out
+        assert "[plan] total:" in printed
+
+
+def test_recipes_read_as_purpose_command_note() -> None:
+    lines = render()
+    assert len(lines) == 3 * len(RECIPES)
+    assert lines[0].startswith("1. ")
+    assert lines[1].startswith("   $ scholar-")
+    assert lines[2].startswith("     ")
+    assert len(getting_started(3)) == 9
+
+
+def test_the_recipe_list_is_printable_and_stops(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--recipes"]) == 0
+    printed = capsys.readouterr().out
+    assert printed.count("$ scholar-") == len(RECIPES)
+    assert "--self-check" in printed
+
+
+def test_a_run_with_no_arguments_points_at_the_recipes(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["scholar-crawler"])
+    assert main([]) == 1
+    captured = capsys.readouterr()
+    assert "provide at least one --query" in captured.err
+    assert "--recipes" in captured.err
+    assert "$ scholar-crawler --self-check" in captured.err
+
+
+def test_a_usage_error_with_arguments_stays_terse(capsys: pytest.CaptureFixture[str]) -> None:
+    # A user who passed something wrong wants the error, not a tutorial.
+    assert main(["--follow-cites", "1"]) == 1
+    captured = capsys.readouterr()
+    assert "provide at least one --query" in captured.err
+    assert "$ scholar-crawler" not in captured.err
