@@ -140,6 +140,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pace.add_argument("--max-handoffs", type=int, default=5, help="abort after this many takeovers")
     pace.add_argument(
+        "--challenge-cooldown",
+        type=float,
+        default=300.0,
+        metavar="SECONDS",
+        help="wait this long before resuming when challenges arrive back to back "
+        "(default: 300, 0 disables)",
+    )
+    pace.add_argument(
         "--backoff-factor",
         type=float,
         default=1.6,
@@ -464,6 +472,7 @@ def main(argv: list[str] | None = None) -> int:
             cooldown_every=args.cooldown_every,
             cooldown_seconds=args.cooldown_seconds,
             backoff_factor=args.backoff_factor,
+            challenge_cooldown=args.challenge_cooldown,
         )
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
@@ -493,6 +502,7 @@ def main(argv: list[str] | None = None) -> int:
     options = _browser_options(args)
     handoff = HumanHandoff(timeout=args.handoff_timeout, headless=args.headless)
     exit_code = 0
+    crawler: ScholarCrawler | None = None
     try:
         with browser_session(options) as (_context, page):
             crawler = ScholarCrawler(
@@ -533,6 +543,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         if profiles.written:
             print(f"[out] {profiles.written} profile updates -> {profiles.path}", flush=True)
+        if crawler is not None:
+            print(f"[run] {crawler.stats().render()}", flush=True)
     return exit_code
 
 

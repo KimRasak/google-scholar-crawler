@@ -165,11 +165,69 @@ def test_backoff_factor_of_one_keeps_the_rhythm() -> None:
         ({"min_delay": 20.0, "max_delay": 5.0}, "exceeds max_delay"),
         ({"cooldown_seconds": -5.0}, "must not be negative"),
         ({"backoff_factor": 0.5}, "backoff_factor must be"),
+        ({"challenge_cooldown": -1.0}, "must not be negative"),
     ],
 )
 def test_invalid_pacing_fails_loudly(kwargs: dict[str, float], message: str) -> None:
     with pytest.raises(ValueError, match=message):
         Pacing(**kwargs)
+
+
+def test_back_to_back_challenges_wait_out_the_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr(crawler_module.time, "sleep", slept.append)
+    pacing = Pacing(backoff_factor=1.0, challenge_cooldown=120.0)
+    pacing.after_handoff(1)
+    assert slept == []  # one solved challenge is normal; only a repeat means trouble
+    pacing.after_handoff(2)
+    pacing.after_handoff(3)
+    assert slept == [120.0, 240.0]
+
+
+def test_the_cooldown_can_be_switched_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr(crawler_module.time, "sleep", slept.append)
+    Pacing(backoff_factor=1.0, challenge_cooldown=0.0).after_handoff(4)
+    assert slept == []
+
+
+def test_run_stats_count_requests_takeovers_and_kinds(monkeypatch: pytest.MonkeyPatch) -> None:
+    outcomes = iter([CAPTCHA, CAPTCHA, None, None])
+    monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: next(outcomes, None))
+    monkeypatch.setattr(crawler_module.HumanHandoff, "resolve", lambda _self, _page, _challenge: None)
+    monkeypatch.setattr(crawler_module.time, "sleep", lambda _seconds: None)
+    pacing = Pacing(min_delay=0.0, max_delay=0.0, cooldown_every=0, challenge_cooldown=30.0)
+    page = _FakePage(iter([CAPTCHA_PAGE_HTML, CAPTCHA_PAGE_HTML, RESULT_PAGE_HTML, RESULT_PAGE_HTML]))
+    crawler = ScholarCrawler(page, HumanHandoff(), pacing)  # type: ignore[arg-type]
+    crawler.fetch_page(SearchRequest(query="t"), 0)
+    stats = crawler.stats()
+    assert (stats.requests, stats.handoffs) == (3, 2)
+    assert stats.challenges == {"captcha": 2}
+    assert crawler.consecutive_handoffs == 0  # reset by the page that finally loaded
+    assert stats.navigation_retries == 0
+    line = stats.render()
+    assert "3 requests" in line and "2 takeovers (captcha x2)" in line and "delay now" in line
+
+
+def test_short_runs_report_seconds_and_long_runs_report_a_rate() -> None:
+    def stats(requests: int, elapsed: float) -> crawler_module.RunStats:
+        return crawler_module.RunStats(
+            requests=requests,
+            handoffs=1,
+            challenges={"captcha": 1},
+            navigation_retries=2,
+            elapsed=elapsed,
+            min_delay=4.0,
+            max_delay=11.0,
+        )
+
+    short = stats(1, 7.0).render()
+    assert "1 request in 7s" in short
+    assert "1 takeover (captcha x1)" in short
+    assert "2 navigation retries" in short
+
+    long_run = stats(60, 600.0).render()
+    assert "60 requests in 10.0 min (6.0/min)" in long_run
 
 
 def test_dump_html_writes_pages_and_challenges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -32,6 +32,54 @@ CITE_POPUP_SELECTOR = "a.gs_citi, div.gs_citr, #gs_citi, #gs_cit1"
 
 
 @dataclass(slots=True)
+class RunStats:
+    """What one run cost and how healthy it looked.
+
+    :param requests: page loads issued, including cite popups and BibTeX exports.
+    :param handoffs: human takeovers this run.
+    :param challenges: takeover count per challenge kind.
+    :param navigation_retries: navigations that failed and were retried.
+    :param elapsed: wall-clock seconds since the crawler was created.
+    :param min_delay: current lower delay bound, after any backoff.
+    :param max_delay: current upper delay bound, after any backoff.
+    """
+
+    requests: int
+    handoffs: int
+    challenges: dict[str, int]
+    navigation_retries: int
+    elapsed: float
+    min_delay: float
+    max_delay: float
+
+    def render(self) -> str:
+        """Format the run as one line.
+
+        The request rate is reported only once the run is long enough for it to mean
+        something; over a few seconds it says more about start-up than about pacing.
+
+        :returns: request count and duration, takeovers by kind, retries and the current rhythm.
+        """
+        minutes = self.elapsed / 60
+        plural = "" if self.requests == 1 else "s"
+        if minutes >= 0.5:
+            spent = f"in {minutes:.1f} min ({self.requests / minutes:.1f}/min)"
+        else:
+            spent = f"in {self.elapsed:.0f}s"
+        kinds = (
+            " (" + ", ".join(f"{kind} x{count}" for kind, count in sorted(self.challenges.items())) + ")"
+            if self.challenges
+            else ""
+        )
+        return (
+            f"{self.requests} request{plural} {spent}, "
+            f"{self.handoffs} takeover{'' if self.handoffs == 1 else 's'}{kinds}, "
+            f"{self.navigation_retries} navigation retries, "
+            f"delay now {self.min_delay:.1f}-{self.max_delay:.1f}s"
+        )
+
+
+@dataclass(slots=True)
 class Pacing:
     """Request rhythm. Slower settings mean fewer challenges, not just politeness.
 
@@ -42,6 +90,8 @@ class Pacing:
     :param nav_timeout: per-navigation timeout in seconds.
     :param backoff_factor: multiplier applied to both delay bounds after each human
         takeover, so a challenged run automatically slows down; 1.0 keeps the rhythm.
+    :param challenge_cooldown: seconds to wait out before resuming when challenges arrive
+        back to back, which means the address is still being watched; 0 disables it.
     """
 
     min_delay: float = 4.0
@@ -50,6 +100,7 @@ class Pacing:
     cooldown_seconds: float = 90.0
     nav_timeout: float = 45.0
     backoff_factor: float = 1.6
+    challenge_cooldown: float = 300.0
 
     def __post_init__(self) -> None:
         """Reject settings that would silently produce nonsense timing.
@@ -60,7 +111,7 @@ class Pacing:
             raise ValueError("delays must not be negative")
         if self.min_delay > self.max_delay:
             raise ValueError(f"min_delay {self.min_delay} exceeds max_delay {self.max_delay}")
-        if self.cooldown_every < 0 or self.cooldown_seconds < 0:
+        if self.cooldown_every < 0 or self.cooldown_seconds < 0 or self.challenge_cooldown < 0:
             raise ValueError("cooldown settings must not be negative")
         if self.backoff_factor < 1.0:
             raise ValueError("backoff_factor must be >= 1.0 so takeovers never speed the crawl up")
@@ -77,16 +128,29 @@ class Pacing:
             print(f"[pace] cooldown {self.cooldown_seconds:.0f}s after {page_index} pages", flush=True)
             time.sleep(self.cooldown_seconds)
 
-    def after_handoff(self) -> None:
-        """Widen both delay bounds by ``backoff_factor`` after a human takeover."""
-        if self.backoff_factor == 1.0:
-            return
-        self.min_delay *= self.backoff_factor
-        self.max_delay *= self.backoff_factor
-        print(
-            f"[pace] backing off to {self.min_delay:.1f}-{self.max_delay:.1f}s between pages",
-            flush=True,
-        )
+    def after_handoff(self, consecutive: int = 1) -> None:
+        """Slow the crawl down after a human takeover.
+
+        A second challenge with no successful page in between means solving the first one
+        did not restore trust, so the run waits out ``challenge_cooldown`` before trying
+        again instead of walking straight into the next block.
+
+        :param consecutive: takeovers since the last page that loaded normally.
+        """
+        if self.backoff_factor != 1.0:
+            self.min_delay *= self.backoff_factor
+            self.max_delay *= self.backoff_factor
+            print(
+                f"[pace] backing off to {self.min_delay:.1f}-{self.max_delay:.1f}s between pages",
+                flush=True,
+            )
+        if consecutive > 1 and self.challenge_cooldown:
+            wait = self.challenge_cooldown * (consecutive - 1)
+            print(
+                f"[pace] {consecutive} challenges in a row; waiting {wait:.0f}s before resuming",
+                flush=True,
+            )
+            time.sleep(wait)
 
 
 class ScholarCrawler:
@@ -117,7 +181,11 @@ class ScholarCrawler:
         self._host = host
         self._max_handoffs = max_handoffs
         self._dump_dir = dump_dir
+        self._started = time.monotonic()
         self.handoff_count = 0
+        self.consecutive_handoffs = 0
+        self.navigation_retries = 0
+        self.challenge_counts: dict[str, int] = {}
         self.request_count = 0
 
     def fetch_page(self, request: SearchRequest, start: int) -> PageResult:
@@ -266,6 +334,21 @@ class ScholarCrawler:
         cards = parse_result_page(html, query=request.label).results
         return cards[0].cluster_id if cards else None
 
+    def stats(self) -> RunStats:
+        """Snapshot what this run has cost so far.
+
+        :returns: the current run statistics.
+        """
+        return RunStats(
+            requests=self.request_count,
+            handoffs=self.handoff_count,
+            challenges=dict(self.challenge_counts),
+            navigation_retries=self.navigation_retries,
+            elapsed=time.monotonic() - self._started,
+            min_delay=self._pacing.min_delay,
+            max_delay=self._pacing.max_delay,
+        )
+
     def _pace(self) -> None:
         """Apply the pre-request delay for the next request of this run."""
         self._pacing.sleep_before_request(self.request_count)
@@ -290,18 +373,22 @@ class ScholarCrawler:
             if challenge is not None:
                 self._dump(f"challenge-{challenge.kind.value}-{tag}")
                 self.handoff_count += 1
+                self.consecutive_handoffs += 1
+                kind = challenge.kind.value
+                self.challenge_counts[kind] = self.challenge_counts.get(kind, 0) + 1
                 if self.handoff_count > self._max_handoffs:
                     raise RuntimeError(
                         f"stopping after {self._max_handoffs} human takeovers; "
                         "increase --max-handoffs or slow the crawl down with --min-delay/--max-delay"
                     )
                 self._handoff.resolve(self._page, challenge)
-                self._pacing.after_handoff()
+                self._pacing.after_handoff(self.consecutive_handoffs)
                 continue
             if self._page.locator(content_selector).count() == 0:
                 # Zero-hit listing, or a layout the selectors miss; both are terminal.
                 self._dump(f"empty-{tag}")
                 return None
+            self.consecutive_handoffs = 0
             self._humanize()
             self._dump(f"page-{tag}")
             return self._page.content()
@@ -320,6 +407,7 @@ class ScholarCrawler:
         except (PlaywrightTimeout, PlaywrightError) as error:
             if attempt >= 3:
                 raise RuntimeError(f"navigation to {url} failed: {error}") from error
+            self.navigation_retries += 1
             time.sleep(5.0 * attempt)
             return False
         return True
