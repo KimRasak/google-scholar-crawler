@@ -180,6 +180,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="ignore the challenge log instead of starting slower after previous blocks",
     )
+    pace.add_argument(
+        "--nav-timeout",
+        type=float,
+        default=45.0,
+        metavar="SECONDS",
+        help="give up on one page load after this long (default: 45)",
+    )
     pace.add_argument("--cooldown-every", type=int, default=10, help="long pause every N pages; 0 disables")
     pace.add_argument("--cooldown-seconds", type=float, default=90.0, help="length of the long pause")
     pace.add_argument(
@@ -342,6 +349,7 @@ def _resolve_pacing(args: argparse.Namespace) -> Pacing:
         cooldown_seconds=args.cooldown_seconds,
         backoff_factor=args.backoff_factor,
         challenge_cooldown=args.challenge_cooldown,
+        nav_timeout=args.nav_timeout,
     )
 
 

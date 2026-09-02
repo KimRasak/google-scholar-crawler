@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scholar_crawler import crawler as crawler_module  # noqa: E402
 from scholar_crawler.challenge import Challenge, ChallengeKind, HumanHandoff  # noqa: E402
 from scholar_crawler.crawler import Pacing, ScholarCrawler  # noqa: E402
+from scholar_crawler.diagnose import CrawlFailure, Failure
 from scholar_crawler.models import AuthorRequest, SearchRequest  # noqa: E402
 from scholar_crawler.urls import AUTHOR_PAGE_SIZE  # noqa: E402
 from tests.fixtures import (  # noqa: E402
@@ -58,6 +59,9 @@ class _FakePage:
 
     def locator(self, _selector: str) -> _FakeLocator:
         return _FakeLocator(self.html)
+
+    def title(self) -> str:
+        return "canned page"
 
 
 class _FakeLocator:
@@ -266,5 +270,9 @@ def test_author_max_results_truncates_the_last_batch(monkeypatch: pytest.MonkeyP
 def test_unknown_profile_layout_fails_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: None)
     page = _FakePage(iter(["<html><body>nothing here</body></html>"]))
-    with pytest.raises(RuntimeError, match="no profile header or publication table"):
+    with pytest.raises(CrawlFailure) as failure:
         _crawler(page).fetch_author_page(AuthorRequest(user_id="AAAAAAAAAAAA"), 0)
+    diagnosis = failure.value.diagnosis
+    assert diagnosis.failure is Failure.UNKNOWN_LAYOUT
+    assert "carries none of Scholar's markers" in diagnosis.what
+    assert any("--self-check" in step for step in diagnosis.next_steps)

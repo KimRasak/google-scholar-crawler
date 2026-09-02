@@ -271,3 +271,114 @@ def test_an_unattended_challenge_stops_the_run_without_losing_what_it_had(
     state = StateStore(tmp_path / "state.json")
     state.load()
     assert state.next_start(QUERY.signature()) == 10  # resuming retries the challenged page
+
+
+def _session(tmp_path: Path, host: str) -> Session:
+    return Session(
+        options=BrowserOptions(user_data_dir=tmp_path / "profile", headless=True, channel=None),
+        handoff=HumanHandoff(timeout=1.0, poll_interval=0.0, headless=True),
+        log=ChallengeLog(tmp_path / "challenges.jsonl"),
+        host=host,
+        dump_dir=tmp_path / "dump",
+    )
+
+
+def _stderr_of(capsys: pytest.CaptureFixture[str]) -> str:
+    return capsys.readouterr().err
+
+
+def test_a_host_that_refuses_the_connection_is_explained(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Bind a port, then close it, so nothing is listening on an address that resolves.
+    with serving(FakeScholar()) as host:
+        pass
+
+    outputs = _outputs(tmp_path)
+    exit_code = crawl(
+        _session(tmp_path, host),
+        NO_WAIT,
+        CrawlLimits(pages=1),
+        [QUERY],
+        [],
+        FollowPolicy(),
+        TEMPLATE,
+        outputs,
+    )
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "refused the connection" in captured.err
+    assert "try: open the same address in a normal browser" in captured.err
+    assert "underlying error:" in captured.err  # the raw error stays when the guess is wrong
+    # A refused connection answers the same way every time, so it is not retried.
+    assert "1 request in" in captured.out and "0 navigation retries" in captured.out
+
+
+def test_a_page_this_tool_cannot_read_is_not_reported_as_no_results(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    site = FakeScholar(body="<html><head><title>Wi-Fi login</title></head><body>sign in</body></html>")
+    outputs = _outputs(tmp_path)
+    with serving(site) as host:
+        exit_code = crawl(
+            _session(tmp_path, host),
+            NO_WAIT,
+            CrawlLimits(pages=2),
+            [QUERY],
+            [],
+            FollowPolicy(),
+            TEMPLATE,
+            outputs,
+        )
+
+    assert exit_code == 1
+    assert len(site.requests) == 1  # it stopped instead of paging through a site it cannot read
+    printed = _stderr_of(capsys)
+    assert "carries none of Scholar's markers" in printed
+    assert "try: run --self-check" in printed
+    assert "page title: Wi-Fi login" in printed
+    assert [path.name for path in (tmp_path / "dump").glob("*empty*")], "the page was saved"
+    assert str(next((tmp_path / "dump").glob("*empty*"))) in printed
+
+
+def test_a_refusal_to_serve_is_reported_as_a_block_not_a_bug(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    site = FakeScholar(status=429, body="<html><head><title>Sorry</title></head><body>too many</body></html>")
+    outputs = _outputs(tmp_path)
+    with serving(site) as host:
+        exit_code = crawl(
+            _session(tmp_path, host),
+            NO_WAIT,
+            CrawlLimits(pages=1),
+            [QUERY],
+            [],
+            FollowPolicy(),
+            TEMPLATE,
+            outputs,
+        )
+
+    assert exit_code == 1
+    printed = _stderr_of(capsys)
+    assert "HTTP 429" in printed and "refusing requests from here" in printed
+    assert "try: stop for a while" in printed
+
+
+def test_a_zero_hit_listing_is_still_an_ordinary_empty_result(
+    page: Page, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Scholar's own "did not match any articles" notice is content, not a failure.
+    site = FakeScholar(pages=0)
+    outputs = _outputs(tmp_path)
+    with serving(site) as host:
+        crawler = ScholarCrawler(page, _StandInHuman(), NO_WAIT, host=host)
+        crawl_targets(
+            crawler, CrawlLimits(pages=2), [QUERY], [], FollowPolicy(), TEMPLATE, outputs
+        )
+        outputs.close_and_report(crawler)
+
+    printed = capsys.readouterr().out
+    assert "parsed=0" in printed
+    assert "[out] 0 new records" in printed
+    assert _records(tmp_path / "results.jsonl") == []

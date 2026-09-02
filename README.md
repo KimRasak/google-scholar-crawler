@@ -15,6 +15,7 @@
 | 想抓一批数据 | [快速开始](#快速开始) → [先算账：`--dry-run`](#先算账--dry-run) → [常用参数](#常用参数) → [输出](#输出) |
 | 抓完了要用数据 | [汇总已抓到的结果](#汇总已抓到的结果不发请求) → [离线生成参考文献](#离线生成参考文献) → [分组统计](#分组统计) |
 | 被验证码拦了 | [接管记录](#接管记录) → [跨运行学会减速](#跨运行学会减速) → [降低验证频率](#降低验证频率) → [演练人工接管](#演练人工接管) |
+| 程序报错停了 | [出错时给人话](#出错时给人话) → [自检](#自检) |
 | 解析结果不对 | [自检](#自检) → [真实结构回归夹具](#真实结构回归夹具) → `--dump-html` |
 | 中途断了 | [查看与重置断点](#查看与重置断点) → `--resume` |
 | 想改代码 | [开发](#开发) → [结构](#结构) → [工作方式](#工作方式) |
@@ -416,6 +417,26 @@ scholar-crawler --rehearse-handoff
 
 自适应减速分两级：每次人工接管后按 `--backoff-factor` 放大延迟；如果**中间没有一次正常加载**就又被拦（说明解完一次并没有恢复信任），则在恢复前先静默等待 `--challenge-cooldown` 秒，第三次连续被拦等两倍，以此类推。超过 `--max-handoffs` 仍然直接中止。
 
+## 出错时给人话
+
+程序停下来的时候，最没用的信息是把 Playwright 的调用日志原样倒出来。每种失败都会翻译成「发生了什么 + 下一步做什么」，必要时附上原始错误：
+
+```
+$ scholar-crawler -q "graph attention networks"
+
+[stop] the host refused the connection, so nothing was crawled (https://scholar.google.com/scholar?...)
+[stop] try: open the same address in a normal browser: if that fails too, the network is blocking it
+[stop] try: check --host if you pointed it somewhere other than scholar.google.com
+[stop] try: check whether a VPN, firewall or corporate proxy is in the way
+[stop] underlying error: Page.goto: net::ERR_CONNECTION_REFUSED at https://scholar.google.com/...
+```
+
+而且不再白等：连接被拒、DNS 解析不了、证书被拒、代理拒绝这类「重试一百次也一样」的失败立刻停下（以前会重试三次、白等 15 秒），只有超时、连接被掐断、断网这类可能是暂时的才重试。
+
+区分开的情况：连接被拒 / DNS 解析不了 / 本机断网 / 代理拒绝 / 连接被中途掐断（自动化流量常见的下场，建议放慢重试）/ 证书被拒（通常是有东西在中间解 TLS，或本机时钟不对）/ 加载超时（`--nav-timeout` 可调）/ 浏览器窗口被提前关掉 / Scholar 返回 429 或 503（这是拒绝服务，不是 bug：停一段时间再 `--resume`）/ 其他 4xx-5xx / 页面能打开但不含任何 Scholar 标记。原始错误只保留第一行，调用日志不再糊满屏幕；猜错了也还能看到它。
+
+一个重要的行为修正：以前「页面打开了但一个 Scholar 标记都没有」会被当成「这个查询没有结果」——于是一个门户认证页、一个陌生版式，看起来都像是搜了个没人写过的题目，程序还会继续往下翻页。现在这种页面直接停下来报 `--self-check` 与 dump 路径。真正的零结果页仍然是零结果：Scholar 自己的「did not match any articles」提示就是内容，照常解析成 0 条。
+
 ## 降低验证频率
 
 - 别调小默认延迟；被封的主因是节奏，不是 User-Agent。
@@ -426,7 +447,7 @@ scholar-crawler --rehearse-handoff
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 228 个用例，全部离线
+python3 -m pytest -q     # 241 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -435,7 +456,8 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **解析**：结果卡片（仅引用条目、PDF 侧链、被引/版本计数、词中加粗、第二页的结果计数、零结果页）、作者主页（头部各行、按行位置读统计表、论文行、缺年份与零被引、「显示更多」状态）、真实页面夹具（结果页 10 项自检全过、字段完整性、脱敏规则、夹具不含凭证）
 - **URL 与过滤**：查询/主页地址拼装、过滤参数、id 与 URL 解析、cite 弹窗地址
 - **抓取循环**：翻页与作者分批、节奏与冷却、连续被拦的静默等待与关闭开关、运行摘要的长短两种格式、HTML dump、导出过程中被拦
-- **全链路**：真实浏览器打本地假 Scholar——翻页与页数上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、干净数据不报警、headless 拒绝接管时已抓数据仍在
+- **失败诊断**：九类网络错误各自归类、只重试可能是暂时的失败、认不出的错误保留原文并仍给建议、每条诊断都带 URL 与下一步、429/503 与其他 5xx 区分、无法解析的页面指向 parser.py 与存盘副本、连续验证被判为封锁、渲染顺序
+- **全链路**：真实浏览器打本地假 Scholar——翻页与页数上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、干净数据不报警、headless 拒绝接管时已抓数据仍在、连接被拒/不可解析页面/429 各自给出人话、零结果页仍是零结果
 - **抓取时体检**：逐条累加与整批体检结果完全一致、单条坏记录不报警、一个字段大面积失败才报警、缺失类警告永不报警、运行结束时打印在输出之后
 - **数据体检**：干净记录不误报、页码型 venue 与残留年份、与灰字矛盾的年份、有被引数无链接、负计数、缺失与有损字段的档位、仅引用条目不因缺 card id 被判错、占比与例子、真实夹具记录零 error
 - **文档导航**：两份 README 的页内链接都指向真实小节、导航表覆盖至少 7 种情况、两份文档的模块清单一致且与实际模块完全对应
@@ -462,6 +484,7 @@ scholar_crawler/
   urls.py       查询/主页 URL、过滤参数、id/URL 解析
   parser.py     结果页与作者主页 HTML → 结构化记录
   challenge.py  验证页判定 + 人工接管等待
+  diagnose.py   失败诊断：把网络与页面故障翻译成下一步动作
   browser.py    持久化 profile 的浏览器会话
   crawler.py    抓取循环：节奏、接管、翻页/分批、BibTeX 取用、HTML dump
   run.py        一次运行的执行：开浏览器、目标抓取、图展开、输出文件开关与汇报

@@ -15,6 +15,7 @@ from playwright.sync_api import Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
 from .challenge import RESULTS_SELECTOR, Challenge, ChallengeUnattended, HumanHandoff, detect_challenge
+from .diagnose import CrawlFailure, diagnose_challenge_loop, diagnose_navigation, diagnose_page
 from .models import AuthorPage, AuthorRequest, PageResult, ScholarResult, SearchRequest
 from .parser import bibtex_link, parse_author_page, parse_bibtex, parse_result_page
 from .storage import ChallengeLog
@@ -191,6 +192,8 @@ class ScholarCrawler:
         self.navigation_retries = 0
         self.challenge_counts: dict[str, int] = {}
         self.request_count = 0
+        self.last_status: int | None = None
+        self._last_dump: Path | None = None
 
     def fetch_page(self, request: SearchRequest, start: int) -> PageResult:
         """Load one result page, handing over to a human if Scholar challenges us.
@@ -198,11 +201,10 @@ class ScholarCrawler:
         :param request: the listing being paginated.
         :param start: result offset to load.
         :returns: the parsed page; empty with no successor when the listing has no hits.
-        :raises RuntimeError: when the handoff budget is exhausted or the page never loads.
+        :raises CrawlFailure: when the page never loads or carries no Scholar content.
+        :raises RuntimeError: when the handoff budget is exhausted.
         """
         html = self._load(search_url(request, start=start, host=self._host), str(start))
-        if html is None:
-            return PageResult(start=start, results=[], total_estimate=0, has_next=False)
         return parse_result_page(html, query=request.label, start=start)
 
     def fetch_author_page(self, request: AuthorRequest, cstart: int) -> AuthorPage:
@@ -211,16 +213,11 @@ class ScholarCrawler:
         :param request: the profile to read.
         :param cstart: publication offset to load.
         :returns: the parsed profile batch.
-        :raises RuntimeError: when the profile carries no recognizable header or table,
-            the handoff budget is exhausted, or the page never loads.
+        :raises CrawlFailure: when the page never loads or carries no profile header or table.
+        :raises RuntimeError: when the handoff budget is exhausted.
         """
         url = author_url(request, cstart=cstart, host=self._host, page_size=AUTHOR_PAGE_SIZE)
         html = self._load(url, f"author-{cstart}")
-        if html is None:
-            raise RuntimeError(
-                f"no profile header or publication table at {url}; "
-                "check the profile id, or inspect the page with --dump-html"
-            )
         return parse_author_page(html, user_id=request.user_id, cstart=cstart)
 
     def search(
@@ -303,17 +300,17 @@ class ScholarCrawler:
         card_id = result.cluster_id or self._resolve_card_id(result, language)
         if not card_id:
             return None
-        popup = self._load(
+        popup = self._try_load(
             cite_url(card_id, host=self._host, language=language),
             f"cite-{card_id}",
-            content_selector=CITE_POPUP_SELECTOR,
+            CITE_POPUP_SELECTOR,
         )
         if popup is None:
             return None
         export_url = absolute(bibtex_link(popup), self._host)
         if export_url is None:
             return None
-        body = self._load(export_url, f"bib-{card_id}", content_selector="pre")
+        body = self._try_load(export_url, f"bib-{card_id}", "pre")
         return parse_bibtex(body) if body is not None else None
 
     def _resolve_card_id(self, result: ScholarResult, language: str | None) -> str | None:
@@ -360,16 +357,41 @@ class ScholarCrawler:
         self._pacing.sleep_before_request(self.request_count)
         self.request_count += 1
 
-    def _load(
-        self, url: str, tag: str, content_selector: str = RESULTS_SELECTOR
-    ) -> str | None:
+    def _load(self, url: str, tag: str, content_selector: str = RESULTS_SELECTOR) -> str:
         """Navigate to ``url`` and return its HTML once no challenge stands in the way.
+
+        A page carrying none of the expected markers stops the run: a zero-hit listing still
+        carries Scholar's own "did not match any articles" notice, so a page without any of
+        them is a page this tool cannot read, and continuing would report it as no results.
 
         :param url: absolute Scholar URL.
         :param tag: short label used in dump filenames.
         :param content_selector: selectors proving the loaded page carries content.
-        :returns: page HTML, or None when the page carries no Scholar content.
-        :raises RuntimeError: when the handoff budget is exhausted or navigation keeps failing.
+        :returns: the page HTML.
+        :raises CrawlFailure: when the page cannot be obtained or cannot be understood.
+        :raises RuntimeError: when the handoff budget is exhausted.
+        """
+        html = self._try_load(url, tag, content_selector)
+        if html is None:
+            raise CrawlFailure(
+                diagnose_page(
+                    url, status=self.last_status, title=self._title(), dump=self._last_dump
+                )
+            )
+        return html
+
+    def _try_load(self, url: str, tag: str, content_selector: str) -> str | None:
+        """Navigate to ``url``, allowing the expected content to be absent.
+
+        Used for pages Scholar legitimately may not have, such as the cite popup of a record
+        it exposes no citation export for.
+
+        :param url: absolute Scholar URL.
+        :param tag: short label used in dump filenames.
+        :param content_selector: selectors proving the loaded page carries content.
+        :returns: page HTML, or None when the page carries none of that content.
+        :raises CrawlFailure: when the page cannot be obtained at all.
+        :raises RuntimeError: when the handoff budget is exhausted.
         """
         for attempt in range(1, 4):
             self._pace()
@@ -380,14 +402,13 @@ class ScholarCrawler:
                 self._hand_over(challenge, tag)
                 continue
             if self._page.locator(content_selector).count() == 0:
-                # Zero-hit listing, or a layout the selectors miss; both are terminal.
-                self._dump(f"empty-{tag}")
+                self._last_dump = self._dump(f"empty-{tag}")
                 return None
             self.consecutive_handoffs = 0
             self._humanize()
             self._dump(f"page-{tag}")
             return self._page.content()
-        raise RuntimeError(f"could not obtain {url} after three attempts")
+        raise CrawlFailure(diagnose_challenge_loop(url, 3))
 
     def _hand_over(self, challenge: Challenge, tag: str) -> None:
         """Hand the browser to the human, recording what happened either way.
@@ -455,16 +476,21 @@ class ScholarCrawler:
         :param url: absolute result-page URL.
         :param attempt: 1-based attempt number, used for backoff and the error message.
         :returns: True when the navigation completed; False when this attempt failed and another remains.
-        :raises RuntimeError: when the third attempt also fails to navigate.
+        :raises CrawlFailure: when the third attempt also fails, or when the failure is one no
+            retry can get past, such as a refused connection or an unresolvable host.
         """
         try:
-            self._page.goto(url, wait_until="domcontentloaded", timeout=self._pacing.nav_timeout * 1000)
+            response = self._page.goto(
+                url, wait_until="domcontentloaded", timeout=self._pacing.nav_timeout * 1000
+            )
         except (PlaywrightTimeout, PlaywrightError) as error:
-            if attempt >= 3:
-                raise RuntimeError(f"navigation to {url} failed: {error}") from error
+            diagnosis = diagnose_navigation(error, url)
+            if attempt >= 3 or not diagnosis.retry_worthwhile:
+                raise CrawlFailure(diagnosis) from error
             self.navigation_retries += 1
             time.sleep(5.0 * attempt)
             return False
+        self.last_status = response.status if response is not None else None
         return True
 
     def _humanize(self) -> None:
@@ -473,17 +499,30 @@ class ScholarCrawler:
             self._page.mouse.wheel(0, random.randint(300, 1200))
         time.sleep(random.uniform(0.6, 2.2))
 
-    def _dump(self, tag: str) -> None:
+    def _dump(self, tag: str) -> Path | None:
         """Save the current page HTML under ``dump_dir`` when dumping is enabled.
 
         :param tag: filename stem describing why the page was saved.
+        :returns: the file written, or None when dumping is off or the page was gone.
         """
         if self._dump_dir is None:
-            return
+            return None
         self._dump_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
         try:
             html = self._page.content()
         except PlaywrightError:  # page navigated away before it could be captured
-            return
-        (self._dump_dir / f"{stamp}-{tag}.html").write_text(html, encoding="utf-8")
+            return None
+        path = self._dump_dir / f"{stamp}-{tag}.html"
+        path.write_text(html, encoding="utf-8")
+        return path
+
+    def _title(self) -> str:
+        """Read the current page title for a diagnosis.
+
+        :returns: the title, or an empty string when the page is gone.
+        """
+        try:
+            return self._page.title()
+        except PlaywrightError:  # the page closed while the failure was being described
+            return ""

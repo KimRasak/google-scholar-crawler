@@ -15,6 +15,7 @@ The code never tries to solve, bypass or hide a verification challenge. Verifica
 | Collecting a batch | [Usage](#usage) → [Counting the cost first](#counting-the-cost-first---dry-run) → [Options](#options) → [Output](#output) |
 | Using what you collected | [Digesting collected results](#digesting-collected-results-no-requests) → [Building a bibliography offline](#building-a-bibliography-offline) → [Grouping](#grouping) |
 | Getting blocked | [The takeover log](#the-takeover-log) → [Learning to slow down across runs](#learning-to-slow-down-across-runs) → [Getting challenged less](#getting-challenged-less) → [Rehearsing the human takeover](#rehearsing-the-human-takeover) |
+| It stopped with an error | [Failures in plain words](#failures-in-plain-words) → [Self-check](#self-check) |
 | Parsing looks wrong | [Self-check](#self-check) → [Real-structure regression fixtures](#real-structure-regression-fixtures) → `--dump-html` |
 | Interrupted run | [Reviewing and resetting resume state](#reviewing-and-resetting-resume-state) → `--resume` |
 | Changing the code | [Development](#development) → [Layout](#layout) → [How it works](#how-it-works) |
@@ -417,6 +418,26 @@ The request count includes cite popups and BibTeX exports, takeovers are broken 
 
 The slowdown has two stages: every takeover widens the delays by `--backoff-factor`, and a challenge that arrives with **no successful page in between** — meaning solving the first one did not restore trust — waits out `--challenge-cooldown` before resuming, doubling for a third consecutive challenge and so on. `--max-handoffs` still aborts the run outright.
 
+## Failures in plain words
+
+The least useful thing a stopped run can print is Playwright's call log. Every failure is translated into what happened and what to do next, with the raw error kept underneath:
+
+```
+$ scholar-crawler -q "graph attention networks"
+
+[stop] the host refused the connection, so nothing was crawled (https://scholar.google.com/scholar?...)
+[stop] try: open the same address in a normal browser: if that fails too, the network is blocking it
+[stop] try: check --host if you pointed it somewhere other than scholar.google.com
+[stop] try: check whether a VPN, firewall or corporate proxy is in the way
+[stop] underlying error: Page.goto: net::ERR_CONNECTION_REFUSED at https://scholar.google.com/...
+```
+
+It also stops wasting time: a refused connection, an unresolvable name, a rejected certificate and a refusing proxy answer the same way every time, so they stop immediately instead of retrying three times over 15 seconds; only a timeout, a dropped connection or a lost network is retried.
+
+Told apart: a refused connection, a name that does not resolve, no internet at all, a proxy that refuses, a connection closed mid-request (how networks usually drop automated traffic — slow down and retry), a rejected certificate (something is intercepting HTTPS, or this machine's clock is wrong), a load that timed out (`--nav-timeout` raises the limit), a browser window closed early, HTTP 429 or 503 from Scholar (a refusal to serve, not a bug: wait, then `--resume`), any other 4xx/5xx, and a page that loaded while carrying none of Scholar's markers. Only the error's first line is kept, so the call log no longer fills the screen — and it is still there when the diagnosis guesses wrong.
+
+One behaviour was corrected along the way: a page that loaded with none of Scholar's markers used to be treated as "this query has no results", so a captive-portal login or an unfamiliar layout looked like an unwritten topic — and the run kept paging. Such a page now stops the run and names `--self-check` and the saved copy. A genuine zero-hit listing is still just empty: Scholar's own "did not match any articles" notice is content, parsed as zero records.
+
 ## Getting challenged less
 
 - Do not shrink the default delays; rhythm, not the User-Agent, is what gets a client blocked.
@@ -427,7 +448,7 @@ The slowdown has two stages: every takeover widens the delays by `--backoff-fact
 ## Development
 
 ```sh
-python3 -m pytest -q     # 228 tests, fully offline
+python3 -m pytest -q     # 241 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -436,7 +457,8 @@ All tests run offline (no network at all), grouped by area:
 - **Parsing**: result cards (citation-only records, PDF side links, cited-by and version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author profiles (header lines, the position-read summary table, publication rows, missing years and zero citations, the "show more" state), real-page fixtures (all ten self-checks on a real result page, field completeness, the sanitizing rules, a no-credentials scan)
 - **URLs and filters**: query and profile URL assembly, filter parameters, id and URL parsing, cite-popup addresses
 - **Crawl loop**: pagination and author batching, pacing and cooldowns, the back-to-back challenge wait and its off switch, both run-summary duration formats, HTML dumps, a challenge during export
-- **End to end**: a real browser against the local fake Scholar — paging and the page budget, a takeover losing nothing, `--resume`, an author profile stored, no alarm on clean data, and data kept on disk when headless refuses the takeover
+- **Failure diagnosis**: nine classes of network error, retrying only failures a retry could survive, an unrecognized error keeping its text and still advising, every diagnosis naming the URL and a next step, 429/503 told apart from other 5xx, an unreadable page pointing at parser.py and the saved copy, repeated challenges reported as a block, and the render order
+- **End to end**: a real browser against the local fake Scholar — paging and the page budget, a takeover losing nothing, `--resume`, an author profile stored, no alarm on clean data, data kept on disk when headless refuses the takeover, plain-words diagnoses for a refused connection, an unreadable page and HTTP 429, and a zero-hit listing still reported as empty
 - **Auditing while crawling**: the incremental tally agrees exactly with the batch audit, one bad record stays quiet, a field failing across a run raises an alarm, missing-field warnings never do, and the alarm prints after the run's output
 - **Record audit**: a clean record trips nothing, page-range venues and leftover years, a year the byline never mentioned, citations without a link, negative counts, the severity of missing and lossy fields, citation-only records not blamed for a missing card id, counts with examples, and zero errors on records parsed from the real fixtures
 - **Documentation**: in-page links in both READMEs resolve to real sections, the navigation table covers at least seven situations, and both documents list exactly the modules that exist
@@ -463,6 +485,7 @@ scholar_crawler/
   urls.py       query and profile URLs, filters, id/URL parsing
   parser.py     result-page and profile HTML -> structured records
   challenge.py  challenge detection + human takeover wait
+  diagnose.py   failure diagnosis: network and page failures turned into next steps
   browser.py    persistent-profile browser session
   crawler.py    crawl loop: pacing, takeover, pagination and author batching, BibTeX loads, HTML dumps
   run.py        executing one run: opening the browser, crawling targets, expanding, reporting outputs

@@ -13,6 +13,7 @@ from pathlib import Path
 from .browser import Session, browser_session
 from .challenge import ChallengeUnattended
 from .crawler import Pacing, ScholarCrawler
+from .diagnose import CrawlFailure
 from .expand import FollowPolicy, next_level
 from .models import AuthorProfile, AuthorRequest, ScholarResult, SearchRequest
 from .parser import bibtex_key
@@ -349,6 +350,11 @@ def crawl(
     except KeyboardInterrupt:
         print("\n[stop] interrupted by user", flush=True)
         exit_code = 130
+    except CrawlFailure as failure:
+        for index, line in enumerate(failure.diagnosis.render()):
+            prefix = "\n[stop]" if index == 0 else "[stop]"
+            print(f"{prefix} {line}", file=sys.stderr)
+        exit_code = 1
     except (ChallengeUnattended, RuntimeError) as error:
         print(f"\n[stop] {error}", file=sys.stderr)
         exit_code = 1

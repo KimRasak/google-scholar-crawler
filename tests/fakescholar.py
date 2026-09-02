@@ -29,16 +29,30 @@ class FakeScholar:
 
     :param pages: how many result pages exist; the last one advertises no successor.
     :param challenge_at: offsets answered with a challenge page the first time they are asked.
+    :param status: HTTP status every response carries.
+    :param body: HTML served instead of a result page, for a site that answers with something
+        this tool cannot read.
     """
 
-    def __init__(self, *, pages: int = 2, challenge_at: tuple[int, ...] = ()) -> None:
+    def __init__(
+        self,
+        *,
+        pages: int = 2,
+        challenge_at: tuple[int, ...] = (),
+        status: int = 200,
+        body: str | None = None,
+    ) -> None:
         """Build a site.
 
         :param pages: how many result pages exist.
         :param challenge_at: offsets answered with a challenge page the first time.
+        :param status: HTTP status every response carries.
+        :param body: HTML served instead of the result pages.
         """
         self.pages = pages
         self.challenge_at = set(challenge_at)
+        self.status = status
+        self.body = body
         self.requests: list[str] = []
         self.challenges_served: list[int] = []
         self._served_challenge: set[int] = set()
@@ -53,6 +67,8 @@ class FakeScholar:
         """
         with self._lock:
             self.requests.append(f"{path}?{'&'.join(f'{k}={v[0]}' for k, v in sorted(query.items()))}")
+            if self.body is not None:
+                return self.body
             if path == "/citations":
                 return AUTHOR_PAGE_HTML
             start = int(query.get("start", ["0"])[0])
@@ -92,7 +108,7 @@ class _Handler(BaseHTTPRequestHandler):
         """Answer one GET with the page the site chooses."""
         parts = urlsplit(self.path)
         body = self.site.body_for(parts.path, parse_qs(parts.query)).encode("utf-8")
-        self.send_response(200)
+        self.send_response(self.site.status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
