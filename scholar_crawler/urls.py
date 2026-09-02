@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .models import AuthorRequest, SearchRequest
 
 SCHOLAR_HOST = "https://scholar.google.com"
+READABLE_PARAMS = frozenset(
+    {"q", "start", "cites", "cluster", "user", "hl", "as_sdt", "as_ylo", "as_yhi", "cstart", "pagesize"}
+)
+"""Query parameters safe to keep when a URL is written to a log: they describe the request."""
+
+CHALLENGE_PATH = "/sorry"
+"""On the challenge path ``q`` is the challenge token, not a search query, so it is redacted too."""
 RESULTS_PER_PAGE = 10
 AUTHOR_PAGE_SIZE = 100
 """Largest publication batch a profile page serves in one request."""
@@ -144,3 +151,24 @@ def absolute(href: str | None, host: str = SCHOLAR_HOST) -> str | None:
     if not href.startswith("/"):
         href = f"/{href}"
     return f"{host}{href}"
+
+
+def redact_url(url: str) -> str:
+    """Strip session material from a URL so it can be written to a log.
+
+    A challenge URL carries the signed parameters that identify the session which triggered
+    it, next to the query that was being requested. The query is the evidence worth keeping;
+    everything else is replaced.
+
+    :param url: the URL as the browser reported it.
+    :returns: the URL with unrecognized parameter values replaced by ``REDACTED``.
+    """
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+    readable = {"hl"} if parts.path.startswith(CHALLENGE_PATH) else READABLE_PARAMS
+    pairs = [
+        (name, value if name in readable else "REDACTED")
+        for name, value in parse_qsl(parts.query, keep_blank_values=True)
+    ]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(pairs), ""))

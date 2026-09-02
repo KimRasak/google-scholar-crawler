@@ -14,9 +14,10 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
-from .challenge import RESULTS_SELECTOR, HumanHandoff, detect_challenge
+from .challenge import RESULTS_SELECTOR, Challenge, ChallengeUnattended, HumanHandoff, detect_challenge
 from .models import AuthorPage, AuthorRequest, PageResult, ScholarResult, SearchRequest
 from .parser import bibtex_link, parse_author_page, parse_bibtex, parse_result_page
+from .storage import ChallengeLog
 from .urls import (
     AUTHOR_PAGE_SIZE,
     RESULTS_PER_PAGE,
@@ -165,6 +166,7 @@ class ScholarCrawler:
         host: str = "https://scholar.google.com",
         max_handoffs: int = 5,
         dump_dir: Path | None = None,
+        challenge_log: ChallengeLog | None = None,
     ) -> None:
         """Bind the crawler to one browser page.
 
@@ -174,6 +176,7 @@ class ScholarCrawler:
         :param host: Scholar host or regional mirror.
         :param max_handoffs: give up after this many human takeovers in one run.
         :param dump_dir: when set, every fetched page's HTML is saved here for debugging.
+        :param challenge_log: when set, every human takeover is appended to it.
         """
         self._page = page
         self._handoff = handoff
@@ -181,6 +184,7 @@ class ScholarCrawler:
         self._host = host
         self._max_handoffs = max_handoffs
         self._dump_dir = dump_dir
+        self._challenge_log = challenge_log
         self._started = time.monotonic()
         self.handoff_count = 0
         self.consecutive_handoffs = 0
@@ -373,18 +377,7 @@ class ScholarCrawler:
                 continue
             challenge = detect_challenge(self._page)
             if challenge is not None:
-                self._dump(f"challenge-{challenge.kind.value}-{tag}")
-                self.handoff_count += 1
-                self.consecutive_handoffs += 1
-                kind = challenge.kind.value
-                self.challenge_counts[kind] = self.challenge_counts.get(kind, 0) + 1
-                if self.handoff_count > self._max_handoffs:
-                    raise RuntimeError(
-                        f"stopping after {self._max_handoffs} human takeovers; "
-                        "increase --max-handoffs or slow the crawl down with --min-delay/--max-delay"
-                    )
-                self._handoff.resolve(self._page, challenge)
-                self._pacing.after_handoff(self.consecutive_handoffs)
+                self._hand_over(challenge, tag)
                 continue
             if self._page.locator(content_selector).count() == 0:
                 # Zero-hit listing, or a layout the selectors miss; both are terminal.
@@ -395,6 +388,66 @@ class ScholarCrawler:
             self._dump(f"page-{tag}")
             return self._page.content()
         raise RuntimeError(f"could not obtain {url} after three attempts")
+
+    def _hand_over(self, challenge: Challenge, tag: str) -> None:
+        """Hand the browser to the human, recording what happened either way.
+
+        A challenge is rare and happens while the human is busy solving it, so the outcome
+        is written to the log before it can be lost with the terminal scrollback.
+
+        :param challenge: the detected challenge.
+        :param tag: short label of the request that was being loaded.
+        :raises RuntimeError: when the takeover budget is exhausted.
+        :raises ChallengeUnattended: when no human can act on the challenge.
+        """
+        self._dump(f"challenge-{challenge.kind.value}-{tag}")
+        self.handoff_count += 1
+        self.consecutive_handoffs += 1
+        kind = challenge.kind.value
+        self.challenge_counts[kind] = self.challenge_counts.get(kind, 0) + 1
+        started = time.monotonic()
+        outcome = "resolved"
+        try:
+            if self.handoff_count > self._max_handoffs:
+                outcome = "budget"
+                raise RuntimeError(
+                    f"stopping after {self._max_handoffs} human takeovers; "
+                    "increase --max-handoffs or slow the crawl down with --min-delay/--max-delay"
+                )
+            self._handoff.resolve(self._page, challenge)
+        except ChallengeUnattended:
+            outcome = "unattended"
+            raise
+        except KeyboardInterrupt:
+            outcome = "interrupted"
+            raise
+        finally:
+            self._record_challenge(challenge, tag, time.monotonic() - started, outcome)
+        self._pacing.after_handoff(self.consecutive_handoffs)
+
+    def _record_challenge(
+        self, challenge: Challenge, tag: str, waited: float, outcome: str
+    ) -> None:
+        """Append one takeover to the challenge log, when logging is enabled.
+
+        :param challenge: the challenge that was handed over.
+        :param tag: short label of the request that was being loaded.
+        :param waited: seconds spent waiting for the human.
+        :param outcome: how the takeover ended.
+        """
+        if self._challenge_log is None:
+            return
+        entry = self._challenge_log.record(
+            kind=challenge.kind.value,
+            url=challenge.url,
+            reason=challenge.detail,
+            request_index=self.request_count,
+            consecutive=self.consecutive_handoffs,
+            waited=waited,
+            outcome=outcome,
+            target=tag,
+        )
+        print(f"[handoff] recorded -> {self._challenge_log.path}: {entry.describe()}", flush=True)
 
     def _goto(self, url: str, attempt: int) -> bool:
         """Navigate to ``url``, retrying transient navigation failures.

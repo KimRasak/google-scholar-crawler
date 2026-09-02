@@ -97,6 +97,27 @@ When the same work appears in several files, the higher citation count wins as t
 | `--min-group`, `--groups` | hide groups below N records; how many groups to list (default: 10) |
 | `--quiet` | print only what was written; needs `-o`, `--csv` or `--bibtex` |
 
+## The takeover log
+
+The human takeover is the rarest, most important and least reproducible step in this tool: it happens while you are busy solving a CAPTCHA, and whatever scrolled past in the terminal is gone afterwards. So every takeover appends a record (`out/challenges.jsonl` by default), which `--show-state` reads back:
+
+```sh
+$ scholar-crawler --show-state
+[state] 3 targets in out/state.json (1 finished)
+[state]   attention is all you need [en] — next offset 30, 2026-09-02 10:45:51 UTC
+[handoff] 2 takeovers in out/challenges.jsonl (captcha x2)
+[handoff]   2026-09-02T12:26:23+00:00  captcha -> unattended, waited 6s (after 11 requests, loading 20)
+[handoff]     matched form#captcha-form at about:blank
+```
+
+Each record carries the time, the kind (`captcha`, `rate_limit`, `consent`), what the detector matched, the URL it was stopped on, how many requests the run had already made, whether challenges arrived back to back and which one this was, how long it waited for a human, and how it ended — `resolved` (solved, crawling continued), `unattended` (`--headless` refusal or the wait timed out), `budget` (`--max-handoffs` exhausted), `interrupted` (Ctrl+C) or `rehearsed` (a drill).
+
+That answers the questions that actually matter afterwards: at which request the block arrived, whether solving one was immediately followed by another (the pacing is still too fast), or whether nobody was at the keyboard.
+
+**The URL is redacted before it is written.** On a `/sorry/` challenge page `q` is the challenge token rather than a search query, so only `hl` survives there; on an ordinary result URL the parameters that describe the request (`q`, `start`, `cites`, `cluster`, `user`, …) are kept and signed ones like `scisig` become `REDACTED`. The file is safe to keep and to share.
+
+`--rehearse-handoff` writes a record too (`outcome=rehearsed`), which also proves the log path is writable before a real challenge depends on it.
+
 ## Reviewing and resetting resume state
 
 After many short sessions the state file no longer tells you much: its keys are signatures meant for the program. Both of these commands work offline:
@@ -226,13 +247,14 @@ It fetches one page of a broad query and reports, field by field, whether titles
 | `--year-from/--year-to`, `--sort-by-date`, `--review-only` | year range, date order, reviews only |
 | `--no-citations`, `--no-patents` | exclude citation-only records / patents |
 | `--lang`, `--host` | interface language (`hl`); mirror such as `https://scholar.google.de` |
+| `--challenge-log` | takeover log (default `out/challenges.jsonl`, URLs redacted) |
 | `-o/--out`, `--csv`, `--state` | JSONL output, CSV export, resume state |
 | `--bibtex` | also export BibTeX to a `.bib` file; deduplicated by citation key, with `extra.bibtex_key` recorded on each record |
 | `--profiles-out`, `--dump-html` | author profile headers (one record per author, re-crawls replace it), raw HTML of every fetched page |
 | `--profile`, `--channel`, `--locale`, `--timezone`, `--proxy` | browser profile and environment |
 | `--min-delay/--max-delay`, `--cooldown-every/--cooldown-seconds` | request rhythm |
 | `--handoff-timeout`, `--max-handoffs`, `--backoff-factor`, `--challenge-cooldown` | how long to wait for a human (0 = forever), takeover budget, slowdown per takeover, wait-out after back-to-back challenges |
-| `--show-state`, `--forget PATTERN` | review stored progress; drop cursors by signature substring (empty pattern drops all) |
+| `--show-state`, `--forget PATTERN` | review stored progress and recent takeovers; drop cursors by signature substring (empty pattern drops all) |
 | `--dry-run` | print the run plan and duration estimate, then stop without requesting anything |
 | `--self-check` | run the parser self-check (one request) and report field by field what still parses |
 | `--headless` | no window; **a challenge then aborts the run with instructions** |
@@ -317,7 +339,7 @@ The slowdown has two stages: every takeover widens the delays by `--backoff-fact
 ## Development
 
 ```sh
-python3 -m pytest -q     # 175 tests, fully offline
+python3 -m pytest -q     # 184 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -326,6 +348,7 @@ All tests run offline (no network at all), grouped by area:
 - **Parsing**: result cards (citation-only records, PDF side links, cited-by and version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author profiles (header lines, the position-read summary table, publication rows, missing years and zero citations, the "show more" state), real-page fixtures (all ten self-checks on a real result page, field completeness, the sanitizing rules, a no-credentials scan)
 - **URLs and filters**: query and profile URL assembly, filter parameters, id and URL parsing, cite-popup addresses
 - **Crawl loop**: pagination and author batching, pacing and cooldowns, the back-to-back challenge wait and its off switch, both run-summary duration formats, HTML dumps, a challenge during export
+- **Takeover log**: URL redaction (challenge tokens and search parameters treated differently), the one-line summary, appending and reading back (skipping bad lines), all three outcomes during a crawl (solved, budget exhausted, headless refusal), a recorded rehearsal, and `--show-state` reading it back
 - **Human takeover**: challenge detection against a real headless-Chromium DOM, the wait's timeout, closed window and headless refusal, the full rehearsal path (detected, cleared, resumed)
 - **Citation graph**: most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence
 - **Output and resume state**: JSONL dedup, CSV export, profile upserts, `.bib` dedup, state review and reset (signatures rendered back, timestamps, older files), a target capped by `-n` staying resumable

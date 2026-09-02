@@ -13,7 +13,8 @@ import time
 
 from playwright.sync_api import Page
 
-from .challenge import HumanHandoff, detect_challenge
+from .challenge import ChallengeUnattended, HumanHandoff, detect_challenge
+from .storage import ChallengeLog
 
 REHEARSAL_HTML = """<!doctype html>
 <html><head><meta charset="utf-8"><title>Handoff rehearsal</title>
@@ -45,11 +46,13 @@ document.getElementById('rehearsal-clear').addEventListener('click', function ()
 pressed, after which it satisfies :data:`~scholar_crawler.challenge.RESULTS_SELECTOR`."""
 
 
-def rehearse(page: Page, handoff: HumanHandoff) -> bool:
+def rehearse(page: Page, handoff: HumanHandoff, log: ChallengeLog | None = None) -> bool:
     """Drive detection, takeover and resume against the local rehearsal page.
 
     :param page: a page from the crawler's own browser session; its content is replaced.
     :param handoff: the takeover policy under test, with the run's real timeout.
+    :param log: when set, the rehearsed takeover is recorded exactly as a real one would be,
+        which also proves the log is writable before a real challenge depends on it.
     :returns: True when the challenge was detected, handed over and cleared.
     :raises ChallengeUnattended: when the handoff refuses to wait or the wait times out.
     """
@@ -64,8 +67,29 @@ def rehearse(page: Page, handoff: HumanHandoff) -> bool:
         return False
     print(f"[rehearse] detected {challenge.kind.value}: {challenge.detail}", flush=True)
     started = time.monotonic()
-    handoff.resolve(page, challenge)
-    waited = time.monotonic() - started
+    outcome = "rehearsed"
+    try:
+        handoff.resolve(page, challenge)
+    except ChallengeUnattended:
+        outcome = "unattended"
+        raise
+    except KeyboardInterrupt:
+        outcome = "interrupted"
+        raise
+    finally:
+        waited = time.monotonic() - started
+        if log is not None:
+            entry = log.record(
+                kind=challenge.kind.value,
+                url=challenge.url,
+                reason=challenge.detail,
+                request_index=0,
+                consecutive=1,
+                waited=waited,
+                outcome=outcome,
+                target="rehearsal",
+            )
+            print(f"[rehearse] recorded -> {log.path}: {entry.describe()}", flush=True)
     if detect_challenge(page) is not None:
         print("[rehearse] the page still looks challenged after the wait returned", flush=True)
         return False

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections import Counter
 from pathlib import Path
 
 from .browser import BrowserOptions, browser_session
@@ -15,7 +16,7 @@ from .plan import RunPlan, plan_run
 from .rehearsal import rehearse
 from .run import CrawlLimits, Outputs, crawl_targets
 from .selfcheck import check_page, report
-from .storage import StateStore
+from .storage import ChallengeLog, StateStore
 from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
 
 
@@ -121,6 +122,13 @@ def build_parser() -> argparse.ArgumentParser:
     output.add_argument("-o", "--out", type=Path, default=Path("out/results.jsonl"), help="JSONL output path")
     output.add_argument("--csv", type=Path, help="also export collected records to this CSV path")
     output.add_argument("--state", type=Path, default=Path("out/state.json"), help="resume-state path")
+    output.add_argument(
+        "--challenge-log",
+        type=Path,
+        default=Path("out/challenges.jsonl"),
+        help="append every human takeover here (session material redacted); "
+        "read it back with --show-state",
+    )
     output.add_argument(
         "--bibtex",
         type=Path,
@@ -293,14 +301,32 @@ def _show_state(args: argparse.Namespace) -> int:
     state = StateStore(args.state)
     state.load()
     entries = state.entries()
-    if not entries:
+    if entries:
+        done = sum(1 for entry in entries if entry.exhausted)
+        print(f"[state] {len(entries)} targets in {args.state} ({done} finished)", flush=True)
+        for entry in entries:
+            print(f"[state]   {entry.describe()}", flush=True)
+    else:
         print(f"[state] nothing stored in {args.state}", flush=True)
-        return 0
-    done = sum(1 for entry in entries if entry.exhausted)
-    print(f"[state] {len(entries)} targets in {args.state} ({done} finished)", flush=True)
-    for entry in entries:
-        print(f"[state]   {entry.describe()}", flush=True)
+    _show_challenges(args.challenge_log)
     return 0
+
+
+def _show_challenges(path: Path, limit: int = 5) -> None:
+    """Print the most recent human takeovers recorded in the challenge log.
+
+    :param path: challenge-log path; a missing file prints nothing.
+    :param limit: how many of the most recent takeovers to print.
+    """
+    takeovers = ChallengeLog(path).entries()
+    if not takeovers:
+        return
+    kinds = Counter(entry.kind for entry in takeovers)
+    breakdown = ", ".join(f"{kind} x{count}" for kind, count in sorted(kinds.items()))
+    print(f"[handoff] {len(takeovers)} takeovers in {path} ({breakdown})", flush=True)
+    for entry in takeovers[-limit:]:
+        print(f"[handoff]   {entry.describe()}", flush=True)
+        print(f"[handoff]     {entry.reason} at {entry.url}", flush=True)
 
 
 def _forget_state(args: argparse.Namespace) -> int:
@@ -337,7 +363,7 @@ def _run_rehearsal(args: argparse.Namespace) -> int:
     )
     try:
         with browser_session(_browser_options(args)) as (_context, page):
-            return 0 if rehearse(page, handoff) else 1
+            return 0 if rehearse(page, handoff, ChallengeLog(args.challenge_log)) else 1
     except KeyboardInterrupt:
         print("\n[stop] interrupted by user", flush=True)
         return 130
@@ -450,6 +476,7 @@ def main(argv: list[str] | None = None) -> int:
         profiles=args.profiles_out,
         bibtex=args.bibtex,
         csv=args.csv,
+        challenges=args.challenge_log,
     )
     if outputs.bibtex is not None and authors:
         print(
@@ -475,6 +502,7 @@ def main(argv: list[str] | None = None) -> int:
                 host=args.host,
                 max_handoffs=args.max_handoffs,
                 dump_dir=args.dump_html,
+                challenge_log=outputs.challenges,
             )
             crawl_targets(
                 crawler,

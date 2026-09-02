@@ -17,6 +17,7 @@ from typing import Any, TextIO
 
 from .models import AuthorProfile, ScholarResult, describe_signature
 from .parser import bibtex_key
+from .urls import redact_url
 
 CSV_COLUMNS = (
     "position",
@@ -299,3 +300,143 @@ class StateStore:
         """Write the state file, creating its directory when needed."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(self._data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+@dataclass(slots=True)
+class ChallengeRecord:
+    """One human takeover, as it happened.
+
+    :param at: UTC timestamp when the challenge was detected.
+    :param kind: challenge kind — ``captcha``, ``rate_limit`` or ``consent``.
+    :param url: the challenge URL with session material redacted.
+    :param reason: what the detector matched.
+    :param request_index: requests this run had already made.
+    :param consecutive: how many challenges in a row, counting this one.
+    :param waited: seconds spent waiting for the human.
+    :param outcome: ``resolved``, ``unattended``, ``budget`` or ``interrupted``.
+    :param target: the request that was being loaded, as a short tag.
+    """
+
+    at: str
+    kind: str
+    url: str
+    reason: str
+    request_index: int
+    consecutive: int
+    waited: float
+    outcome: str
+    target: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Render the record for JSONL.
+
+        :returns: the record's fields as plain values.
+        """
+        return {
+            "at": self.at,
+            "kind": self.kind,
+            "url": self.url,
+            "reason": self.reason,
+            "request_index": self.request_index,
+            "consecutive": self.consecutive,
+            "waited": round(self.waited, 1),
+            "outcome": self.outcome,
+            "target": self.target,
+        }
+
+    def describe(self) -> str:
+        """Summarize the takeover in one line.
+
+        :returns: timestamp, kind, outcome and the request it interrupted.
+        """
+        streak = f" x{self.consecutive} in a row" if self.consecutive > 1 else ""
+        waited = f", waited {self.waited:.0f}s" if self.waited >= 1 else ""
+        return (
+            f"{self.at}  {self.kind}{streak} -> {self.outcome}{waited} "
+            f"(after {self.request_index} requests, loading {self.target})"
+        )
+
+
+@dataclass(slots=True)
+class ChallengeLog:
+    """Append-only record of every human takeover, for evidence after the fact.
+
+    A challenge is rare, unrepeatable and happens while a human is busy solving it, so the
+    run writes down what it saw instead of relying on the terminal scrollback. Session
+    material is redacted, so the file is safe to keep and to share.
+
+    :param path: JSONL file; created on the first record.
+    """
+
+    path: Path
+
+    def record(
+        self,
+        *,
+        kind: str,
+        url: str,
+        reason: str,
+        request_index: int,
+        consecutive: int,
+        waited: float,
+        outcome: str,
+        target: str,
+    ) -> ChallengeRecord:
+        """Append one takeover to the log.
+
+        :param kind: challenge kind.
+        :param url: the challenge URL; redacted before it is written.
+        :param reason: what the detector matched.
+        :param request_index: requests this run had already made.
+        :param consecutive: how many challenges in a row, counting this one.
+        :param waited: seconds spent waiting for the human.
+        :param outcome: how the takeover ended.
+        :param target: the request that was being loaded.
+        :returns: the record as written.
+        """
+        entry = ChallengeRecord(
+            at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            kind=kind,
+            url=redact_url(url),
+            reason=reason,
+            request_index=request_index,
+            consecutive=consecutive,
+            waited=waited,
+            outcome=outcome,
+            target=target,
+        )
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry.to_dict(), ensure_ascii=False) + "\n")
+        return entry
+
+    def entries(self) -> list[ChallengeRecord]:
+        """Read the log back, oldest first.
+
+        :returns: every readable record; unreadable lines are skipped.
+        """
+        if not self.path.exists():
+            return []
+        records = []
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(data, dict):
+                records.append(
+                    ChallengeRecord(
+                        at=str(data.get("at", "")),
+                        kind=str(data.get("kind", "?")),
+                        url=str(data.get("url", "")),
+                        reason=str(data.get("reason", "")),
+                        request_index=int(data.get("request_index", 0)),
+                        consecutive=int(data.get("consecutive", 1)),
+                        waited=float(data.get("waited", 0.0)),
+                        outcome=str(data.get("outcome", "?")),
+                        target=str(data.get("target", "")),
+                    )
+                )
+        return records

@@ -97,6 +97,27 @@ scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.js
 | `--min-group`、`--groups` | 隐藏记录数少于 N 的组；最多列出几组（默认 10） |
 | `--quiet` | 只打印写出结果，需要配合 `-o`、`--csv` 或 `--bibtex` |
 
+## 接管记录
+
+人工接管是这套工具里最少见、最关键、也最不可复现的一步：它发生时你正忙着解验证码，终端里滚过去的信息事后就找不回来了。所以每次接管都会追加一条记录（默认 `out/challenges.jsonl`），`--show-state` 会一并读出来：
+
+```sh
+$ scholar-crawler --show-state
+[state] 3 targets in out/state.json (1 finished)
+[state]   attention is all you need [en] — next offset 30, 2026-09-02 10:45:51 UTC
+[handoff] 2 takeovers in out/challenges.jsonl (captcha x2)
+[handoff]   2026-09-02T12:26:23+00:00  captcha -> unattended, waited 6s (after 11 requests, loading 20)
+[handoff]     matched form#captcha-form at about:blank
+```
+
+一条记录包含：时间、类型（`captcha`/`rate_limit`/`consent`）、检测器命中的是什么、被拦在哪个 URL、这轮此前已发了多少次请求、是否连续被拦（第几次）、等了人多久、以及结局——`resolved`（人解完了，继续抓）、`unattended`（`--headless` 拒绝或等待超时）、`budget`（用满 `--max-handoffs` 停机）、`interrupted`（Ctrl+C）、`rehearsed`（演练）。
+
+有了这些，事后能回答真正要紧的问题：是抓到第几次请求被拦的、是不是解完一次又立刻被拦（说明当前节奏还是太快）、还是根本没人在电脑前。
+
+**URL 会脱敏后再写入**：`/sorry/` 这类验证页上的 `q` 是验证令牌而不是查询词，所以整条只留 `hl`；普通检索页则保留 `q`、`start`、`cites`、`cluster`、`user` 等描述请求的参数，`scisig` 之类签名参数一律写成 `REDACTED`。所以这个文件可以放心留存和分享。
+
+`--rehearse-handoff` 演练时也会写一条（`outcome=rehearsed`），顺带证明这个日志路径是可写的——不必等真被拦时才发现写不进去。
+
 ## 查看与重置断点
 
 抓了很多次之后，哪些目标真的抓完了、下次会从哪一页继续，光看 state 文件的 JSON 并不好认（键是给程序用的签名）。两个命令都不联网：
@@ -226,12 +247,13 @@ scholar-crawler --self-check
 | `--no-citations`、`--no-patents` | 排除仅引用条目、排除专利 |
 | `--lang`、`--host` | 界面语言 `hl`；镜像站如 `https://scholar.google.de` |
 | `-o/--out`、`--csv`、`--state` | JSONL 输出、CSV 导出、断点文件 |
+| `--challenge-log` | 接管记录文件（默认 `out/challenges.jsonl`，URL 已脱敏） |
 | `--bibtex` | 同时导出 BibTeX 到 `.bib` 文件；按引用键去重，记录里写入 `extra.bibtex_key` 便于关联 |
 | `--profiles-out`、`--dump-html` | 作者主页头部记录（每位作者一行，重复抓取覆盖旧值）、抓到的原始 HTML（排查解析问题用） |
 | `--profile`、`--channel`、`--locale`、`--timezone`、`--proxy` | 浏览器 profile 与环境参数 |
 | `--min-delay/--max-delay`、`--cooldown-every/--cooldown-seconds` | 抓取节奏 |
 | `--handoff-timeout`、`--max-handoffs`、`--backoff-factor`、`--challenge-cooldown` | 等人多久（0 = 无限等）、最多接管几次、每次接管后延迟放大倍数、连续被拦时恢复前的静默等待 |
-| `--show-state`、`--forget PATTERN` | 查看断点进度；按签名子串清除断点（空串清空全部） |
+| `--show-state`、`--forget PATTERN` | 查看断点进度与最近的接管记录；按签名子串清除断点（空串清空全部） |
 | `--dry-run` | 只打印这轮的抓取计划与用时估算，不发任何请求 |
 | `--self-check` | 跑一次解析自检（一个请求），逐项报告哪些字段还能正常解析 |
 | `--headless` | 无窗口模式；**此时遇到验证会直接终止并提示改用有界面模式** |
@@ -316,7 +338,7 @@ scholar-crawler --rehearse-handoff
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 175 个用例，全部离线
+python3 -m pytest -q     # 184 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -325,6 +347,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **解析**：结果卡片（仅引用条目、PDF 侧链、被引/版本计数、词中加粗、第二页的结果计数、零结果页）、作者主页（头部各行、按行位置读统计表、论文行、缺年份与零被引、「显示更多」状态）、真实页面夹具（结果页 10 项自检全过、字段完整性、脱敏规则、夹具不含凭证）
 - **URL 与过滤**：查询/主页地址拼装、过滤参数、id 与 URL 解析、cite 弹窗地址
 - **抓取循环**：翻页与作者分批、节奏与冷却、连续被拦的静默等待与关闭开关、运行摘要的长短两种格式、HTML dump、导出过程中被拦
+- **接管记录**：URL 脱敏（验证页令牌与检索参数区别对待）、单行摘要格式、追加与读回（跳过坏行）、抓取中被拦/接管额度用尽/headless 拒绝三种结局各自落账、演练也落账、`--show-state` 读回
 - **人工接管**：真实 headless Chromium DOM 上的验证页判定、等待超时/窗口被关/headless 拒绝、接管演练全链路（识别→清除→恢复）
 - **引文网络**：按被引排序选点、宽度上限、访问去重、被引下限、层级推进与提前收敛
 - **输出与断点**：JSONL 去重、CSV 导出、作者档案 upsert、`.bib` 去重、断点查看与清除（签名还原、时间戳、旧格式）、被 `-n` 截断的目标仍可续抓
