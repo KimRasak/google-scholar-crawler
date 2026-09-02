@@ -143,3 +143,36 @@ AUTHOR_LAST_PAGE_HTML = AUTHOR_PAGE_HTML.replace(
     '<button id="gsc_bpf_more" type="button" disabled="">',
 )
 
+
+CITE_POPUP_HTML = """
+<html><body>
+<div id="gs_citt">
+  <table><tbody>
+    <tr><th scope="row" class="gs_cith">MLA</th>
+        <td><div tabindex="0" class="gs_citr">Lovelace, Ada. "Notes on the Analytical Engine."
+        <i>Scientific Memoirs</i> 3 (1843): 666-731.</div></td></tr>
+  </tbody></table>
+</div>
+<div id="gs_citi">
+  <a class="gs_citi" href="https://scholar.googleusercontent.com/scholar.bib?q=info:CID:\
+scholar.google.com/&amp;output=citation&amp;scisig=SIG&amp;scisf=4&amp;ct=citation&amp;cd=-1&amp;hl=en"
+     target="_blank" onclick="return gs_ocit(event,'CID','0')">BibTeX</a>
+  <a class="gs_citi" href="https://scholar.googleusercontent.com/scholar.enw?q=info:CID:\
+scholar.google.com/&amp;output=citation&amp;scisig=SIG&amp;scisf=3&amp;ct=citation&amp;cd=-1&amp;hl=en"
+     target="_blank">EndNote</a>
+</div>
+</body></html>
+"""
+
+BIBTEX_EXPORT_HTML = """
+<html><head><meta name="color-scheme" content="light dark"></head>
+<body><pre style="word-wrap: break-word; white-space: pre-wrap;">@article{lovelace1843notes,
+  title={Notes on the Analytical Engine},
+  author={Lovelace, Ada},
+  journal={Scientific Memoirs},
+  volume={3},
+  pages={666--731},
+  year={1843}
+}
+</pre></body></html>
+"""

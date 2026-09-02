@@ -10,7 +10,7 @@ The code never tries to solve, bypass or hide a verification challenge. Verifica
 ## How it works
 
 1. Launches headed Chrome with a **persistent profile** (`--profile`, default `.scholar-profile`). Cookies earned by solving a challenge survive restarts, so takeovers get rarer over time.
-2. Waits a random 4–11 seconds before each page request, with a 90-second cooldown every 10 pages, plus a scroll and short dwell after load — no machine-uniform rhythm.
+2. Waits a random 4–11 seconds before every request, with a 90-second cooldown every 10 requests. The counter spans the whole run — across queries, across authors, including BibTeX loads — instead of resetting per query. A scroll and short dwell after load keep the rhythm off a machine grid.
 3. Classifies every page after navigation:
    - challenge → terminal bell, printed URL, window raised to the front, page re-inspected every 2 seconds; once you clear it the crawl resumes and page delays are multiplied by `--backoff-factor` (default ×1.6), so a challenged run automatically slows down;
    - otherwise → parse the result page.
@@ -46,6 +46,9 @@ scholar-crawler --queries-file queries.example.txt -p 10 --resume -o out/batch.j
 scholar-crawler --cites "https://scholar.google.com/scholar?cites=2454404157773228931" -p 5 -o out/citing.jsonl
 scholar-crawler --cluster 2454404157773228931 -o out/versions.jsonl
 
+# Export BibTeX along the way (two extra page loads per record)
+scholar-crawler -q "diffusion models" -p 2 --bibtex out/refs.bib -o out/diffusion.jsonl
+
 # Crawl an author profile: up to 100 publications per request, header stored separately
 scholar-crawler --author kukA0LcAAAAJ -o out/bengio.jsonl --profiles-out out/profiles.jsonl
 scholar-crawler --author "https://scholar.google.com/citations?user=kukA0LcAAAAJ&hl=en" --sort-by-date -p 2
@@ -77,6 +80,7 @@ A takeover looks like this:
 | `--no-citations`, `--no-patents` | exclude citation-only records / patents |
 | `--lang`, `--host` | interface language (`hl`); mirror such as `https://scholar.google.de` |
 | `-o/--out`, `--csv`, `--state` | JSONL output, CSV export, resume state |
+| `--bibtex` | also export BibTeX to a `.bib` file; deduplicated by citation key, with `extra.bibtex_key` recorded on each record |
 | `--profiles-out`, `--dump-html` | author profile headers (one record per author, re-crawls replace it), raw HTML of every fetched page |
 | `--profile`, `--channel`, `--locale`, `--timezone`, `--proxy` | browser profile and environment |
 | `--min-delay/--max-delay`, `--cooldown-every/--cooldown-seconds` | request rhythm |
@@ -114,6 +118,14 @@ Author publications land in the same JSONL (with Scholar's citation id in `extra
  "i10_index":1106,"i10_index_recent":947,"fetched_at":"..."}
 ```
 
+## About the BibTeX export
+
+`--bibtex` costs two extra page loads per record: Scholar's "Cite" popup, then the signed `scholar.bib` link inside it (the signature cannot be constructed locally). So:
+
+- A 10-result page becomes 21 requests instead of 1, an order of magnitude slower, with a matching rise in challenge risk. Pair it with `-n` and export only what you will cite.
+- Both loads are ordinary navigations in the visible window, so pacing and human takeover cover them. A background HTTP request is not an option: Scholar answers 429 to the same request issued outside the browser's navigation stack.
+- Author-profile publications carry no Scholar `data-cid`, so they cannot use this export path and are skipped with a single notice.
+
 ## Getting challenged less
 
 - Do not shrink the default delays; rhythm, not the User-Agent, is what gets a client blocked.
@@ -124,11 +136,11 @@ Author publications land in the same JSONL (with Scholar's citation id in `extra
 ## Development
 
 ```sh
-python3 -m pytest -q     # 69 tests, fully offline
+python3 -m pytest -q     # 79 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
-Tests cover result parsing (citation-only cards, PDF side links, cited-by/version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author-profile parsing (header lines, the position-read summary table, publication rows, zero citations and missing years, the "show more" state), URL and filter assembly, id/URL parsing, JSONL dedup and CSV export, profile upserts, resume state, challenge detection (real headless Chromium DOM), the takeover wait including timeout, closed window and headless refusal, pagination and author batching, result-cap truncation, unknown profile layouts failing loudly, post-takeover slowdown, HTML dumps, and CLI argument assembly. GitHub Actions runs the same suite on Python 3.10 and 3.13.
+Tests cover result parsing (citation-only cards, PDF side links, cited-by/version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author-profile parsing (header lines, the position-read summary table, publication rows, zero citations and missing years, the "show more" state), URL and filter assembly, id/URL parsing, JSONL dedup and CSV export, profile upserts, resume state, challenge detection (real headless Chromium DOM), the takeover wait including timeout, closed window and headless refusal, BibTeX link discovery (by href, not label) and `<pre>` extraction, `.bib` dedup, a takeover during export, pagination and author batching, result-cap truncation, unknown profile layouts failing loudly, post-takeover slowdown, HTML dumps, and CLI argument assembly. GitHub Actions runs the same suite on Python 3.10 and 3.13.
 
 ## Compliance
 
@@ -143,7 +155,7 @@ scholar_crawler/
   challenge.py  challenge detection + human takeover wait
   browser.py    persistent-profile browser session
   crawler.py    crawl loop: pacing, takeover, pagination and author batching, HTML dumps
-  storage.py    JSONL/CSV writers, author profile records, resume state
+  storage.py    JSONL/CSV writers, author profile records, the .bib file, resume state
   cli.py        command-line entry point
 tests/          offline tests, including headless-Chromium detection tests
 ```

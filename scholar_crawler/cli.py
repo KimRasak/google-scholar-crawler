@@ -9,8 +9,9 @@ from pathlib import Path
 from .browser import BrowserOptions, browser_session
 from .challenge import ChallengeUnattended, HumanHandoff
 from .crawler import Pacing, ScholarCrawler
-from .models import AuthorProfile, AuthorRequest, SearchRequest
-from .storage import ProfileStore, ResultSink, StateStore
+from .models import AuthorProfile, AuthorRequest, ScholarResult, SearchRequest
+from .parser import bibtex_key
+from .storage import BibtexSink, ProfileStore, ResultSink, StateStore
 from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
 
 
@@ -65,6 +66,12 @@ def build_parser() -> argparse.ArgumentParser:
     output.add_argument("-o", "--out", type=Path, default=Path("out/results.jsonl"), help="JSONL output path")
     output.add_argument("--csv", type=Path, help="also export collected records to this CSV path")
     output.add_argument("--state", type=Path, default=Path("out/state.json"), help="resume-state path")
+    output.add_argument(
+        "--bibtex",
+        type=Path,
+        help="also export BibTeX entries to this .bib file; costs two extra requests "
+        "per record, so expect a slower run and more challenges",
+    )
     output.add_argument(
         "--profiles-out",
         type=Path,
@@ -168,6 +175,7 @@ def _crawl_listing(
     args: argparse.Namespace,
     sink: ResultSink,
     state: StateStore,
+    bibtex: BibtexSink | None = None,
 ) -> None:
     """Crawl one keyword, citation or version listing into ``sink``.
 
@@ -176,6 +184,7 @@ def _crawl_listing(
     :param args: parsed arguments supplying paging limits.
     :param sink: JSONL writer for parsed records.
     :param state: resume cursor store.
+    :param bibtex: when set, each record's BibTeX entry is exported as well.
     """
     signature = request.signature()
     start = state.next_start(signature, args.start) if args.resume else args.start
@@ -183,10 +192,36 @@ def _crawl_listing(
     for page in crawler.search(
         request, max_pages=args.pages, start=start, max_results=args.max_results
     ):
+        if bibtex is not None:
+            _export_bibtex(crawler, page.results, args, bibtex)
         new = sum(1 for result in page.results if sink.write(result))
         total = f"~{page.total_estimate}" if page.total_estimate else "unknown"
         _report(page.start, len(page.results), new, total)
         state.record(signature, page.start + len(page.results), exhausted=not page.has_next)
+
+
+def _export_bibtex(
+    crawler: ScholarCrawler,
+    results: list[ScholarResult],
+    args: argparse.Namespace,
+    bibtex: BibtexSink,
+) -> None:
+    """Fetch and store the BibTeX entry of every result that has a cluster id.
+
+    The citation key is recorded on the record as ``extra.bibtex_key`` so the JSONL and
+    the ``.bib`` file can be joined.
+
+    :param crawler: the bound crawler.
+    :param results: records of one page, updated in place.
+    :param args: parsed arguments supplying the interface language.
+    :param bibtex: the ``.bib`` writer.
+    """
+    for result in results:
+        entry = crawler.fetch_bibtex(result, language=args.lang)
+        if entry is None:
+            continue
+        bibtex.write(entry)
+        result.extra["bibtex_key"] = bibtex_key(entry)
 
 
 def _crawl_author(
@@ -252,6 +287,15 @@ def main(argv: list[str] | None = None) -> int:
     state.load()
     profiles = ProfileStore(args.profiles_out)
     profiles.load()
+    bibtex = BibtexSink(args.bibtex) if args.bibtex else None
+    if bibtex is not None:
+        bibtex.open()
+        if authors:
+            print(
+                "[bibtex] profile publications carry no cluster id; "
+                "BibTeX is exported for keyword, --cites and --cluster records only",
+                flush=True,
+            )
     options = BrowserOptions(
         user_data_dir=args.profile,
         headless=args.headless,
@@ -274,7 +318,7 @@ def main(argv: list[str] | None = None) -> int:
                 dump_dir=args.dump_html,
             )
             for listing in listings:
-                _crawl_listing(crawler, listing, args, sink, state)
+                _crawl_listing(crawler, listing, args, sink, state, bibtex)
             for author in authors:
                 _crawl_author(crawler, author, args, sink, state, profiles)
     except KeyboardInterrupt:
@@ -292,6 +336,13 @@ def main(argv: list[str] | None = None) -> int:
             f"[out] {sink.written} new records ({sink.skipped} duplicates skipped) -> {sink.path}",
             flush=True,
         )
+        if bibtex is not None:
+            bibtex.close()
+            print(
+                f"[out] {bibtex.written} BibTeX entries "
+                f"({bibtex.skipped} duplicates skipped) -> {bibtex.path}",
+                flush=True,
+            )
         if profiles.written:
             print(f"[out] {profiles.written} profile updates -> {profiles.path}", flush=True)
     return exit_code

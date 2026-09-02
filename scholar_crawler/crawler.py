@@ -15,9 +15,19 @@ from playwright.sync_api import Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
 from .challenge import RESULTS_SELECTOR, HumanHandoff, detect_challenge
-from .models import AuthorPage, AuthorRequest, PageResult, SearchRequest
-from .parser import parse_author_page, parse_result_page
-from .urls import AUTHOR_PAGE_SIZE, RESULTS_PER_PAGE, author_url, search_url
+from .models import AuthorPage, AuthorRequest, PageResult, ScholarResult, SearchRequest
+from .parser import bibtex_link, parse_author_page, parse_bibtex, parse_result_page
+from .urls import (
+    AUTHOR_PAGE_SIZE,
+    RESULTS_PER_PAGE,
+    absolute,
+    author_url,
+    cite_url,
+    search_url,
+)
+
+CITE_POPUP_SELECTOR = "a.gs_citi, div.gs_citr, #gs_citi, #gs_cit1"
+"""Selectors proving a cite popup rendered: its export links or citation strings."""
 
 
 @dataclass(slots=True)
@@ -107,6 +117,7 @@ class ScholarCrawler:
         self._max_handoffs = max_handoffs
         self._dump_dir = dump_dir
         self.handoff_count = 0
+        self.request_count = 0
 
     def fetch_page(self, request: SearchRequest, start: int) -> PageResult:
         """Load one result page, handing over to a human if Scholar challenges us.
@@ -158,8 +169,7 @@ class ScholarCrawler:
         """
         offset = start
         collected = 0
-        for page_index in range(max_pages):
-            self._pacing.sleep_before_request(page_index)
+        for _page_index in range(max_pages):
             page_result = self.fetch_page(request, offset)
             if max_results is not None and collected + len(page_result.results) >= max_results:
                 page_result.results = page_result.results[: max_results - collected]
@@ -189,8 +199,7 @@ class ScholarCrawler:
         """
         offset = cstart
         collected = 0
-        for batch_index in range(max_pages):
-            self._pacing.sleep_before_request(batch_index)
+        for _batch_index in range(max_pages):
             batch = self.fetch_author_page(request, offset)
             if max_results is not None and collected + len(batch.results) >= max_results:
                 batch.results = batch.results[: max_results - collected]
@@ -201,15 +210,53 @@ class ScholarCrawler:
                 return
             offset += AUTHOR_PAGE_SIZE
 
-    def _load(self, url: str, tag: str) -> str | None:
+    def fetch_bibtex(self, result: ScholarResult, *, language: str | None = None) -> str | None:
+        """Fetch the BibTeX entry for one result: two extra page loads per record.
+
+        The export link is signed by Scholar, so the cite popup must be read before the
+        entry itself. Both loads are ordinary navigations in the visible window — Scholar
+        answers 429 to requests issued outside the browser's own navigation stack — so
+        the pacing and the human takeover cover them like any other page.
+
+        :param result: a record carrying Scholar's ``data-cid``; author-profile records
+            have none, and get no BibTeX.
+        :param language: interface language (``hl``) for the popup.
+        :returns: the BibTeX entry, or None when Scholar exposes none for this record.
+        :raises RuntimeError: when the handoff budget is exhausted or a load keeps failing.
+        """
+        if not result.cluster_id:
+            return None
+        popup = self._load(
+            cite_url(result.cluster_id, host=self._host, language=language),
+            f"cite-{result.cluster_id}",
+            content_selector=CITE_POPUP_SELECTOR,
+        )
+        if popup is None:
+            return None
+        export_url = absolute(bibtex_link(popup), self._host)
+        if export_url is None:
+            return None
+        body = self._load(export_url, f"bib-{result.cluster_id}", content_selector="pre")
+        return parse_bibtex(body) if body is not None else None
+
+    def _pace(self) -> None:
+        """Apply the pre-request delay for the next request of this run."""
+        self._pacing.sleep_before_request(self.request_count)
+        self.request_count += 1
+
+    def _load(
+        self, url: str, tag: str, content_selector: str = RESULTS_SELECTOR
+    ) -> str | None:
         """Navigate to ``url`` and return its HTML once no challenge stands in the way.
 
         :param url: absolute Scholar URL.
         :param tag: short label used in dump filenames.
+        :param content_selector: selectors proving the loaded page carries content.
         :returns: page HTML, or None when the page carries no Scholar content.
         :raises RuntimeError: when the handoff budget is exhausted or navigation keeps failing.
         """
         for attempt in range(1, 4):
+            self._pace()
             if not self._goto(url, attempt):
                 continue
             challenge = detect_challenge(self._page)
@@ -224,7 +271,7 @@ class ScholarCrawler:
                 self._handoff.resolve(self._page, challenge)
                 self._pacing.after_handoff()
                 continue
-            if self._page.locator(RESULTS_SELECTOR).count() == 0:
+            if self._page.locator(content_selector).count() == 0:
                 # Zero-hit listing, or a layout the selectors miss; both are terminal.
                 self._dump(f"empty-{tag}")
                 return None

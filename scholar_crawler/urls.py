@@ -108,6 +108,26 @@ def author_url(
     return f"{host}/citations?{urlencode(params)}"
 
 
+def cite_url(cluster_id: str, host: str = SCHOLAR_HOST, language: str | None = None) -> str:
+    """Build the "Cite" popup URL for one result cluster.
+
+    The popup carries the formatted citation strings and the export links, including
+    the signed ``scholar.bib`` link that cannot be constructed directly.
+
+    :param cluster_id: Scholar cluster id of the record.
+    :param host: Scholar host to hit.
+    :param language: interface language (``hl``).
+    :returns: absolute URL of the cite popup fragment.
+    """
+    params = {
+        "q": f"info:{cluster_id}:scholar.google.com/",
+        "output": "cite",
+        "scirp": 0,
+        "hl": language or "en",
+    }
+    return f"{host}/scholar?{urlencode(params)}"
+
+
 def absolute(href: str | None, host: str = SCHOLAR_HOST) -> str | None:
     """Resolve a Scholar-relative href against ``host``.
 

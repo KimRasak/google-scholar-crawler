@@ -19,6 +19,7 @@ from .urls import absolute
 _INT_RE = re.compile(r"\d[\d,\.\s\u00a0]*")
 _YEAR_RE = re.compile(r"\b(1[89]\d{2}|20\d{2})\b")
 _START_RE = re.compile(r"[?&]start=(\d+)")
+_BIBTEX_KEY_RE = re.compile(r"@\w+\s*\{\s*([^,\s]+)\s*,")
 _TAG_PREFIX_RE = re.compile(r"^\s*\[[^\]]{1,12}\]\s*")
 _WS_RE = re.compile(r"\s+")
 _SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,;.])")
@@ -186,6 +187,53 @@ def parse_result_page(html: str, *, query: str = "", start: int = 0) -> PageResu
         if (match := _START_RE.search(anchor.get("href") or ""))
     )
     return PageResult(start=start, results=results, total_estimate=total_estimate, has_next=has_next)
+
+
+def bibtex_link(html: str) -> str | None:
+    """Find the BibTeX export link in a cite-popup fragment.
+
+    The link is matched by its ``scholar.bib`` path or its ``scisf=4`` format code, not
+    by its label, so the interface language and the order of the export links do not
+    matter.
+
+    :param html: cite-popup HTML.
+    :returns: the export href as found in the page, or None when absent.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    for anchor in soup.select("a[href]"):
+        href = str(anchor.get("href"))
+        if "scholar.bib" in href or "scisf=4" in href:
+            return href
+    return None
+
+
+def parse_bibtex(body: str) -> str | None:
+    """Extract a BibTeX entry from an export response.
+
+    Chrome renders the ``text/plain`` export inside a ``<pre>`` element; a raw body is
+    accepted as well.
+
+    :param body: response body, either the rendered HTML or the raw export.
+    :returns: the entry starting at ``@``, or None when the body holds no entry.
+    """
+    text = body
+    if "<pre" in body.lower() or "<html" in body.lower():
+        block = BeautifulSoup(body, "lxml").select_one("pre")
+        text = block.get_text("") if block is not None else ""
+    start = text.find("@")
+    if start < 0 or "{" not in text[start:]:
+        return None
+    return text[start:].strip()
+
+
+def bibtex_key(entry: str) -> str | None:
+    """Read the citation key of a BibTeX entry.
+
+    :param entry: a BibTeX entry.
+    :returns: the key, or None when the entry has no ``@type{key,`` header.
+    """
+    match = _BIBTEX_KEY_RE.search(entry)
+    return match.group(1) if match else None
 
 
 def _profile_stats(soup: BeautifulSoup) -> list[tuple[int | None, int | None]]:

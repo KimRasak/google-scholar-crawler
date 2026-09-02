@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from .models import AuthorProfile, ScholarResult
+from .parser import bibtex_key
 
 CSV_COLUMNS = (
     "position",
@@ -105,6 +106,56 @@ class ResultSink:
             writer.writeheader()
             writer.writerows(rows)
         return len(rows)
+
+
+@dataclass(slots=True)
+class BibtexSink:
+    """BibTeX entries appended to one ``.bib`` file, deduplicated by citation key.
+
+    :param path: ``.bib`` path; created on open, appended to across runs.
+    """
+
+    path: Path
+    _keys: set[str] = field(default_factory=set)
+    _handle: TextIO | None = None
+    written: int = 0
+    skipped: int = 0
+
+    def open(self) -> None:
+        """Read the keys already in the file, then open it for appending."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.path.exists():
+            for entry in self.path.read_text(encoding="utf-8").split("\n@"):
+                key = bibtex_key(entry if entry.startswith("@") else f"@{entry}")
+                if key:
+                    self._keys.add(key)
+        self._handle = self.path.open("a", encoding="utf-8")
+
+    def write(self, entry: str) -> bool:
+        """Append ``entry`` unless its citation key is already stored.
+
+        :param entry: a BibTeX entry.
+        :returns: True when it was appended, False when it was a duplicate.
+        :raises RuntimeError: when the sink was not opened.
+        """
+        if self._handle is None:
+            raise RuntimeError("BibtexSink.write called before open()")
+        key = bibtex_key(entry)
+        if key is not None and key in self._keys:
+            self.skipped += 1
+            return False
+        if key is not None:
+            self._keys.add(key)
+        self._handle.write(entry.strip() + "\n\n")
+        self._handle.flush()
+        self.written += 1
+        return True
+
+    def close(self) -> None:
+        """Close the file if it is open."""
+        if self._handle is not None:
+            self._handle.close()
+            self._handle = None
 
 
 @dataclass(slots=True)

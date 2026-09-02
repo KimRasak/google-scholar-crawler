@@ -13,14 +13,15 @@ from .models import (
     ScholarResult,
     SearchRequest,
 )
-from .parser import parse_author_page, parse_result_page
-from .storage import ProfileStore, ResultSink, StateStore
-from .urls import author_url, parse_cluster_id, parse_user_id, search_url
+from .parser import bibtex_key, bibtex_link, parse_author_page, parse_bibtex, parse_result_page
+from .storage import BibtexSink, ProfileStore, ResultSink, StateStore
+from .urls import author_url, cite_url, parse_cluster_id, parse_user_id, search_url
 
 __all__ = [
     "AuthorPage",
     "AuthorProfile",
     "AuthorRequest",
+    "BibtexSink",
     "BrowserOptions",
     "Challenge",
     "ChallengeKind",
@@ -35,9 +36,13 @@ __all__ = [
     "SearchRequest",
     "StateStore",
     "author_url",
+    "bibtex_key",
+    "bibtex_link",
     "browser_session",
+    "cite_url",
     "detect_challenge",
     "parse_author_page",
+    "parse_bibtex",
     "parse_cluster_id",
     "parse_result_page",
     "parse_user_id",
