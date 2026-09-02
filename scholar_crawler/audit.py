@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
@@ -261,6 +261,15 @@ def _example(record: Record, check: Check) -> str:
     return f"{shown[:60]} | {title[:52]}"
 
 
+def _ordered(findings: list[Finding]) -> list[Finding]:
+    """Order findings for a report: errors first, then by how many records tripped them.
+
+    :param findings: findings in check order.
+    :returns: the same findings, sorted.
+    """
+    return sorted(findings, key=lambda finding: (finding.check.severity != "error", -finding.count))
+
+
 def audit_records(records: list[Record], *, examples: int = 2) -> list[Finding]:
     """Run every check over the records.
 
@@ -281,7 +290,7 @@ def audit_records(records: list[Record], *, examples: int = 2) -> list[Finding]:
                 examples=tuple(_example(record, check) for record in matched[:examples]),
             )
         )
-    return sorted(findings, key=lambda finding: (finding.check.severity != "error", -finding.count))
+    return _ordered(findings)
 
 
 def render_audit(findings: list[Finding], total: int) -> list[str]:
@@ -304,3 +313,99 @@ def render_audit(findings: list[Finding], total: int) -> list[str]:
         for example in finding.examples:
             lines.append(f"      e.g. {example}")
     return lines
+
+
+ALARM_SHARE = 0.2
+"""An error check tripping this often is a layout change, not an odd record."""
+
+ALARM_RECORDS = 3
+"""Below this many matches, a share means nothing: two odd records out of three are normal."""
+
+
+@dataclass(slots=True)
+class AuditTally:
+    """Audits records one at a time, as a run writes them.
+
+    A run cannot re-read what it wrote — the file may hold earlier runs — and keeping every
+    record in memory to audit at the end would grow without bound. Counting per check as
+    records go past costs one pass and a handful of strings.
+
+    :param keep: examples to remember per check.
+    :param total: records observed.
+    """
+
+    keep: int = 2
+    total: int = 0
+    _counts: dict[str, int] = field(default_factory=dict)
+    _examples: dict[str, list[str]] = field(default_factory=dict)
+
+    def observe(self, record: Record) -> None:
+        """Run every check against one record.
+
+        :param record: the record just written.
+        """
+        self.total += 1
+        for check in CHECKS:
+            if not check.applies(record):
+                continue
+            self._counts[check.name] = self._counts.get(check.name, 0) + 1
+            examples = self._examples.setdefault(check.name, [])
+            if len(examples) < self.keep:
+                examples.append(_example(record, check))
+
+    def findings(self) -> list[Finding]:
+        """Summarize what the observed records tripped.
+
+        :returns: findings ordered as :func:`audit_records` orders them.
+        """
+        return _ordered(
+            [
+                Finding(
+                    check=check,
+                    count=self._counts[check.name],
+                    total=self.total,
+                    examples=tuple(self._examples.get(check.name, ())),
+                )
+                for check in CHECKS
+                if self._counts.get(check.name)
+            ]
+        )
+
+    def alarms(self, *, share: float = ALARM_SHARE, minimum: int = ALARM_RECORDS) -> list[Finding]:
+        """Findings serious and widespread enough to interrupt a run's summary.
+
+        :param share: minimum fraction of records tripping the check.
+        :param minimum: minimum number of records tripping the check.
+        :returns: the error-severity findings over both thresholds.
+        """
+        return [
+            finding
+            for finding in self.findings()
+            if finding.check.severity == "error"
+            and finding.count >= minimum
+            and finding.share >= share
+        ]
+
+    def describe_alarms(self, *, share: float = ALARM_SHARE, minimum: int = ALARM_RECORDS) -> list[str]:
+        """Format the alarms as lines a run prints after its summary.
+
+        :param share: minimum fraction of records tripping the check.
+        :param minimum: minimum number of records tripping the check.
+        :returns: printable lines; empty when nothing crossed the thresholds.
+        """
+        alarms = self.alarms(share=share, minimum=minimum)
+        if not alarms:
+            return []
+        lines = [
+            f"{len(alarms)} field(s) parsed badly for a large share of this run's records — "
+            "Scholar's layout may have changed"
+        ]
+        for finding in alarms:
+            lines.append(
+                f"  {finding.check.name}: {finding.count} of {self.total} records "
+                f"({finding.share * 100:.0f}%) — {finding.check.explain}"
+            )
+            for example in finding.examples:
+                lines.append(f"      e.g. {example}")
+        lines.append("run --self-check to test the parser, or scholar-digest --audit for the details")
+        return lines

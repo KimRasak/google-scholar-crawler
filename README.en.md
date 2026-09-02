@@ -257,6 +257,21 @@ Two severities: `error` means the value is wrong (an implausible year, a year th
 
 Its first run found a real defect: the profile parser kept the year inside the venue (`Advances in neural information processing systems 27, 2014`) while the result-page parser stripped it. Grouping happened to be immune (`normalize_venue` cuts the volume tail), but the stored field disagreed between the two sources and the exported BibTeX repeated the year inside `journal`. Both parsing paths now share one stripping function.
 
+### Auditing while crawling
+
+Running `--audit` afterwards finds spoiled data, but by then the pages have been fetched. So every run applies the same checks to the records **it just wrote** (counting per check as they go past, no memory growth), says nothing at all in the normal case, and speaks up after the run summary only when an error-severity check matches at least 3 records and at least 20% of them:
+
+```
+[out] 40 new records (0 duplicates skipped) -> out/results.jsonl
+[run] 5 requests in 1m, 0 takeovers, 0 navigation retries, delay now 4.0-11.0s
+[audit] 1 field(s) parsed badly for a large share of this run's records — Scholar's layout may have changed
+[audit]   venue_looks_like_pages: 16 of 40 records (40%) — venue is a volume, issue or page range, so venue grouping is wrong
+[audit]       e.g. 521 (7553), 436-444 | Deep learning
+[audit] run --self-check to test the parser, or scholar-digest --audit for the details
+```
+
+The thresholds exist so the run does not cry wolf: a single odd record (Scholar has plenty) stays quiet, and only a field failing across a large share of one run — usually a layout change — speaks. Missing-field warnings never raise an alarm, because Scholar withholding a venue or truncating an author list is not a parse failure.
+
 ### Grouping
 
 `--group-by` splits the merged records by first author, venue, year or citation-graph level, ranked by total citations:
@@ -406,7 +421,7 @@ The slowdown has two stages: every takeover widens the delays by `--backoff-fact
 ## Development
 
 ```sh
-python3 -m pytest -q     # 217 tests, fully offline
+python3 -m pytest -q     # 222 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -415,6 +430,7 @@ All tests run offline (no network at all), grouped by area:
 - **Parsing**: result cards (citation-only records, PDF side links, cited-by and version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author profiles (header lines, the position-read summary table, publication rows, missing years and zero citations, the "show more" state), real-page fixtures (all ten self-checks on a real result page, field completeness, the sanitizing rules, a no-credentials scan)
 - **URLs and filters**: query and profile URL assembly, filter parameters, id and URL parsing, cite-popup addresses
 - **Crawl loop**: pagination and author batching, pacing and cooldowns, the back-to-back challenge wait and its off switch, both run-summary duration formats, HTML dumps, a challenge during export
+- **Auditing while crawling**: the incremental tally agrees exactly with the batch audit, one bad record stays quiet, a field failing across a run raises an alarm, missing-field warnings never do, and the alarm prints after the run's output
 - **Record audit**: a clean record trips nothing, page-range venues and leftover years, a year the byline never mentioned, citations without a link, negative counts, the severity of missing and lossy fields, citation-only records not blamed for a missing card id, counts with examples, and zero errors on records parsed from the real fixtures
 - **Documentation**: in-page links in both READMEs resolve to real sections, the navigation table covers at least seven situations, and both documents list exactly the modules that exist
 - **Modes**: all four modes driven without argparse (the rehearsal in a real headless Chromium), showing and forgetting state, and takeovers printed newest last

@@ -269,6 +269,8 @@ class Outputs:
             f"({self.sink.skipped} duplicates skipped) -> {self.sink.path}",
             flush=True,
         )
+        for line in self.sink.tally.describe_alarms():
+            print(f"[audit] {line}", flush=True)
         if self.bibtex is not None:
             self.bibtex.close()
             print(

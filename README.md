@@ -256,6 +256,21 @@ $ scholar-digest out/*.jsonl --audit
 
 这个功能第一次跑就抓到一个真实缺陷：作者主页解析出的 venue 保留了年份（`Advances in neural information processing systems 27, 2014`），而检索页解析是剥掉年份的。分组统计侥幸没受影响（`normalize_venue` 会切掉卷期尾巴），但 JSONL/CSV 里两种来源的字段不一致，导出的 BibTeX 里 `journal` 也重复带上了年份。现在两个解析路径共用同一个剥离函数。
 
+### 抓取时的静默体检
+
+事后跑 `--audit` 能发现数据变质，但那时页面已经抓完了。所以每次运行会对**本轮新写入的**记录顺带做同样的检查（逐条累加计数，不占内存），平时一句话都不说，只在某项 error 级检查同时满足「≥3 条」且「≥20%」时才在运行摘要后面出声：
+
+```
+[out] 40 new records (0 duplicates skipped) -> out/results.jsonl
+[run] 5 requests in 1m, 0 takeovers, 0 navigation retries, delay now 4.0-11.0s
+[audit] 1 field(s) parsed badly for a large share of this run's records — Scholar's layout may have changed
+[audit]   venue_looks_like_pages: 16 of 40 records (40%) — venue is a volume, issue or page range, so venue grouping is wrong
+[audit]       e.g. 521 (7553), 436-444 | Deep learning
+[audit] run --self-check to test the parser, or scholar-digest --audit for the details
+```
+
+阈值是为了不喊狼来了：单条奇怪的记录（Scholar 上确实有）不触发，只有「一个字段在这一轮里大面积解析失败」才触发——那通常意味着版式变了。缺失类的 `warn`（Scholar 自己就没给 venue、自己截断了作者）永远不会触发，因为那不是解析错误。
+
 ### 分组统计
 
 `--group-by` 把合并后的结果按第一作者、期刊/会议、年份或引文层级分组，按被引总数排序：
@@ -405,7 +420,7 @@ scholar-crawler --rehearse-handoff
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 217 个用例，全部离线
+python3 -m pytest -q     # 222 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -414,6 +429,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **解析**：结果卡片（仅引用条目、PDF 侧链、被引/版本计数、词中加粗、第二页的结果计数、零结果页）、作者主页（头部各行、按行位置读统计表、论文行、缺年份与零被引、「显示更多」状态）、真实页面夹具（结果页 10 项自检全过、字段完整性、脱敏规则、夹具不含凭证）
 - **URL 与过滤**：查询/主页地址拼装、过滤参数、id 与 URL 解析、cite 弹窗地址
 - **抓取循环**：翻页与作者分批、节奏与冷却、连续被拦的静默等待与关闭开关、运行摘要的长短两种格式、HTML dump、导出过程中被拦
+- **抓取时体检**：逐条累加与整批体检结果完全一致、单条坏记录不报警、一个字段大面积失败才报警、缺失类警告永不报警、运行结束时打印在输出之后
 - **数据体检**：干净记录不误报、页码型 venue 与残留年份、与灰字矛盾的年份、有被引数无链接、负计数、缺失与有损字段的档位、仅引用条目不因缺 card id 被判错、占比与例子、真实夹具记录零 error
 - **文档导航**：两份 README 的页内链接都指向真实小节、导航表覆盖至少 7 种情况、两份文档的模块清单一致且与实际模块完全对应
 - **模式**：四种模式脱离 argparse 直接调用（演练在真实 headless Chromium 上跑）、断点查看与清除、接管记录按时间倒数打印

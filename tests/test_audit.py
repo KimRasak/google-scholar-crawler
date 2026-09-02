@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scholar_crawler.audit import CHECKS, audit_records, render_audit  # noqa: E402
+from scholar_crawler.audit import CHECKS, AuditTally, audit_records, render_audit  # noqa: E402
 from scholar_crawler.digest import main  # noqa: E402
 from scholar_crawler.parser import parse_author_page, parse_result_page  # noqa: E402
 from tests.fixtures import AUTHOR_PAGE_HTML, RESULT_PAGE_HTML  # noqa: E402
@@ -136,3 +136,104 @@ def test_records_parsed_from_the_real_fixtures_pass_the_audit(
     printed = capsys.readouterr().out
     assert "(0 errors," in printed
     assert "venue_keeps_year" not in printed
+
+
+def test_a_tally_and_a_batch_audit_agree() -> None:
+    # The run audits records as it writes them; the digest audits a file. Same answers.
+    records = [
+        _record(),
+        _record(venue="521 (7553), 436-444"),
+        _record(venue=None, year=None),
+        _record(year=1066),
+        _record(authors="A Author…"),
+    ]
+    tally = AuditTally()
+    for record in records:
+        tally.observe(record)
+    assert tally.total == len(records)
+    batch = audit_records(records)
+    assert [(finding.check.name, finding.count) for finding in tally.findings()] == [
+        (finding.check.name, finding.count) for finding in batch
+    ]
+    assert [finding.examples for finding in tally.findings()] == [
+        finding.examples for finding in batch
+    ]
+
+
+def test_a_run_stays_quiet_about_the_odd_bad_record() -> None:
+    tally = AuditTally()
+    for _ in range(20):
+        tally.observe(_record())
+    tally.observe(_record(year=1066))  # one wrong record out of 21
+    assert tally.alarms() == []
+    assert tally.describe_alarms() == []
+
+
+def test_a_field_failing_across_a_run_raises_an_alarm() -> None:
+    tally = AuditTally()
+    for _ in range(4):
+        tally.observe(_record(venue="521 (7553), 436-444"))
+    for _ in range(6):
+        tally.observe(_record())
+    alarms = tally.alarms()
+    assert [finding.check.name for finding in alarms] == ["venue_looks_like_pages"]
+    lines = tally.describe_alarms()
+    assert "Scholar's layout may have changed" in lines[0]
+    assert "4 of 10 records (40%)" in lines[1]
+    assert any("e.g. 521 (7553), 436-444" in line for line in lines)
+    assert "--self-check" in lines[-1]
+
+
+def test_warnings_never_raise_an_alarm() -> None:
+    # Missing fields are Scholar's doing, not a parser failure; a run must not cry wolf.
+    tally = AuditTally()
+    for _ in range(10):
+        tally.observe(_record(venue=None, year=None, authors=None, cluster_id=None))
+    assert {finding.check.name for finding in tally.findings()} == {
+        "venue_missing",
+        "year_missing",
+        "authors_missing",
+        "cluster_id_missing",
+    }
+    assert tally.describe_alarms() == []
+
+
+def test_a_run_reports_the_alarm_after_its_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from scholar_crawler.models import ScholarResult
+    from scholar_crawler.run import Outputs
+
+    outputs = Outputs.open_for(
+        out=tmp_path / "results.jsonl",
+        state=tmp_path / "state.json",
+        profiles=tmp_path / "profiles.jsonl",
+    )
+    for index in range(5):
+        outputs.sink.write(
+            ScholarResult(
+                cluster_id=f"ID{index}",
+                position=index + 1,
+                title=f"Paper {index}",
+                link="https://example.org/",
+                resource_link=None,
+                resource_type=None,
+                byline="A Author - 521 (7553), 436-444, 2015 - example.org",
+                authors="A Author",
+                venue="521 (7553), 436-444",
+                year=2015,
+                snippet=None,
+                cited_by_count=None,
+                cited_by_url=None,
+                versions_count=None,
+                versions_url=None,
+                related_url=None,
+                citation_only=False,
+                query="x",
+                page_start=0,
+                fetched_at="2026-09-02T00:00:00+00:00",
+            )
+        )
+    outputs.close_and_report(None)
+    printed = capsys.readouterr().out
+    assert "[out] 5 new records" in printed
+    assert "[audit] 1 field(s) parsed badly" in printed
+    assert "venue_looks_like_pages: 5 of 5 records (100%)" in printed

@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TextIO
 
+from .audit import AuditTally
 from .models import AuthorProfile, ScholarResult, describe_signature
 from .parser import bibtex_key
 from .urls import redact_url
@@ -47,9 +48,11 @@ class ResultSink:
     """Append-only JSONL writer that drops results already seen.
 
     :param path: JSONL output path; existing content is kept and used for dedup.
+    :param tally: audits every written record so a run can report fields that parsed badly.
     """
 
     path: Path
+    tally: AuditTally = field(default_factory=AuditTally)
     _seen: set[str] = field(default_factory=set)
     _handle: TextIO | None = None
     written: int = 0
@@ -81,7 +84,9 @@ class ResultSink:
             self.skipped += 1
             return False
         self._seen.add(key)
-        self._handle.write(json.dumps(result.to_dict(), ensure_ascii=False) + "\n")
+        payload = result.to_dict()
+        self.tally.observe(payload)
+        self._handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
         self._handle.flush()
         self.written += 1
         return True
