@@ -12,6 +12,7 @@ from .crawler import Pacing, ScholarCrawler
 from .expand import FollowPolicy, next_level
 from .models import AuthorProfile, AuthorRequest, ScholarResult, SearchRequest
 from .parser import bibtex_key
+from .plan import plan_run
 from .rehearsal import rehearse
 from .selfcheck import check_page, report
 from .storage import BibtexSink, ProfileStore, ResultSink, StateStore
@@ -53,6 +54,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="fetch one page for a fixed query and report whether every parsed field still "
         "arrives; use it to tell a Scholar layout change from a bug",
+    )
+    query.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print what the run would request and how long it would take, then stop "
+        "without sending anything",
     )
     query.add_argument(
         "--rehearse-handoff",
@@ -477,6 +484,22 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
+
+    if args.dry_run:
+        plan = plan_run(
+            listings,
+            authors,
+            pages=args.pages,
+            max_results=args.max_results,
+            follow=follow,
+            bibtex=bool(args.bibtex),
+            pacing=pacing,
+            host=args.host,
+        )
+        for line in plan.render():
+            print(f"[plan] {line}", flush=True)
+        print("[plan] nothing was requested; drop --dry-run to start", flush=True)
+        return 0
 
     sink = ResultSink(args.out)
     sink.open()

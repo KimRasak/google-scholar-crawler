@@ -94,6 +94,25 @@ scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.js
 | `--top` | 概览里列出的高被引条数（默认 5） |
 | `--quiet` | 只打印写出结果，需要配合 `-o` 或 `--csv` |
 
+## 先算账：`--dry-run`
+
+`--pages`、`-n`、`--follow-cites`、`--bibtex` 的成本是相乘的，很容易一不小心开出一个跑几小时的任务。`--dry-run` 不发任何请求，先把这轮要抓什么、最多多少次页面加载、按当前节奏大概多久列清楚：
+
+```sh
+$ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
+    --follow-cites 1 --follow-breadth 4 --bibtex out/x.bib --dry-run
+[plan] diffusion models -> https://scholar.google.com/scholar?hl=en&q=diffusion+models&as_vis=0&as_sdt=0%2C5
+[plan] flow matching -> https://scholar.google.com/scholar?hl=en&q=flow+matching&as_vis=0&as_sdt=0%2C5
+[plan] seed targets: 6 page loads, up to 60 records
+[plan] citation expansion: up to 8 listings, 24 page loads, up to 240 records
+[plan] bibtex export: up to 600 page loads
+[plan] total: up to 630 page loads for 300 records
+[plan] estimated 3.4 h at 4-11s between requests plus 63 cooldowns of 90s
+[plan] nothing was requested; drop --dry-run to start
+```
+
+所有数字都是上限：列表提前抓完、引文网络无可展开时都会更少。目标写错（比如一个入口都没给）在 `--dry-run` 下同样会报错，所以它也能当参数检查用。
+
 ## 自检
 
 怀疑 Scholar 改版、解析结果变空时，先跑一次自检（只发一次请求）：
@@ -123,6 +142,7 @@ scholar-crawler --self-check
 | `--profile`、`--channel`、`--locale`、`--timezone`、`--proxy` | 浏览器 profile 与环境参数 |
 | `--min-delay/--max-delay`、`--cooldown-every/--cooldown-seconds` | 抓取节奏 |
 | `--handoff-timeout`、`--max-handoffs`、`--backoff-factor`、`--challenge-cooldown` | 等人多久（0 = 无限等）、最多接管几次、每次接管后延迟放大倍数、连续被拦时恢复前的静默等待 |
+| `--dry-run` | 只打印这轮的抓取计划与用时估算，不发任何请求 |
 | `--self-check` | 跑一次解析自检（一个请求），逐项报告哪些字段还能正常解析 |
 | `--headless` | 无窗口模式；**此时遇到验证会直接终止并提示改用有界面模式** |
 
@@ -206,11 +226,11 @@ scholar-crawler --rehearse-handoff
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 125 个用例，全部离线
+python3 -m pytest -q     # 134 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
-测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、BibTeX 链接识别（按 href 而非按标签文字）与 `<pre>` 内容提取、`.bib` 去重、导出过程中的接管、运行摘要（长短两种时长格式、按类型统计接管）、连续被拦时的静默等待与关闭开关、接管演练（真实 DOM 里被识别为验证页、按钮按下后恢复、未恢复与未识别的报告、headless 拒绝）、离线汇总（合并取舍、`extra` 合并、层级取最浅、过滤组合、统计与排序、写文件、参数校验）、自检报告（健康页面、空结果页、字段缺失定位、末页判定、输出格式）、作者条目的 `data-cid` 解析回退、引文网络展开（按被引排序、宽度上限、访问去重、引用下限、逐层推进与提前收敛）、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
+测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、BibTeX 链接识别（按 href 而非按标签文字）与 `<pre>` 内容提取、`.bib` 去重、导出过程中的接管、抓取计划（页数被 `-n` 收窄、作者按 100 条一页、展开与 BibTeX 的乘法成本、时长格式、`--dry-run` 不落地任何文件）、运行摘要（长短两种时长格式、按类型统计接管）、连续被拦时的静默等待与关闭开关、接管演练（真实 DOM 里被识别为验证页、按钮按下后恢复、未恢复与未识别的报告、headless 拒绝）、离线汇总（合并取舍、`extra` 合并、层级取最浅、过滤组合、统计与排序、写文件、参数校验）、自检报告（健康页面、空结果页、字段缺失定位、末页判定、输出格式）、作者条目的 `data-cid` 解析回退、引文网络展开（按被引排序、宽度上限、访问去重、引用下限、逐层推进与提前收敛）、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
 
 ## 合规
 
@@ -226,6 +246,7 @@ scholar_crawler/
   browser.py    持久化 profile 的浏览器会话
   crawler.py    抓取循环：节奏、接管、翻页/分批、BibTeX 取用、HTML dump
   expand.py     引文网络展开：选点、上限、去重
+  plan.py       抓取计划：页数/加载数/用时估算
   selfcheck.py  解析自检：逐字段体检与报告
   rehearsal.py  接管演练：本地验证页与全链路空演
   digest.py     离线汇总：合并去重、过滤、统计、导出

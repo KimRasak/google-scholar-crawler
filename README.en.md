@@ -94,6 +94,25 @@ When the same work appears in several files, the higher citation count wins as t
 | `--top` | how many most-cited records the overview lists (default: 5) |
 | `--quiet` | print only what was written; needs `-o` or `--csv` |
 
+## Counting the cost first: `--dry-run`
+
+`--pages`, `-n`, `--follow-cites` and `--bibtex` multiply, which makes it easy to start a run that takes hours. `--dry-run` sends nothing and spells out what would be requested, the worst-case page loads, and roughly how long the current rhythm would need:
+
+```sh
+$ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
+    --follow-cites 1 --follow-breadth 4 --bibtex out/x.bib --dry-run
+[plan] diffusion models -> https://scholar.google.com/scholar?hl=en&q=diffusion+models&as_vis=0&as_sdt=0%2C5
+[plan] flow matching -> https://scholar.google.com/scholar?hl=en&q=flow+matching&as_vis=0&as_sdt=0%2C5
+[plan] seed targets: 6 page loads, up to 60 records
+[plan] citation expansion: up to 8 listings, 24 page loads, up to 240 records
+[plan] bibtex export: up to 600 page loads
+[plan] total: up to 630 page loads for 300 records
+[plan] estimated 3.4 h at 4-11s between requests plus 63 cooldowns of 90s
+[plan] nothing was requested; drop --dry-run to start
+```
+
+Every number is an upper bound: listings that run out of results and expansions with nothing left to expand cost less. Bad arguments still fail under `--dry-run`, so it doubles as an argument check.
+
 ## Self-check
 
 When results come back empty and you suspect a Scholar layout change, spend one request on the self-check:
@@ -123,6 +142,7 @@ It fetches one page of a broad query and reports, field by field, whether titles
 | `--profile`, `--channel`, `--locale`, `--timezone`, `--proxy` | browser profile and environment |
 | `--min-delay/--max-delay`, `--cooldown-every/--cooldown-seconds` | request rhythm |
 | `--handoff-timeout`, `--max-handoffs`, `--backoff-factor`, `--challenge-cooldown` | how long to wait for a human (0 = forever), takeover budget, slowdown per takeover, wait-out after back-to-back challenges |
+| `--dry-run` | print the run plan and duration estimate, then stop without requesting anything |
 | `--self-check` | run the parser self-check (one request) and report field by field what still parses |
 | `--headless` | no window; **a challenge then aborts the run with instructions** |
 
@@ -206,11 +226,11 @@ The slowdown has two stages: every takeover widens the delays by `--backoff-fact
 ## Development
 
 ```sh
-python3 -m pytest -q     # 125 tests, fully offline
+python3 -m pytest -q     # 134 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
-Tests cover result parsing (citation-only cards, PDF side links, cited-by/version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author-profile parsing (header lines, the position-read summary table, publication rows, zero citations and missing years, the "show more" state), URL and filter assembly, id/URL parsing, JSONL dedup and CSV export, profile upserts, resume state, challenge detection (real headless Chromium DOM), the takeover wait including timeout, closed window and headless refusal, BibTeX link discovery (by href, not label) and `<pre>` extraction, `.bib` dedup, a takeover during export, the run summary (short and long duration formats, takeovers by kind), the back-to-back challenge wait and its off switch, the takeover rehearsal (detected as a challenge in a real DOM, cleared by the button, uncleared and undetected reporting, headless refusal), the offline digest (merge precedence, `extra` merging, shallowest level, combined filters, summary counts and ranking, file writing, flag validation), the self-check report (healthy page, zero-hit page, pinpointed missing fields, last page, output format), card-id resolution for profile records, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, result-cap truncation, unknown profile layouts failing loudly, post-takeover slowdown, HTML dumps, and CLI argument assembly. GitHub Actions runs the same suite on Python 3.10 and 3.13.
+Tests cover result parsing (citation-only cards, PDF side links, cited-by/version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author-profile parsing (header lines, the position-read summary table, publication rows, zero citations and missing years, the "show more" state), URL and filter assembly, id/URL parsing, JSONL dedup and CSV export, profile upserts, resume state, challenge detection (real headless Chromium DOM), the takeover wait including timeout, closed window and headless refusal, BibTeX link discovery (by href, not label) and `<pre>` extraction, `.bib` dedup, a takeover during export, the run plan (page budget narrowed by `-n`, profiles counted in hundreds, the multiplicative cost of expansion and BibTeX, duration formats, `--dry-run` writing no files), the run summary (short and long duration formats, takeovers by kind), the back-to-back challenge wait and its off switch, the takeover rehearsal (detected as a challenge in a real DOM, cleared by the button, uncleared and undetected reporting, headless refusal), the offline digest (merge precedence, `extra` merging, shallowest level, combined filters, summary counts and ranking, file writing, flag validation), the self-check report (healthy page, zero-hit page, pinpointed missing fields, last page, output format), card-id resolution for profile records, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, result-cap truncation, unknown profile layouts failing loudly, post-takeover slowdown, HTML dumps, and CLI argument assembly. GitHub Actions runs the same suite on Python 3.10 and 3.13.
 
 ## Compliance
 
@@ -224,7 +244,7 @@ scholar_crawler/
   parser.py     result-page and profile HTML -> structured records
   challenge.py  challenge detection + human takeover wait
   browser.py    persistent-profile browser session
-  crawler.py    crawl loop: pacing, takeover, the run summary (short and long duration formats, takeovers by kind), the back-to-back challenge wait and its off switch, the takeover rehearsal (detected as a challenge in a real DOM, cleared by the button, uncleared and undetected reporting, headless refusal), the offline digest (merge precedence, `extra` merging, shallowest level, combined filters, summary counts and ranking, file writing, flag validation), the self-check report (healthy page, zero-hit page, pinpointed missing fields, last page, output format), card-id resolution for profile records, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, HTML dumps
+  crawler.py    crawl loop: pacing, takeover, the run plan (page budget narrowed by `-n`, profiles counted in hundreds, the multiplicative cost of expansion and BibTeX, duration formats, `--dry-run` writing no files), the run summary (short and long duration formats, takeovers by kind), the back-to-back challenge wait and its off switch, the takeover rehearsal (detected as a challenge in a real DOM, cleared by the button, uncleared and undetected reporting, headless refusal), the offline digest (merge precedence, `extra` merging, shallowest level, combined filters, summary counts and ranking, file writing, flag validation), the self-check report (healthy page, zero-hit page, pinpointed missing fields, last page, output format), card-id resolution for profile records, citation-graph expansion (most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence), pagination and author batching, HTML dumps
   storage.py    JSONL/CSV writers, author profile records, the .bib file, resume state
   cli.py        command-line entry point
 tests/          offline tests, including headless-Chromium detection tests
