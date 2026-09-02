@@ -20,7 +20,9 @@ from enum import Enum
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page
 
-RESULTS_SELECTOR = "div.gs_r.gs_or.gs_scl, div#gs_res_ccl_mid, div.gs_med"
+RESULTS_SELECTOR = "div.gs_r.gs_or.gs_scl, div#gs_res_ccl_mid, div.gs_med, #gsc_a_b, #gsc_prf_in"
+"""Selectors proving a page carries Scholar content: result cards, the zero-hit
+notice, an author's publication table, or an author profile header."""
 
 
 class ChallengeKind(str, Enum):

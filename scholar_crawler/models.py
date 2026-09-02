@@ -102,3 +102,68 @@ class PageResult:
     results: list[ScholarResult]
     total_estimate: int | None
     has_next: bool
+
+
+@dataclass(slots=True)
+class AuthorRequest:
+    """One Google Scholar author profile to page through.
+
+    :param user_id: the ``user=`` id of the profile.
+    :param language: interface language (``hl``).
+    :param sort_by_year: list newest publications first instead of most cited.
+    """
+
+    user_id: str
+    language: str | None = None
+    sort_by_year: bool = False
+
+    @property
+    def label(self) -> str:
+        """Short human-readable name for logs and progress output."""
+        return f"author:{self.user_id}"
+
+    def signature(self) -> str:
+        """Stable key for resume state: identical requests share one cursor."""
+        return f"author={self.user_id}|lang={self.language or ''}|year={int(self.sort_by_year)}"
+
+
+@dataclass(slots=True)
+class AuthorProfile:
+    """Header metadata of an author profile: identity plus citation summary."""
+
+    user_id: str
+    name: str
+    affiliation: str | None
+    organization: str | None
+    homepage: str | None
+    verified_email: str | None
+    interests: list[str]
+    cited_by_total: int | None
+    cited_by_recent: int | None
+    h_index: int | None
+    h_index_recent: int | None
+    i10_index: int | None
+    i10_index_recent: int | None
+    fetched_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable mapping for the profile writer."""
+        return dataclasses.asdict(self)
+
+    def dedup_key(self) -> str:
+        """Identity used to keep one record per profile."""
+        return self.user_id
+
+
+@dataclass(slots=True)
+class AuthorPage:
+    """Outcome of fetching one batch of an author's publication list.
+
+    Publications are returned as :class:`ScholarResult` so author output shares the
+    JSONL schema, dedup and CSV export of keyword and citation-list crawls.
+    """
+
+    cstart: int
+    profile: AuthorProfile
+    results: list[ScholarResult]
+    has_more: bool

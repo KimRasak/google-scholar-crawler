@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TextIO
 
-from .models import ScholarResult
+from .models import AuthorProfile, ScholarResult
 
 CSV_COLUMNS = (
     "position",
@@ -105,6 +105,43 @@ class ResultSink:
             writer.writeheader()
             writer.writerows(rows)
         return len(rows)
+
+
+@dataclass(slots=True)
+class ProfileStore:
+    """Author profiles kept as one JSONL record per profile, newest values winning.
+
+    Citation counts change, so a re-crawl replaces the stored record instead of
+    appending a second one.
+
+    :param path: JSONL path holding one record per author profile.
+    """
+
+    path: Path
+    _records: dict[str, dict[str, Any]] = field(default_factory=dict)
+    written: int = 0
+
+    def load(self) -> None:
+        """Read existing profiles, tolerating a missing file."""
+        if not self.path.exists():
+            return
+        with self.path.open(encoding="utf-8") as existing:
+            for line in existing:
+                if line.strip():
+                    record = json.loads(line)
+                    self._records[record["user_id"]] = record
+
+    def write(self, profile: AuthorProfile) -> None:
+        """Store ``profile`` and rewrite the file so each author appears once.
+
+        :param profile: the profile record to keep.
+        """
+        self._records[profile.dedup_key()] = profile.to_dict()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("w", encoding="utf-8") as target:
+            for record in self._records.values():
+                target.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self.written += 1
 
 
 @dataclass(slots=True)

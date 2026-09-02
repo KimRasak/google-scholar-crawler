@@ -46,6 +46,10 @@ scholar-crawler --queries-file queries.example.txt -p 10 --resume -o out/batch.j
 scholar-crawler --cites "https://scholar.google.com/scholar?cites=2454404157773228931" -p 5 -o out/citing.jsonl
 scholar-crawler --cluster 2454404157773228931 -o out/versions.jsonl
 
+# 抓作者主页：一次请求最多 100 篇；主页头部（引用总数、h-index、i10、研究兴趣）单独落盘
+scholar-crawler --author kukA0LcAAAAJ -o out/bengio.jsonl --profiles-out out/profiles.jsonl
+scholar-crawler --author "https://scholar.google.com/citations?user=kukA0LcAAAAJ&hl=en" --sort-by-date -p 2
+
 # Scholar 高级语法直接写进 query
 scholar-crawler -q 'author:"Yoshua Bengio" source:"NeurIPS"' -p 2
 ```
@@ -66,12 +70,14 @@ scholar-crawler -q 'author:"Yoshua Bengio" source:"NeurIPS"' -p 2
 | --- | --- |
 | `-q/--query`、`--queries-file` | 关键词检索，可重复；文件一行一个 |
 | `--cites`、`--cluster` | 抓某文的引证文献 / 全部版本；接受数字 id 或结果里的 `cited_by_url`、`versions_url`，可重复 |
-| `-p/--pages`、`-n/--max-results` | 每个查询抓几页 / 最多抓几条（末页会精确截断） |
+| `--author` | 抓作者主页论文列表；接受 12 位 user id 或主页 URL，可重复；配合 `--sort-by-date` 按年份排序 |
+| `-p/--pages`、`-n/--max-results` | 每个入口抓几页 / 最多抓几条（末页精确截断）。检索页每页 10 条，作者主页每页 100 篇 |
 | `--start`、`--resume` | 起始 offset；从 state 断点继续 |
 | `--year-from/--year-to`、`--sort-by-date`、`--review-only` | 年份区间、按日期排序、只要综述 |
 | `--no-citations`、`--no-patents` | 排除仅引用条目、排除专利 |
 | `--lang`、`--host` | 界面语言 `hl`；镜像站如 `https://scholar.google.de` |
-| `-o/--out`、`--csv`、`--state`、`--dump-html` | JSONL 输出、CSV 导出、断点文件、抓到的原始 HTML（排查解析问题用） |
+| `-o/--out`、`--csv`、`--state` | JSONL 输出、CSV 导出、断点文件 |
+| `--profiles-out`、`--dump-html` | 作者主页头部记录（每位作者一行，重复抓取覆盖旧值）、抓到的原始 HTML（排查解析问题用） |
 | `--profile`、`--channel`、`--locale`、`--timezone`、`--proxy` | 浏览器 profile 与环境参数 |
 | `--min-delay/--max-delay`、`--cooldown-every/--cooldown-seconds` | 抓取节奏 |
 | `--handoff-timeout`、`--max-handoffs`、`--backoff-factor` | 等人多久（0 = 无限等）、最多接管几次、每次接管后延迟放大倍数 |
@@ -94,7 +100,19 @@ JSONL 每行一条记录：
  "snippet":"We propose a new simple network architecture ...","query":"...","page_start":0,"fetched_at":"..."}
 ```
 
-去重按 `cluster_id`（缺失时用 标题+链接），跨页和跨次运行都生效——重复追加同一文件不会产生重复行。`query` 字段记录来源入口（关键词，或 `cites:<id>`、`cluster:<id>`）。
+去重按 `cluster_id`（缺失时用 标题+链接），跨页和跨次运行都生效——重复追加同一文件不会产生重复行。`query` 字段记录来源入口（关键词，或 `cites:<id>`、`cluster:<id>`、`author:<id>`）。
+
+作者主页的论文写进同一个 JSONL（`extra.citation_id` 记录 Scholar 的 citation id），主页头部另外写进 `--profiles-out`：
+
+```json
+{"user_id":"kukA0LcAAAAJ","name":"Yoshua Bengio",
+ "affiliation":"Professor of computer science, University of Montreal, Mila, IVADO, CIFAR",
+ "organization":"University of Montreal","homepage":"https://yoshuabengio.org/",
+ "verified_email":"Verified email at umontreal.ca",
+ "interests":["Machine learning","deep learning","artificial intelligence"],
+ "cited_by_total":1149112,"cited_by_recent":764217,"h_index":259,"h_index_recent":208,
+ "i10_index":1106,"i10_index_recent":947,"fetched_at":"..."}
+```
 
 ## 降低验证频率
 
@@ -106,11 +124,11 @@ JSONL 每行一条记录：
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 52 个用例，全部离线
+python3 -m pytest -q     # 69 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
-测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、翻页推进、结果上限截断、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
+测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
 
 ## 合规
 
@@ -120,12 +138,12 @@ Google Scholar 的服务条款不允许自动化抓取，抓到的数据版权�
 
 ```
 scholar_crawler/
-  urls.py       查询 URL、过滤参数、id/URL 解析
-  parser.py     结果页 HTML → 结构化记录
+  urls.py       查询/主页 URL、过滤参数、id/URL 解析
+  parser.py     结果页与作者主页 HTML → 结构化记录
   challenge.py  验证页判定 + 人工接管等待
   browser.py    持久化 profile 的浏览器会话
-  crawler.py    抓取循环：节奏、接管、翻页、HTML dump
-  storage.py    JSONL/CSV 写入与断点状态
+  crawler.py    抓取循环：节奏、接管、翻页/分批、HTML dump
+  storage.py    JSONL/CSV 写入、作者主页记录、断点状态
   cli.py        命令行入口
 tests/          离线测试（含 headless Chromium 判定测试）
 ```

@@ -46,6 +46,10 @@ scholar-crawler --queries-file queries.example.txt -p 10 --resume -o out/batch.j
 scholar-crawler --cites "https://scholar.google.com/scholar?cites=2454404157773228931" -p 5 -o out/citing.jsonl
 scholar-crawler --cluster 2454404157773228931 -o out/versions.jsonl
 
+# Crawl an author profile: up to 100 publications per request, header stored separately
+scholar-crawler --author kukA0LcAAAAJ -o out/bengio.jsonl --profiles-out out/profiles.jsonl
+scholar-crawler --author "https://scholar.google.com/citations?user=kukA0LcAAAAJ&hl=en" --sort-by-date -p 2
+
 # Scholar's advanced syntax goes straight into the query
 scholar-crawler -q 'author:"Yoshua Bengio" source:"NeurIPS"' -p 2
 ```
@@ -66,12 +70,14 @@ A takeover looks like this:
 | --- | --- |
 | `-q/--query`, `--queries-file` | keyword search, repeatable; file holds one query per line |
 | `--cites`, `--cluster` | crawl citing works / all versions of one work; accepts a numeric id or a `cited_by_url`/`versions_url`, repeatable |
-| `-p/--pages`, `-n/--max-results` | pages per query / hard result cap (last page truncated exactly) |
+| `--author` | crawl an author's publication list; accepts a 12-character user id or a profile URL, repeatable; `--sort-by-date` orders by year |
+| `-p/--pages`, `-n/--max-results` | pages per entry point / hard result cap (last page truncated exactly). Search pages hold 10 results, profile pages 100 publications |
 | `--start`, `--resume` | first offset; continue from the saved cursor |
 | `--year-from/--year-to`, `--sort-by-date`, `--review-only` | year range, date order, reviews only |
 | `--no-citations`, `--no-patents` | exclude citation-only records / patents |
 | `--lang`, `--host` | interface language (`hl`); mirror such as `https://scholar.google.de` |
-| `-o/--out`, `--csv`, `--state`, `--dump-html` | JSONL output, CSV export, resume state, raw HTML of every fetched page |
+| `-o/--out`, `--csv`, `--state` | JSONL output, CSV export, resume state |
+| `--profiles-out`, `--dump-html` | author profile headers (one record per author, re-crawls replace it), raw HTML of every fetched page |
 | `--profile`, `--channel`, `--locale`, `--timezone`, `--proxy` | browser profile and environment |
 | `--min-delay/--max-delay`, `--cooldown-every/--cooldown-seconds` | request rhythm |
 | `--handoff-timeout`, `--max-handoffs`, `--backoff-factor` | how long to wait for a human (0 = forever), takeover budget, slowdown per takeover |
@@ -94,7 +100,19 @@ One JSON object per line:
  "snippet":"We propose a new simple network architecture ...","query":"...","page_start":0,"fetched_at":"..."}
 ```
 
-Records are deduplicated by `cluster_id` (falling back to title + link) across pages and across runs, so appending to the same file never produces duplicate lines. The `query` field records the entry point: the keyword query, or `cites:<id>` / `cluster:<id>`.
+Records are deduplicated by `cluster_id` (falling back to title + link) across pages and across runs, so appending to the same file never produces duplicate lines. The `query` field records the entry point: the keyword query, or `cites:<id>` / `cluster:<id>` / `author:<id>`.
+
+Author publications land in the same JSONL (with Scholar's citation id in `extra.citation_id`); the profile header goes to `--profiles-out`:
+
+```json
+{"user_id":"kukA0LcAAAAJ","name":"Yoshua Bengio",
+ "affiliation":"Professor of computer science, University of Montreal, Mila, IVADO, CIFAR",
+ "organization":"University of Montreal","homepage":"https://yoshuabengio.org/",
+ "verified_email":"Verified email at umontreal.ca",
+ "interests":["Machine learning","deep learning","artificial intelligence"],
+ "cited_by_total":1149112,"cited_by_recent":764217,"h_index":259,"h_index_recent":208,
+ "i10_index":1106,"i10_index_recent":947,"fetched_at":"..."}
+```
 
 ## Getting challenged less
 
@@ -106,11 +124,11 @@ Records are deduplicated by `cluster_id` (falling back to title + link) across p
 ## Development
 
 ```sh
-python3 -m pytest -q     # 52 tests, fully offline
+python3 -m pytest -q     # 69 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
-Tests cover result parsing (citation-only cards, PDF side links, cited-by/version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), URL and filter assembly, id/URL parsing, JSONL dedup and CSV export, resume state, challenge detection (real headless Chromium DOM), the takeover wait including timeout, closed window and headless refusal, pagination, result-cap truncation, post-takeover slowdown, HTML dumps, and CLI argument assembly. GitHub Actions runs the same suite on Python 3.10 and 3.13.
+Tests cover result parsing (citation-only cards, PDF side links, cited-by/version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author-profile parsing (header lines, the position-read summary table, publication rows, zero citations and missing years, the "show more" state), URL and filter assembly, id/URL parsing, JSONL dedup and CSV export, profile upserts, resume state, challenge detection (real headless Chromium DOM), the takeover wait including timeout, closed window and headless refusal, pagination and author batching, result-cap truncation, unknown profile layouts failing loudly, post-takeover slowdown, HTML dumps, and CLI argument assembly. GitHub Actions runs the same suite on Python 3.10 and 3.13.
 
 ## Compliance
 
@@ -120,12 +138,12 @@ Google Scholar's terms do not allow automated scraping, and collected metadata r
 
 ```
 scholar_crawler/
-  urls.py       query URLs, filters, id/URL parsing
-  parser.py     result-page HTML -> structured records
+  urls.py       query and profile URLs, filters, id/URL parsing
+  parser.py     result-page and profile HTML -> structured records
   challenge.py  challenge detection + human takeover wait
   browser.py    persistent-profile browser session
-  crawler.py    crawl loop: pacing, takeover, pagination, HTML dumps
-  storage.py    JSONL/CSV writers and resume state
+  crawler.py    crawl loop: pacing, takeover, pagination and author batching, HTML dumps
+  storage.py    JSONL/CSV writers, author profile records, resume state
   cli.py        command-line entry point
 tests/          offline tests, including headless-Chromium detection tests
 ```

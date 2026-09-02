@@ -5,12 +5,17 @@ from __future__ import annotations
 import re
 from urllib.parse import urlencode
 
-from .models import SearchRequest
+from .models import AuthorRequest, SearchRequest
 
 SCHOLAR_HOST = "https://scholar.google.com"
 RESULTS_PER_PAGE = 10
+AUTHOR_PAGE_SIZE = 100
+"""Largest publication batch a profile page serves in one request."""
+
 _ID_RE = re.compile(r"(?:cites|cluster)=(\d+)")
 _DIGITS_RE = re.compile(r"^\d+$")
+_USER_RE = re.compile(r"user=([\w-]{12})")
+_USER_ID_RE = re.compile(r"^[\w-]{12}$")
 
 
 def parse_cluster_id(value: str) -> str:
@@ -60,6 +65,47 @@ def search_url(request: SearchRequest, start: int = 0, host: str = SCHOLAR_HOST)
     params["as_vis"] = 0 if request.include_citations else 1
     params["as_sdt"] = "0,5" if request.include_patents else "0"
     return f"{host}/scholar?{urlencode(params)}"
+
+
+def parse_user_id(value: str) -> str:
+    """Accept a bare profile id or any Scholar URL carrying ``user=``.
+
+    :param value: a 12-character profile id, or a profile URL containing one.
+    :returns: the profile id.
+    :raises ValueError: when ``value`` holds no Scholar profile id.
+    """
+    candidate = value.strip()
+    if _USER_ID_RE.match(candidate):
+        return candidate
+    match = _USER_RE.search(candidate)
+    if match is None:
+        raise ValueError(f"no Scholar profile id (user=...) found in {value!r}")
+    return match.group(1)
+
+
+def author_url(
+    request: AuthorRequest,
+    cstart: int = 0,
+    host: str = SCHOLAR_HOST,
+    page_size: int = AUTHOR_PAGE_SIZE,
+) -> str:
+    """Build the profile-page URL for ``request`` at publication offset ``cstart``.
+
+    :param request: the profile to read.
+    :param cstart: zero-based publication offset.
+    :param host: Scholar host to hit.
+    :param page_size: publications requested per page, capped by Scholar at 100.
+    :returns: absolute URL of the profile page.
+    """
+    params: dict[str, str | int] = {
+        "user": request.user_id,
+        "hl": request.language or "en",
+        "cstart": cstart,
+        "pagesize": page_size,
+    }
+    if request.sort_by_year:
+        params["sortby"] = "pubdate"
+    return f"{host}/citations?{urlencode(params)}"
 
 
 def absolute(href: str | None, host: str = SCHOLAR_HOST) -> str | None:

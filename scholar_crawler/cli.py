@@ -9,9 +9,9 @@ from pathlib import Path
 from .browser import BrowserOptions, browser_session
 from .challenge import ChallengeUnattended, HumanHandoff
 from .crawler import Pacing, ScholarCrawler
-from .models import SearchRequest
-from .storage import ResultSink, StateStore
-from .urls import SCHOLAR_HOST, parse_cluster_id
+from .models import AuthorProfile, AuthorRequest, SearchRequest
+from .storage import ProfileStore, ResultSink, StateStore
+from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="list all versions of one work; accepts an id or a versions_url; repeatable",
     )
+    query.add_argument(
+        "--author",
+        action="append",
+        default=[],
+        help="crawl this author profile; accepts a user id or a profile URL; repeatable",
+    )
     query.add_argument("--year-from", type=int, help="earliest publication year")
     query.add_argument("--year-to", type=int, help="latest publication year")
     query.add_argument("--lang", default="en", help="Scholar interface language (hl), default en")
@@ -59,6 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
     output.add_argument("-o", "--out", type=Path, default=Path("out/results.jsonl"), help="JSONL output path")
     output.add_argument("--csv", type=Path, help="also export collected records to this CSV path")
     output.add_argument("--state", type=Path, default=Path("out/state.json"), help="resume-state path")
+    output.add_argument(
+        "--profiles-out",
+        type=Path,
+        default=Path("out/profiles.jsonl"),
+        help="author profile headers (one record per author)",
+    )
     output.add_argument("--dump-html", type=Path, help="save every fetched page's HTML here for debugging")
 
     browser = parser.add_argument_group("browser")
@@ -107,11 +119,11 @@ def _collect_queries(args: argparse.Namespace) -> list[str]:
     return queries
 
 
-def build_requests(args: argparse.Namespace) -> list[SearchRequest]:
-    """Turn parsed arguments into the listings to crawl, in the order given.
+def build_targets(args: argparse.Namespace) -> tuple[list[SearchRequest], list[AuthorRequest]]:
+    """Turn parsed arguments into the listings and profiles to crawl, in the order given.
 
     :param args: parsed arguments.
-    :returns: one request per query, ``--cites`` id and ``--cluster`` id.
+    :returns: keyword/citation listings, and author profiles.
     :raises ValueError: when no entry point was given, or an id cannot be parsed.
     """
     shared = {
@@ -123,12 +135,95 @@ def build_requests(args: argparse.Namespace) -> list[SearchRequest]:
         "include_patents": not args.no_patents,
         "review_only": args.review_only,
     }
-    requests = [SearchRequest(query=query, **shared) for query in _collect_queries(args)]
-    requests += [SearchRequest(cites=parse_cluster_id(value), **shared) for value in args.cites]
-    requests += [SearchRequest(cluster=parse_cluster_id(value), **shared) for value in args.cluster]
-    if not requests:
-        raise ValueError("provide at least one --query, --queries-file, --cites or --cluster")
-    return requests
+    listings = [SearchRequest(query=query, **shared) for query in _collect_queries(args)]
+    listings += [SearchRequest(cites=parse_cluster_id(value), **shared) for value in args.cites]
+    listings += [SearchRequest(cluster=parse_cluster_id(value), **shared) for value in args.cluster]
+    authors = [
+        AuthorRequest(
+            user_id=parse_user_id(value), language=args.lang, sort_by_year=args.sort_by_date
+        )
+        for value in args.author
+    ]
+    if not listings and not authors:
+        raise ValueError(
+            "provide at least one --query, --queries-file, --cites, --cluster or --author"
+        )
+    return listings, authors
+
+
+def _report(page_start: int, parsed: int, new: int, total: str) -> None:
+    """Print one progress line for a fetched page.
+
+    :param page_start: result offset of the page.
+    :param parsed: records parsed from the page.
+    :param new: records that were not already stored.
+    :param total: result-count estimate rendered for display.
+    """
+    print(f"[page] offset={page_start} parsed={parsed} new={new} total={total}", flush=True)
+
+
+def _crawl_listing(
+    crawler: ScholarCrawler,
+    request: SearchRequest,
+    args: argparse.Namespace,
+    sink: ResultSink,
+    state: StateStore,
+) -> None:
+    """Crawl one keyword, citation or version listing into ``sink``.
+
+    :param crawler: the bound crawler.
+    :param request: the listing to page through.
+    :param args: parsed arguments supplying paging limits.
+    :param sink: JSONL writer for parsed records.
+    :param state: resume cursor store.
+    """
+    signature = request.signature()
+    start = state.next_start(signature, args.start) if args.resume else args.start
+    print(f"\n[query] {request.label!r} from offset {start}", flush=True)
+    for page in crawler.search(
+        request, max_pages=args.pages, start=start, max_results=args.max_results
+    ):
+        new = sum(1 for result in page.results if sink.write(result))
+        total = f"~{page.total_estimate}" if page.total_estimate else "unknown"
+        _report(page.start, len(page.results), new, total)
+        state.record(signature, page.start + len(page.results), exhausted=not page.has_next)
+
+
+def _crawl_author(
+    crawler: ScholarCrawler,
+    request: AuthorRequest,
+    args: argparse.Namespace,
+    sink: ResultSink,
+    state: StateStore,
+    profiles: ProfileStore,
+) -> None:
+    """Crawl one author profile into ``sink`` and its header into ``profiles``.
+
+    :param crawler: the bound crawler.
+    :param request: the profile to read.
+    :param args: parsed arguments supplying paging limits.
+    :param sink: JSONL writer for the publication records.
+    :param state: resume cursor store.
+    :param profiles: writer for the profile header record.
+    """
+    signature = request.signature()
+    start = state.next_start(signature, args.start) if args.resume else args.start
+    print(f"\n[author] {request.user_id} from publication {start}", flush=True)
+    latest: AuthorProfile | None = None
+    for batch in crawler.crawl_author(
+        request, max_pages=args.pages, cstart=start, max_results=args.max_results
+    ):
+        latest = batch.profile
+        profiles.write(batch.profile)
+        new = sum(1 for result in batch.results if sink.write(result))
+        _report(batch.cstart, len(batch.results), new, f"~{batch.profile.cited_by_total} citations")
+        state.record(signature, batch.cstart + len(batch.results), exhausted=not batch.has_more)
+    if latest is not None:
+        print(
+            f"[author] {latest.name or request.user_id}: {latest.cited_by_total} citations, "
+            f"h-index {latest.h_index} -> {profiles.path}",
+            flush=True,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -139,7 +234,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = build_parser().parse_args(argv)
     try:
-        requests = build_requests(args)
+        listings, authors = build_targets(args)
         pacing = Pacing(
             min_delay=args.min_delay,
             max_delay=args.max_delay,
@@ -155,6 +250,8 @@ def main(argv: list[str] | None = None) -> int:
     sink.open()
     state = StateStore(args.state)
     state.load()
+    profiles = ProfileStore(args.profiles_out)
+    profiles.load()
     options = BrowserOptions(
         user_data_dir=args.profile,
         headless=args.headless,
@@ -176,23 +273,10 @@ def main(argv: list[str] | None = None) -> int:
                 max_handoffs=args.max_handoffs,
                 dump_dir=args.dump_html,
             )
-            for request in requests:
-                signature = request.signature()
-                start = state.next_start(signature, args.start) if args.resume else args.start
-                print(f"\n[query] {request.label!r} from offset {start}", flush=True)
-                pages = crawler.search(
-                    request, max_pages=args.pages, start=start, max_results=args.max_results
-                )
-                for page_result in pages:
-                    new = sum(1 for result in page_result.results if sink.write(result))
-                    total = f"~{page_result.total_estimate}" if page_result.total_estimate else "unknown"
-                    print(
-                        f"[page] offset={page_result.start} parsed={len(page_result.results)} "
-                        f"new={new} total={total}",
-                        flush=True,
-                    )
-                    offset = page_result.start + len(page_result.results)
-                    state.record(signature, offset, exhausted=not page_result.has_next)
+            for listing in listings:
+                _crawl_listing(crawler, listing, args, sink, state)
+            for author in authors:
+                _crawl_author(crawler, author, args, sink, state, profiles)
     except KeyboardInterrupt:
         print("\n[stop] interrupted by user", flush=True)
         exit_code = 130
@@ -208,6 +292,8 @@ def main(argv: list[str] | None = None) -> int:
             f"[out] {sink.written} new records ({sink.skipped} duplicates skipped) -> {sink.path}",
             flush=True,
         )
+        if profiles.written:
+            print(f"[out] {profiles.written} profile updates -> {profiles.path}", flush=True)
     return exit_code
 
 

@@ -1,8 +1,11 @@
-"""A trimmed Google Scholar result page used by the parser tests.
+"""Trimmed Google Scholar pages used by the parser tests.
 
-The markup keeps the ``gs_*`` structure the parser relies on: two normal cards
-(one with a PDF side link), one citation-only card without a title link, the
-result-count banner and a next-page link.
+The result-page markup keeps the ``gs_*`` structure the parser relies on: two
+normal cards (one with a PDF side link), one citation-only card without a title
+link, the result-count banner and a next-page link. The profile markup mirrors a
+real profile header — an affiliation line with a linked organization, a
+verified-email line carrying the homepage link, the interest list — plus the
+summary table, publication rows and the "show more" button.
 """
 
 from __future__ import annotations
@@ -77,3 +80,66 @@ CONSENT_PAGE_HTML = """
 <html><body><h1>Before you continue to Google</h1>
 <button>I agree</button></body></html>
 """
+
+AUTHOR_PAGE_HTML = """
+<html><body>
+<div id="gsc_prf">
+  <div id="gsc_prf_i">
+    <div id="gsc_prf_in">Ada Lovelace</div>
+    <div class="gsc_prf_il">Professor of Analytical Engines,
+      <a class="gsc_prf_ila" href="/citations?view_op=view_org&amp;hl=en&amp;org=123">University of London</a>
+      , Analytical Society</div>
+    <div class="gsc_prf_il" id="gsc_prf_ivh">Verified email at example.edu -
+      <a class="gsc_prf_ila" href="https://example.edu/~ada" rel="nofollow">Homepage</a></div>
+    <div class="gsc_prf_il" id="gsc_prf_int">
+      <a class="gsc_prf_inta"
+         href="/citations?view_op=search_authors&amp;mauthors=label:computing">Computing</a>
+      <a class="gsc_prf_inta"
+         href="/citations?view_op=search_authors&amp;mauthors=label:mathematics">Mathematics</a>
+    </div>
+  </div>
+</div>
+<div id="gsc_rsb">
+ <table id="gsc_rsb_st"><thead><tr><th></th><th>All</th><th>Since 2021</th></tr></thead>
+ <tbody>
+  <tr><td class="gsc_rsb_sc1">Citations</td>
+      <td class="gsc_rsb_std">12,345</td><td class="gsc_rsb_std">4,321</td></tr>
+  <tr><td class="gsc_rsb_sc1">h-index</td><td class="gsc_rsb_std">57</td><td class="gsc_rsb_std">40</td></tr>
+  <tr><td class="gsc_rsb_sc1">i10-index</td>
+      <td class="gsc_rsb_std">120</td><td class="gsc_rsb_std">98</td></tr>
+ </tbody></table>
+</div>
+<table id="gsc_a_t"><tbody id="gsc_a_b">
+  <tr class="gsc_a_tr">
+    <td class="gsc_a_t">
+      <a href="/citations?view_op=view_citation&amp;hl=en&amp;user=AAAAAAAAAAAA&amp;\
+citation_for_view=AAAAAAAAAAAA:u5HHmVD_uO8C"
+         class="gsc_a_at">Notes on the Analytical Engine</a>
+      <div class="gs_gray">A Lovelace, C Babbage</div>
+      <div class="gs_gray">Scientific Memoirs 3, 666-731, 1843</div>
+    </td>
+    <td class="gsc_a_c">
+      <a href="/scholar?oi=bibs&amp;hl=en&amp;cites=111222333" class="gsc_a_ac gs_ibl">2,048</a></td>
+    <td class="gsc_a_y"><span class="gsc_a_h gsc_a_hc gs_ibl">1843</span></td>
+  </tr>
+  <tr class="gsc_a_tr">
+    <td class="gsc_a_t">
+      <a href="/citations?view_op=view_citation&amp;hl=en&amp;user=AAAAAAAAAAAA&amp;\
+citation_for_view=AAAAAAAAAAAA:2osOgNQ5qMEC"
+         class="gsc_a_at">An uncited draft</a>
+      <div class="gs_gray">A Lovelace</div>
+      <div class="gs_gray">Unpublished manuscript</div>
+    </td>
+    <td class="gsc_a_c"><a href="" class="gsc_a_ac gs_ibl gsc_a_acm"></a></td>
+    <td class="gsc_a_y"><span class="gsc_a_h gsc_a_hc gs_ibl"></span></td>
+  </tr>
+</tbody></table>
+<button id="gsc_bpf_more" type="button" onclick="void(0)"><span>Show more</span></button>
+</body></html>
+"""
+
+AUTHOR_LAST_PAGE_HTML = AUTHOR_PAGE_HTML.replace(
+    '<button id="gsc_bpf_more" type="button" onclick="void(0)">',
+    '<button id="gsc_bpf_more" type="button" disabled="">',
+)
+

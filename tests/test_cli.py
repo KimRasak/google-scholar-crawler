@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scholar_crawler.cli import build_parser, build_requests, main  # noqa: E402
+from scholar_crawler.cli import build_parser, build_targets, main  # noqa: E402
 
 
 def _args(argv: list[str]) -> object:
@@ -19,12 +19,13 @@ def _args(argv: list[str]) -> object:
 def test_queries_file_and_flags_are_combined(tmp_path: Path) -> None:
     listing = tmp_path / "queries.txt"
     listing.write_text("# comment\nfrom file\n\n  spaced  \n", encoding="utf-8")
-    requests = build_requests(_args(["-q", "flag one", "--queries-file", str(listing)]))  # type: ignore[arg-type]
+    requests, authors = build_targets(_args(["-q", "flag one", "--queries-file", str(listing)]))  # type: ignore[arg-type]
     assert [request.query for request in requests] == ["flag one", "from file", "spaced"]
+    assert authors == []
 
 
 def test_filters_apply_to_every_request() -> None:
-    requests = build_requests(  # type: ignore[arg-type]
+    requests, _authors = build_targets(  # type: ignore[arg-type]
         _args(["-q", "a", "-q", "b", "--year-from", "2020", "--no-patents", "--lang", "zh-CN"])
     )
     assert len(requests) == 2
@@ -35,7 +36,7 @@ def test_filters_apply_to_every_request() -> None:
 
 
 def test_cites_and_cluster_accept_urls_from_collected_records() -> None:
-    requests = build_requests(  # type: ignore[arg-type]
+    requests, _authors = build_targets(  # type: ignore[arg-type]
         _args(
             [
                 "--cites",
@@ -50,12 +51,38 @@ def test_cites_and_cluster_accept_urls_from_collected_records() -> None:
 
 def test_no_entry_point_is_rejected() -> None:
     with pytest.raises(ValueError, match="provide at least one"):
-        build_requests(_args([]))  # type: ignore[arg-type]
+        build_targets(_args([]))  # type: ignore[arg-type]
 
 
 def test_unparsable_cites_value_is_rejected() -> None:
     with pytest.raises(ValueError, match="no Scholar cites/cluster id"):
-        build_requests(_args(["--cites", "not-an-id"]))  # type: ignore[arg-type]
+        build_targets(_args(["--cites", "not-an-id"]))  # type: ignore[arg-type]
+
+
+def test_author_profiles_are_separate_targets() -> None:
+    listings, authors = build_targets(  # type: ignore[arg-type]
+        _args(
+            [
+                "-q",
+                "keyword",
+                "--author",
+                "https://scholar.google.com/citations?user=AAAAAAAAAAAA&hl=en",
+                "--author",
+                "BBBBBBBBBBBB",
+                "--sort-by-date",
+                "--lang",
+                "de",
+            ]
+        )
+    )
+    assert [listing.query for listing in listings] == ["keyword"]
+    assert [author.user_id for author in authors] == ["AAAAAAAAAAAA", "BBBBBBBBBBBB"]
+    assert all(author.sort_by_year and author.language == "de" for author in authors)
+
+
+def test_unparsable_author_value_is_rejected() -> None:
+    with pytest.raises(ValueError, match="no Scholar profile id"):
+        build_targets(_args(["--author", "Ada Lovelace"]))  # type: ignore[arg-type]
 
 
 def test_main_reports_usage_errors_without_touching_the_browser(capsys: pytest.CaptureFixture[str]) -> None:

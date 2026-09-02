@@ -15,9 +15,9 @@ from playwright.sync_api import Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
 from .challenge import RESULTS_SELECTOR, HumanHandoff, detect_challenge
-from .models import PageResult, SearchRequest
-from .parser import parse_result_page
-from .urls import RESULTS_PER_PAGE, search_url
+from .models import AuthorPage, AuthorRequest, PageResult, SearchRequest
+from .parser import parse_author_page, parse_result_page
+from .urls import AUTHOR_PAGE_SIZE, RESULTS_PER_PAGE, author_url, search_url
 
 
 @dataclass(slots=True)
@@ -113,33 +113,31 @@ class ScholarCrawler:
 
         :param request: the listing being paginated.
         :param start: result offset to load.
-        :returns: the parsed page.
+        :returns: the parsed page; empty with no successor when the listing has no hits.
         :raises RuntimeError: when the handoff budget is exhausted or the page never loads.
         """
-        url = search_url(request, start=start, host=self._host)
-        for attempt in range(1, 4):
-            if not self._goto(url, attempt):
-                continue
-            challenge = detect_challenge(self._page)
-            if challenge is not None:
-                self._dump(f"challenge-{challenge.kind.value}-{start}")
-                self.handoff_count += 1
-                if self.handoff_count > self._max_handoffs:
-                    raise RuntimeError(
-                        f"stopping after {self._max_handoffs} human takeovers; "
-                        "increase --max-handoffs or slow the crawl down with --min-delay/--max-delay"
-                    )
-                self._handoff.resolve(self._page, challenge)
-                self._pacing.after_handoff()
-                continue
-            if self._page.locator(RESULTS_SELECTOR).count() == 0:
-                # Zero-hit listing, or a layout the selectors miss; both are terminal.
-                self._dump(f"empty-{start}")
-                return PageResult(start=start, results=[], total_estimate=0, has_next=False)
-            self._humanize()
-            self._dump(f"page-{start}")
-            return parse_result_page(self._page.content(), query=request.label, start=start)
-        raise RuntimeError(f"could not obtain a result page for offset {start} of {request.label!r}")
+        html = self._load(search_url(request, start=start, host=self._host), str(start))
+        if html is None:
+            return PageResult(start=start, results=[], total_estimate=0, has_next=False)
+        return parse_result_page(html, query=request.label, start=start)
+
+    def fetch_author_page(self, request: AuthorRequest, cstart: int) -> AuthorPage:
+        """Load one batch of an author profile, handing over to a human on a challenge.
+
+        :param request: the profile to read.
+        :param cstart: publication offset to load.
+        :returns: the parsed profile batch.
+        :raises RuntimeError: when the profile carries no recognizable header or table,
+            the handoff budget is exhausted, or the page never loads.
+        """
+        url = author_url(request, cstart=cstart, host=self._host, page_size=AUTHOR_PAGE_SIZE)
+        html = self._load(url, f"author-{cstart}")
+        if html is None:
+            raise RuntimeError(
+                f"no profile header or publication table at {url}; "
+                "check the profile id, or inspect the page with --dump-html"
+            )
+        return parse_author_page(html, user_id=request.user_id, cstart=cstart)
 
     def search(
         self,
@@ -171,6 +169,69 @@ class ScholarCrawler:
             if not page_result.results or not page_result.has_next:
                 return
             offset += RESULTS_PER_PAGE
+
+    def crawl_author(
+        self,
+        request: AuthorRequest,
+        *,
+        max_pages: int = 3,
+        cstart: int = 0,
+        max_results: int | None = None,
+    ) -> Iterator[AuthorPage]:
+        """Yield an author's publications in batches of :data:`AUTHOR_PAGE_SIZE`.
+
+        :param request: the profile to read.
+        :param max_pages: maximum number of batches to request in this run.
+        :param cstart: first publication offset, used for resuming.
+        :param max_results: stop once this many publications have been yielded; the last
+            batch is truncated to land exactly on the limit. None means no cap.
+        :returns: iterator of profile batches in profile order.
+        """
+        offset = cstart
+        collected = 0
+        for batch_index in range(max_pages):
+            self._pacing.sleep_before_request(batch_index)
+            batch = self.fetch_author_page(request, offset)
+            if max_results is not None and collected + len(batch.results) >= max_results:
+                batch.results = batch.results[: max_results - collected]
+                batch.has_more = False
+            collected += len(batch.results)
+            yield batch
+            if not batch.results or not batch.has_more:
+                return
+            offset += AUTHOR_PAGE_SIZE
+
+    def _load(self, url: str, tag: str) -> str | None:
+        """Navigate to ``url`` and return its HTML once no challenge stands in the way.
+
+        :param url: absolute Scholar URL.
+        :param tag: short label used in dump filenames.
+        :returns: page HTML, or None when the page carries no Scholar content.
+        :raises RuntimeError: when the handoff budget is exhausted or navigation keeps failing.
+        """
+        for attempt in range(1, 4):
+            if not self._goto(url, attempt):
+                continue
+            challenge = detect_challenge(self._page)
+            if challenge is not None:
+                self._dump(f"challenge-{challenge.kind.value}-{tag}")
+                self.handoff_count += 1
+                if self.handoff_count > self._max_handoffs:
+                    raise RuntimeError(
+                        f"stopping after {self._max_handoffs} human takeovers; "
+                        "increase --max-handoffs or slow the crawl down with --min-delay/--max-delay"
+                    )
+                self._handoff.resolve(self._page, challenge)
+                self._pacing.after_handoff()
+                continue
+            if self._page.locator(RESULTS_SELECTOR).count() == 0:
+                # Zero-hit listing, or a layout the selectors miss; both are terminal.
+                self._dump(f"empty-{tag}")
+                return None
+            self._humanize()
+            self._dump(f"page-{tag}")
+            return self._page.content()
+        raise RuntimeError(f"could not obtain {url} after three attempts")
 
     def _goto(self, url: str, attempt: int) -> bool:
         """Navigate to ``url``, retrying transient navigation failures.

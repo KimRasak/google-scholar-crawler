@@ -13,8 +13,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scholar_crawler import crawler as crawler_module  # noqa: E402
 from scholar_crawler.challenge import Challenge, ChallengeKind, HumanHandoff  # noqa: E402
 from scholar_crawler.crawler import Pacing, ScholarCrawler  # noqa: E402
-from scholar_crawler.models import SearchRequest  # noqa: E402
-from tests.fixtures import CAPTCHA_PAGE_HTML, EMPTY_PAGE_HTML, RESULT_PAGE_HTML  # noqa: E402
+from scholar_crawler.models import AuthorRequest, SearchRequest  # noqa: E402
+from scholar_crawler.urls import AUTHOR_PAGE_SIZE  # noqa: E402
+from tests.fixtures import (  # noqa: E402
+    AUTHOR_LAST_PAGE_HTML,
+    AUTHOR_PAGE_HTML,
+    CAPTCHA_PAGE_HTML,
+    EMPTY_PAGE_HTML,
+    RESULT_PAGE_HTML,
+)
 
 CAPTCHA = Challenge(ChallengeKind.CAPTCHA, "https://scholar.google.com/sorry/index", "test")
 NO_DELAY = Pacing(min_delay=0.0, max_delay=0.0, cooldown_every=0, nav_timeout=5.0)
@@ -58,7 +65,8 @@ class _FakeLocator:
         self._html = html
 
     def count(self) -> int:
-        return self._html.count('class="gs_r gs_or gs_scl"')
+        markers = ('class="gs_r gs_or gs_scl"', 'class="gs_med"', 'id="gsc_a_b"', 'id="gsc_prf_in"')
+        return sum(self._html.count(marker) for marker in markers)
 
 
 @pytest.fixture(autouse=True)
@@ -87,7 +95,8 @@ def test_zero_hit_query_returns_one_empty_page(monkeypatch: pytest.MonkeyPatch) 
     pages = list(_crawler(page).search(SearchRequest(query="zzzqqq"), max_pages=3))
     assert len(pages) == 1
     assert pages[0].results == []
-    assert pages[0].total_estimate == 0
+    assert pages[0].total_estimate is None
+    assert pages[0].has_next is False
 
 
 def test_challenge_hands_over_then_refetches(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -172,3 +181,30 @@ def test_dump_html_writes_pages_and_challenges(tmp_path: Path, monkeypatch: pyte
     crawler.fetch_page(SearchRequest(query="t"), 0)
     names = sorted(path.name.split("-", 1)[1] for path in (tmp_path / "dump").iterdir())
     assert names == ["challenge-captcha-0.html", "page-0.html"]
+
+
+def test_author_batches_advance_by_page_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: None)
+    page = _FakePage(iter([AUTHOR_PAGE_HTML, AUTHOR_LAST_PAGE_HTML]))
+    batches = list(_crawler(page).crawl_author(AuthorRequest(user_id="AAAAAAAAAAAA"), max_pages=5))
+    assert [batch.cstart for batch in batches] == [0, AUTHOR_PAGE_SIZE]
+    assert [len(batch.results) for batch in batches] == [2, 2]
+    assert batches[0].profile.name == "Ada Lovelace"
+    assert f"cstart={AUTHOR_PAGE_SIZE}" in page.visited[1]
+
+
+def test_author_max_results_truncates_the_last_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: None)
+    page = _FakePage(iter([AUTHOR_PAGE_HTML, AUTHOR_PAGE_HTML]))
+    batches = list(
+        _crawler(page).crawl_author(AuthorRequest(user_id="AAAAAAAAAAAA"), max_pages=5, max_results=3)
+    )
+    assert [len(batch.results) for batch in batches] == [2, 1]
+    assert batches[-1].has_more is False
+
+
+def test_unknown_profile_layout_fails_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: None)
+    page = _FakePage(iter(["<html><body>nothing here</body></html>"]))
+    with pytest.raises(RuntimeError, match="no profile header or publication table"):
+        _crawler(page).fetch_author_page(AuthorRequest(user_id="AAAAAAAAAAAA"), 0)

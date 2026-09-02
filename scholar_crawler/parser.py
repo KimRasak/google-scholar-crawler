@@ -1,8 +1,9 @@
-"""HTML parsing of Google Scholar result pages.
+"""HTML parsing of Google Scholar result pages and author profiles.
 
-Selectors follow the ``gs_*`` class names Scholar has used for years. Counts are
-read from link hrefs (``cites=``, ``cluster=``, ``related:``) rather than from
-link text, so parsing does not depend on the interface language.
+Selectors follow the ``gs_*`` and ``gsc_*`` class names Scholar has used for years.
+Counts are read from link hrefs (``cites=``, ``cluster=``, ``related:``) and from
+fixed table positions rather than from label text, so parsing does not depend on
+the interface language.
 """
 
 from __future__ import annotations
@@ -10,9 +11,9 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
 
-from .models import PageResult, ScholarResult
+from .models import AuthorPage, AuthorProfile, PageResult, ScholarResult
 from .urls import absolute
 
 _INT_RE = re.compile(r"\d[\d,\.\s\u00a0]*")
@@ -20,6 +21,7 @@ _YEAR_RE = re.compile(r"\b(1[89]\d{2}|20\d{2})\b")
 _START_RE = re.compile(r"[?&]start=(\d+)")
 _TAG_PREFIX_RE = re.compile(r"^\s*\[[^\]]{1,12}\]\s*")
 _WS_RE = re.compile(r"\s+")
+_SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,;.])")
 
 
 def _text(node: Tag | None) -> str:
@@ -28,11 +30,16 @@ def _text(node: Tag | None) -> str:
     Child elements are concatenated without an added separator, matching how a
     browser renders inline markup: Scholar bolds query terms mid-word
     (``multi-<b>agents</b>``), and inserting separators would break those words.
+    Whitespace left in front of ``,;.`` by line-wrapped markup is dropped, so a
+    linked organization inside an affiliation reads ``University of X, Mila``.
 
     :param node: element to read, or None.
     :returns: normalized text; empty when ``node`` is None.
     """
-    return _WS_RE.sub(" ", node.get_text("")).strip() if node is not None else ""
+    if node is None:
+        return ""
+    collapsed = _WS_RE.sub(" ", node.get_text(""))
+    return _SPACE_BEFORE_PUNCT_RE.sub(r"\1", collapsed).strip()
 
 
 def _first_int(text: str | None) -> int | None:
@@ -179,3 +186,128 @@ def parse_result_page(html: str, *, query: str = "", start: int = 0) -> PageResu
         if (match := _START_RE.search(anchor.get("href") or ""))
     )
     return PageResult(start=start, results=results, total_estimate=total_estimate, has_next=has_next)
+
+
+def _profile_stats(soup: BeautifulSoup) -> list[tuple[int | None, int | None]]:
+    """Read the ``#gsc_rsb_st`` summary table as (all-time, recent) pairs.
+
+    Rows are Citations, h-index and i10-index in that fixed order; the language of
+    the labels is irrelevant.
+
+    :param soup: parsed profile page.
+    :returns: one pair per data row, missing cells as None.
+    """
+    pairs: list[tuple[int | None, int | None]] = []
+    for row in soup.select("#gsc_rsb_st tbody tr"):
+        cells = [_first_int(_text(cell)) for cell in row.select("td.gsc_rsb_std")]
+        pairs.append((cells[0] if cells else None, cells[1] if len(cells) > 1 else None))
+    return pairs
+
+
+def _profile_header(soup: BeautifulSoup, user_id: str, fetched_at: str) -> AuthorProfile:
+    """Read identity and citation summary from a profile page header.
+
+    The header holds three unlabelled ``div.gsc_prf_il`` lines: the affiliation
+    (which may link an organization), the verified-email line (which may link the
+    author's homepage) and the interest list. They are told apart by their ids and
+    position, not by text, so the interface language does not matter.
+
+    :param soup: parsed profile page.
+    :param user_id: profile id, recorded on the result.
+    :param fetched_at: ISO timestamp recorded on the result.
+    :returns: the profile record; unavailable fields are None or empty.
+    """
+    affiliation_line = next(
+        (line for line in soup.select("div.gsc_prf_il") if not line.get("id")), None
+    )
+    organization = affiliation_line.select_one("a.gsc_prf_ila") if affiliation_line else None
+    email_line = soup.select_one("#gsc_prf_ivh")
+    homepage = None
+    verified_email = None
+    if email_line is not None:
+        homepage = next(
+            (
+                anchor.get("href")
+                for anchor in email_line.select("a[href]")
+                if str(anchor.get("href")).startswith(("http://", "https://"))
+                and "scholar.google." not in str(anchor.get("href"))
+            ),
+            None,
+        )
+        direct = "".join(str(child) for child in email_line.children if isinstance(child, NavigableString))
+        verified_email = _WS_RE.sub(" ", direct).strip(" -\u2013\t\n") or None
+    stats = _profile_stats(soup)
+    citations, h_index, i10_index = (stats + [(None, None)] * 3)[:3]
+    return AuthorProfile(
+        user_id=user_id,
+        name=_text(soup.select_one("#gsc_prf_in")),
+        affiliation=_text(affiliation_line) or None,
+        organization=_text(organization) or None,
+        homepage=homepage,
+        verified_email=verified_email,
+        interests=[_text(link) for link in soup.select("#gsc_prf_int a")],
+        cited_by_total=citations[0],
+        cited_by_recent=citations[1],
+        h_index=h_index[0],
+        h_index_recent=h_index[1],
+        i10_index=i10_index[0],
+        i10_index_recent=i10_index[1],
+        fetched_at=fetched_at,
+    )
+
+
+def parse_author_page(html: str, *, user_id: str, cstart: int = 0) -> AuthorPage:
+    """Parse one batch of an author profile into a profile record and publications.
+
+    :param html: full profile-page HTML.
+    :param user_id: profile id, recorded on every produced record.
+    :param cstart: publication offset of this batch, used for positions and provenance.
+    :returns: the profile header, its publications, and whether more remain.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    profile = _profile_header(soup, user_id, fetched_at)
+    results: list[ScholarResult] = []
+
+    for index, row in enumerate(soup.select("tr.gsc_a_tr")):
+        title_link = row.select_one("a.gsc_a_at")
+        if title_link is None:
+            continue
+        grays = row.select("div.gs_gray")
+        authors = _text(grays[0]) if grays else None
+        venue = _text(grays[1]) if len(grays) > 1 else None
+        cites_link = row.select_one("a.gsc_a_ac")
+        cited_count = None
+        if cites_link is not None:
+            cited_count = _first_int(_text(cites_link)) or 0
+        href = title_link.get("href") or ""
+        citation_id = href.split("citation_for_view=")[-1] if "citation_for_view=" in href else None
+        results.append(
+            ScholarResult(
+                cluster_id=None,
+                position=cstart + index + 1,
+                title=_text(title_link),
+                link=absolute(href),
+                resource_link=None,
+                resource_type=None,
+                byline=" - ".join(part for part in (authors, venue) if part),
+                authors=authors,
+                venue=venue,
+                year=_first_int(_text(row.select_one("span.gsc_a_h"))),
+                snippet="",
+                cited_by_count=cited_count,
+                cited_by_url=absolute(cites_link.get("href")) if cites_link else None,
+                versions_count=None,
+                versions_url=None,
+                related_url=None,
+                citation_only=False,
+                query=f"author:{user_id}",
+                page_start=cstart,
+                fetched_at=fetched_at,
+                extra={"citation_id": citation_id},
+            )
+        )
+
+    more_button = soup.select_one("#gsc_bpf_more")
+    has_more = more_button is not None and not more_button.has_attr("disabled")
+    return AuthorPage(cstart=cstart, profile=profile, results=results, has_more=has_more)
