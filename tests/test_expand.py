@@ -12,9 +12,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import json  # noqa: E402
 from collections.abc import Iterator  # noqa: E402
 
-from scholar_crawler.cli import _follow_citations, build_parser, filter_template  # noqa: E402
+from scholar_crawler.cli import _limits_of, build_parser, filter_template  # noqa: E402
 from scholar_crawler.expand import FollowPolicy, next_level  # noqa: E402
 from scholar_crawler.models import PageResult, ScholarResult, SearchRequest  # noqa: E402
+from scholar_crawler.run import follow_citations  # noqa: E402
 from scholar_crawler.storage import ResultSink, StateStore  # noqa: E402
 
 TEMPLATE = SearchRequest(cites="0", year_low=2020, language="de", review_only=True)
@@ -186,11 +187,12 @@ def test_levels_expand_outward_until_nothing_is_left(tmp_path: Path) -> None:
     sink = ResultSink(args.out)
     sink.open()
     state = StateStore(args.state)
-    _follow_citations(
+    follow_citations(
         crawler,  # type: ignore[arg-type]
         [seed],
-        args,
+        _limits_of(args),
         FollowPolicy(depth=args.follow_cites, breadth=args.follow_breadth),
+        filter_template(args),
         sink,
         state,
         None,
@@ -214,11 +216,12 @@ def test_a_disabled_policy_requests_nothing(tmp_path: Path) -> None:
         ["-q", "seed", "-o", str(tmp_path / "out.jsonl"), "--state", str(tmp_path / "state.json")]
     )
     crawler = _StubCrawler({})
-    _follow_citations(
+    follow_citations(
         crawler,  # type: ignore[arg-type]
         [_record("seed", 10, "111")],
-        args,
+        _limits_of(args),
         FollowPolicy(depth=0),
+        filter_template(args),
         ResultSink(args.out),
         StateStore(args.state),
         None,

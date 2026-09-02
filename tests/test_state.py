@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from collections.abc import Iterator  # noqa: E402
 
-from scholar_crawler.cli import _crawl_listing, build_parser, main  # noqa: E402
+from scholar_crawler.cli import _limits_of, build_parser, main  # noqa: E402
 from scholar_crawler.models import (  # noqa: E402
     AuthorRequest,
     PageResult,
@@ -20,6 +20,7 @@ from scholar_crawler.models import (  # noqa: E402
     SearchRequest,
     describe_signature,
 )
+from scholar_crawler.run import crawl_listing  # noqa: E402
 from scholar_crawler.storage import ResultSink, StateEntry, StateStore  # noqa: E402
 
 
@@ -180,7 +181,8 @@ def _run_capped_listing(tmp_path: Path) -> StateStore:
     sink = ResultSink(tmp_path / "out.jsonl")
     sink.open()
     state = StateStore(tmp_path / "state.json")
-    _crawl_listing(_CappedCrawler(), SearchRequest(query="capped"), args, sink, state, None)  # type: ignore[arg-type]
+    limits = _limits_of(args)
+    crawl_listing(_CappedCrawler(), SearchRequest(query="capped"), limits, sink, state, None)  # type: ignore[arg-type]
     sink.close()
     return state
 

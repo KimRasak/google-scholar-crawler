@@ -84,9 +84,12 @@ class RunPlan:
         if self.bibtex_loads:
             lines.append(f"bibtex export: up to {self.bibtex_loads} page loads")
         lines.append(f"total: up to {self.total_loads} page loads for {self.total_records} records")
-        duration = (
-            f"{self.seconds / 3600:.1f} h" if self.seconds >= 5400 else f"{self.seconds / 60:.0f} min"
-        )
+        if self.seconds >= 5400:
+            duration = f"{self.seconds / 3600:.1f} h"
+        elif self.seconds >= 90:
+            duration = f"{self.seconds / 60:.0f} min"
+        else:
+            duration = f"{self.seconds:.0f}s"
         detail = f"{self.pacing.min_delay:.0f}-{self.pacing.max_delay:.0f}s between requests"
         if self.cooldowns:
             detail += f" plus {self.cooldowns} cooldowns of {self.pacing.cooldown_seconds:.0f}s"

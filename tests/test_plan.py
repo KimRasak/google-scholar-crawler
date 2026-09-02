@@ -9,11 +9,16 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scholar_crawler import crawler as crawler_module  # noqa: E402
+from scholar_crawler.challenge import HumanHandoff  # noqa: E402
 from scholar_crawler.cli import main  # noqa: E402
-from scholar_crawler.crawler import Pacing  # noqa: E402
+from scholar_crawler.crawler import Pacing, ScholarCrawler  # noqa: E402
 from scholar_crawler.expand import FollowPolicy  # noqa: E402
 from scholar_crawler.models import AuthorRequest, SearchRequest  # noqa: E402
 from scholar_crawler.plan import LOAD_SECONDS, pages_needed, plan_run  # noqa: E402
+from scholar_crawler.urls import RESULTS_PER_PAGE  # noqa: E402
+from tests.fixtures import result_page_html  # noqa: E402
+from tests.test_crawler import NO_DELAY, _FakePage  # noqa: E402
 
 HOST = "https://scholar.google.com"
 NO_FOLLOW = FollowPolicy()
@@ -140,3 +145,46 @@ def test_dry_run_prints_a_plan_and_writes_nothing(
 def test_dry_run_still_rejects_a_missing_target(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--dry-run"]) == 1
     assert "provide at least one" in capsys.readouterr().err
+
+
+def _loads_actually_made(
+    monkeypatch: pytest.MonkeyPatch, *, pages: int, max_results: int | None, cards: int
+) -> int:
+    """Run the real crawl loop over canned pages and count the navigations it makes.
+
+    :param monkeypatch: used to silence pacing and challenge detection.
+    :param pages: page budget for the listing.
+    :param max_results: record cap, or None.
+    :param cards: result cards each canned page carries.
+    :returns: how many page loads the crawler performed.
+    """
+    monkeypatch.setattr(crawler_module, "detect_challenge", lambda _page: None)
+    monkeypatch.setattr(crawler_module.time, "sleep", lambda _seconds: None)
+    served = [result_page_html(cards, next_start=(index + 1) * cards) for index in range(pages + 2)]
+    page = _FakePage(iter(served))
+    crawler = ScholarCrawler(page, HumanHandoff(timeout=1.0), NO_DELAY)  # type: ignore[arg-type]
+    for _batch in crawler.search(
+        SearchRequest(query="x"), max_pages=pages, start=0, max_results=max_results
+    ):
+        pass
+    return len(page.visited)
+
+
+def test_the_plan_matches_the_loads_the_crawl_loop_really_makes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The estimate is arithmetic, the crawl is a loop; without this they can drift apart.
+    for pages, max_results in ((1, None), (3, None), (3, 25), (3, 15), (3, 4)):
+        plan = _plan([SearchRequest(query="x")], pages=pages, max_results=max_results)
+        actual = _loads_actually_made(
+            monkeypatch, pages=pages, max_results=max_results, cards=RESULTS_PER_PAGE
+        )
+        assert plan.seed_loads == actual, f"pages={pages} max_results={max_results}"
+
+
+def test_short_plans_report_seconds_not_zero_minutes() -> None:
+    # "0 min" is what rounding a 24-second plan used to produce.
+    short = _plan([SearchRequest(query="x")], pages=3, max_results=25)
+    assert any(line.startswith("estimated 24s at") for line in short.render())
+    long = _plan([SearchRequest(query="x")], pages=40)
+    assert any("min at" in line for line in long.render())

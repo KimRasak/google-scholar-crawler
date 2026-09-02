@@ -316,7 +316,7 @@ scholar-crawler --rehearse-handoff
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 173 个用例，全部离线
+python3 -m pytest -q     # 175 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -329,6 +329,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **引文网络**：按被引排序选点、宽度上限、访问去重、被引下限、层级推进与提前收敛
 - **输出与断点**：JSONL 去重、CSV 导出、作者档案 upsert、`.bib` 去重、断点查看与清除（签名还原、时间戳、旧格式）、被 `-n` 截断的目标仍可续抓
 - **离线工具**：汇总的合并取舍/过滤/统计、分组统计与 venue 归一化、书目生成（转写与姓氏、截断作者列表、key 复用与撞车、条目类型、转义与双花括号）
+- **计划与实际一致**：把 `--dry-run` 算出的加载次数与真实抓取循环在同一组参数下实际发出的次数逐一比对（含 `-n` 截断的三种情况）
 - **命令行**：参数校验、`--dry-run` 的计划数字且不落地文件、`--self-check`、BibTeX 链接发现（按 href 而非文案）与 `<pre>` 提取、`--quiet` 的组合校验
 
 ## 合规
@@ -344,11 +345,13 @@ scholar_crawler/
   challenge.py  验证页判定 + 人工接管等待
   browser.py    持久化 profile 的浏览器会话
   crawler.py    抓取循环：节奏、接管、翻页/分批、BibTeX 取用、HTML dump
+  run.py        一次运行的执行：目标抓取、图展开、输出文件开关与汇报
   expand.py     引文网络展开：选点、上限、去重
   plan.py       抓取计划：页数/加载数/用时估算
   selfcheck.py  解析自检：逐字段体检与报告
   rehearsal.py  接管演练：本地验证页与全链路空演
-  digest.py     离线汇总：合并去重、过滤、统计、导出
+  digest.py     离线汇总：合并去重、过滤、命令行
+  analysis.py   离线分析：概览统计与分组
   bibsynth.py   离线书目：由已存字段拼出 BibTeX
   storage.py    JSONL/CSV 写入、作者主页记录、BibTeX 文件、断点状态
   cli.py        命令行入口

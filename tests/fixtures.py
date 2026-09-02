@@ -176,3 +176,39 @@ BIBTEX_EXPORT_HTML = """
 }
 </pre></body></html>
 """
+
+
+def result_page_html(cards: int, *, next_start: int | None = 10) -> str:
+    """Build a result page carrying an exact number of cards.
+
+    Page-budget arithmetic depends on how many records a page holds, so tests that compare
+    an estimate with the crawl loop need a page as full as Scholar's.
+
+    :param cards: how many result cards the page carries.
+    :param next_start: offset the next-page link points at; None omits the link.
+    :returns: the page HTML.
+    """
+    body = "".join(
+        f"""
+  <div class="gs_r gs_or gs_scl" data-cid="ID{index}">
+    <div class="gs_ri">
+      <h3 class="gs_rt"><a href="https://example.org/{index}">Paper {index}</a></h3>
+      <div class="gs_a">A Author, B Author - A Journal, 2020 - example.org</div>
+      <div class="gs_rs">A snippet.</div>
+      <div class="gs_fl gs_flb"><a href="/scholar?cites=100{index}">Cited by 5</a></div>
+    </div>
+  </div>
+"""
+        for index in range(cards)
+    )
+    nav = (
+        '<div id="gs_n"><center><table><tr><td align="left">'
+        f'<a href="/scholar?start={next_start}&amp;q=x"><b>Next</b></a>'
+        "</td></tr></table></center></div>"
+        if next_start is not None
+        else ""
+    )
+    return (
+        '<html><body><div id="gs_ab"><div class="gs_ab_mdw">About 1,240 results (0.06 sec)</div></div>'
+        f'<div id="gs_res_ccl_mid">{body}</div>{nav}</body></html>'
+    )

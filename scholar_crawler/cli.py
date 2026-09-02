@@ -9,13 +9,13 @@ from pathlib import Path
 from .browser import BrowserOptions, browser_session
 from .challenge import ChallengeUnattended, HumanHandoff
 from .crawler import Pacing, ScholarCrawler
-from .expand import FollowPolicy, next_level
-from .models import AuthorProfile, AuthorRequest, ScholarResult, SearchRequest
-from .parser import bibtex_key
-from .plan import plan_run
+from .expand import FollowPolicy
+from .models import AuthorRequest, SearchRequest
+from .plan import RunPlan, plan_run
 from .rehearsal import rehearse
+from .run import CrawlLimits, Outputs, crawl_targets
 from .selfcheck import check_page, report
-from .storage import BibtexSink, ProfileStore, ResultSink, StateStore
+from .storage import StateStore
 from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
 
 
@@ -239,163 +239,6 @@ def filter_template(args: argparse.Namespace) -> SearchRequest:
     )
 
 
-def _report(page_start: int, parsed: int, new: int, total: str) -> None:
-    """Print one progress line for a fetched page.
-
-    :param page_start: result offset of the page.
-    :param parsed: records parsed from the page.
-    :param new: records that were not already stored.
-    :param total: result-count estimate rendered for display.
-    """
-    print(f"[page] offset={page_start} parsed={parsed} new={new} total={total}", flush=True)
-
-
-def _crawl_listing(
-    crawler: ScholarCrawler,
-    request: SearchRequest,
-    args: argparse.Namespace,
-    sink: ResultSink,
-    state: StateStore,
-    bibtex: BibtexSink | None = None,
-    depth: int = 0,
-) -> list[ScholarResult]:
-    """Crawl one keyword, citation or version listing into ``sink``.
-
-    :param crawler: the bound crawler.
-    :param request: the listing to page through.
-    :param args: parsed arguments supplying paging limits.
-    :param sink: JSONL writer for parsed records.
-    :param state: resume cursor store.
-    :param bibtex: when set, each record's BibTeX entry is exported as well.
-    :param depth: citation-graph level this listing came from, recorded on every record.
-    :returns: every record parsed from this listing, for the next expansion level.
-    """
-    signature = request.signature()
-    start = state.next_start(signature, args.start) if args.resume else args.start
-    label = f"[query] {request.label!r} from offset {start}"
-    print(f"\n{label}" + (f" (level {depth})" if depth else ""), flush=True)
-    collected: list[ScholarResult] = []
-    for page in crawler.search(
-        request, max_pages=args.pages, start=start, max_results=args.max_results
-    ):
-        for result in page.results:
-            result.extra["follow_depth"] = depth
-        if bibtex is not None:
-            _export_bibtex(crawler, page.results, args, bibtex)
-        new = sum(1 for result in page.results if sink.write(result))
-        total = f"~{page.total_estimate}" if page.total_estimate else "unknown"
-        _report(page.start, len(page.results), new, total)
-        finished = not page.has_next and not page.truncated
-        state.record(signature, page.start + len(page.results), exhausted=finished)
-        collected += page.results
-    return collected
-
-
-def _export_bibtex(
-    crawler: ScholarCrawler,
-    results: list[ScholarResult],
-    args: argparse.Namespace,
-    bibtex: BibtexSink,
-) -> None:
-    """Fetch and store the BibTeX entry of every result that has a cluster id.
-
-    The citation key is recorded on the record as ``extra.bibtex_key`` so the JSONL and
-    the ``.bib`` file can be joined.
-
-    :param crawler: the bound crawler.
-    :param results: records of one page, updated in place.
-    :param args: parsed arguments supplying the interface language.
-    :param bibtex: the ``.bib`` writer.
-    """
-    for result in results:
-        entry = crawler.fetch_bibtex(result, language=args.lang)
-        if entry is None:
-            continue
-        bibtex.write(entry)
-        result.extra["bibtex_key"] = bibtex_key(entry)
-
-
-def _crawl_author(
-    crawler: ScholarCrawler,
-    request: AuthorRequest,
-    args: argparse.Namespace,
-    sink: ResultSink,
-    state: StateStore,
-    profiles: ProfileStore,
-    bibtex: BibtexSink | None = None,
-) -> list[ScholarResult]:
-    """Crawl one author profile into ``sink`` and its header into ``profiles``.
-
-    :param crawler: the bound crawler.
-    :param request: the profile to read.
-    :param args: parsed arguments supplying paging limits.
-    :param sink: JSONL writer for the publication records.
-    :param state: resume cursor store.
-    :param profiles: writer for the profile header record.
-    :param bibtex: when set, each publication's BibTeX entry is exported as well.
-    :returns: every publication record parsed, for the next expansion level.
-    """
-    signature = request.signature()
-    start = state.next_start(signature, args.start) if args.resume else args.start
-    print(f"\n[author] {request.user_id} from publication {start}", flush=True)
-    latest: AuthorProfile | None = None
-    collected: list[ScholarResult] = []
-    for batch in crawler.crawl_author(
-        request, max_pages=args.pages, cstart=start, max_results=args.max_results
-    ):
-        latest = batch.profile
-        collected += batch.results
-        profiles.write(batch.profile)
-        if bibtex is not None:
-            _export_bibtex(crawler, batch.results, args, bibtex)
-        new = sum(1 for result in batch.results if sink.write(result))
-        _report(batch.cstart, len(batch.results), new, f"~{batch.profile.cited_by_total} citations")
-        finished = not batch.has_more and not batch.truncated
-        state.record(signature, batch.cstart + len(batch.results), exhausted=finished)
-    if latest is not None:
-        print(
-            f"[author] {latest.name or request.user_id}: {latest.cited_by_total} citations, "
-            f"h-index {latest.h_index} -> {profiles.path}",
-            flush=True,
-        )
-    return collected
-
-
-def _follow_citations(
-    crawler: ScholarCrawler,
-    seeds: list[ScholarResult],
-    args: argparse.Namespace,
-    policy: FollowPolicy,
-    sink: ResultSink,
-    state: StateStore,
-    bibtex: BibtexSink | None,
-) -> None:
-    """Walk the citation graph outward from records already collected.
-
-    :param crawler: the bound crawler.
-    :param seeds: records collected from the seed listings and profiles.
-    :param args: parsed arguments supplying paging limits.
-    :param policy: how deep and how wide to expand.
-    :param sink: JSONL writer for parsed records.
-    :param state: resume cursor store.
-    :param bibtex: when set, each record's BibTeX entry is exported as well.
-    """
-    if not policy.enabled:
-        return
-    template = filter_template(args)
-    visited: set[str] = set()
-    frontier = seeds
-    for level in range(1, policy.depth + 1):
-        requests = next_level(frontier, template, policy, visited)
-        if not requests:
-            print(f"[follow] level {level}: nothing left to expand", flush=True)
-            return
-        print(f"[follow] level {level}: {len(requests)} citation listings", flush=True)
-        frontier = []
-        for request in requests:
-            frontier += _crawl_listing(crawler, request, args, sink, state, bibtex, depth=level)
-
-
 def _browser_options(args: argparse.Namespace) -> BrowserOptions:
     """Collect the browser flags into launch options.
 
@@ -506,13 +349,27 @@ def _run_rehearsal(args: argparse.Namespace) -> int:
         return 1
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Run the crawler from command-line arguments.
+def _limits_of(args: argparse.Namespace) -> CrawlLimits:
+    """Collect the paging flags into limits for the run.
 
-    :param argv: argument vector; defaults to ``sys.argv[1:]``.
-    :returns: process exit code — 0 on success, 1 on usage or crawl failure, 130 on Ctrl+C.
+    :param args: parsed arguments.
+    :returns: the paging limits this run should honour.
     """
-    args = build_parser().parse_args(argv)
+    return CrawlLimits(
+        pages=args.pages,
+        start=args.start,
+        resume=args.resume,
+        max_results=args.max_results,
+        lang=args.lang,
+    )
+
+
+def _run_offline_mode(args: argparse.Namespace) -> int | None:
+    """Run whichever mode needs no crawl, if one was asked for.
+
+    :param args: parsed arguments.
+    :returns: the exit code of that mode, or None when a crawl should run.
+    """
     if args.show_state:
         return _show_state(args)
     if args.forget is not None:
@@ -521,6 +378,47 @@ def main(argv: list[str] | None = None) -> int:
         return _run_self_check(args)
     if args.rehearse_handoff:
         return _run_rehearsal(args)
+    return None
+
+
+def _plan_of(
+    args: argparse.Namespace,
+    listings: list[SearchRequest],
+    authors: list[AuthorRequest],
+    follow: FollowPolicy,
+    pacing: Pacing,
+) -> RunPlan:
+    """Cost the run the arguments describe.
+
+    :param args: parsed arguments.
+    :param listings: seed listings.
+    :param authors: seed profiles.
+    :param follow: expansion policy.
+    :param pacing: request rhythm.
+    :returns: the planned cost.
+    """
+    return plan_run(
+        listings,
+        authors,
+        pages=args.pages,
+        max_results=args.max_results,
+        follow=follow,
+        bibtex=bool(args.bibtex),
+        pacing=pacing,
+        host=args.host,
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the crawler from command-line arguments.
+
+    :param argv: argument vector; defaults to ``sys.argv[1:]``.
+    :returns: process exit code — 0 on success, 1 on usage or crawl failure, 130 on Ctrl+C.
+    """
+    args = build_parser().parse_args(argv)
+    offline = _run_offline_mode(args)
+    if offline is not None:
+        return offline
     try:
         listings, authors = build_targets(args)
         follow = FollowPolicy(
@@ -541,48 +439,35 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.dry_run:
-        plan = plan_run(
-            listings,
-            authors,
-            pages=args.pages,
-            max_results=args.max_results,
-            follow=follow,
-            bibtex=bool(args.bibtex),
-            pacing=pacing,
-            host=args.host,
-        )
-        for line in plan.render():
+        for line in _plan_of(args, listings, authors, follow, pacing).render():
             print(f"[plan] {line}", flush=True)
         print("[plan] nothing was requested; drop --dry-run to start", flush=True)
         return 0
 
-    sink = ResultSink(args.out)
-    sink.open()
-    state = StateStore(args.state)
-    state.load()
-    profiles = ProfileStore(args.profiles_out)
-    profiles.load()
-    bibtex = BibtexSink(args.bibtex) if args.bibtex else None
-    if bibtex is not None:
-        bibtex.open()
-        if authors:
-            print(
-                "[bibtex] profile publications need their card id resolved first, "
-                "so each one costs three page loads instead of two",
-                flush=True,
-            )
+    outputs = Outputs.open_for(
+        out=args.out,
+        state=args.state,
+        profiles=args.profiles_out,
+        bibtex=args.bibtex,
+        csv=args.csv,
+    )
+    if outputs.bibtex is not None and authors:
+        print(
+            "[bibtex] profile publications need their card id resolved first, "
+            "so each one costs three page loads instead of two",
+            flush=True,
+        )
     if follow.enabled:
         print(
             f"[follow] depth {follow.depth} x breadth {follow.breadth}: up to "
             f"{follow.estimate(len(listings) + len(authors))} listings this run",
             flush=True,
         )
-    options = _browser_options(args)
     handoff = HumanHandoff(timeout=args.handoff_timeout, headless=args.headless)
     exit_code = 0
     crawler: ScholarCrawler | None = None
     try:
-        with browser_session(options) as (_context, page):
+        with browser_session(_browser_options(args)) as (_context, page):
             crawler = ScholarCrawler(
                 page,
                 handoff,
@@ -591,12 +476,15 @@ def main(argv: list[str] | None = None) -> int:
                 max_handoffs=args.max_handoffs,
                 dump_dir=args.dump_html,
             )
-            harvest: list[ScholarResult] = []
-            for listing in listings:
-                harvest += _crawl_listing(crawler, listing, args, sink, state, bibtex)
-            for author in authors:
-                harvest += _crawl_author(crawler, author, args, sink, state, profiles, bibtex)
-            _follow_citations(crawler, harvest, args, follow, sink, state, bibtex)
+            crawl_targets(
+                crawler,
+                _limits_of(args),
+                listings,
+                authors,
+                follow,
+                filter_template(args),
+                outputs,
+            )
     except KeyboardInterrupt:
         print("\n[stop] interrupted by user", flush=True)
         exit_code = 130
@@ -604,25 +492,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n[stop] {error}", file=sys.stderr)
         exit_code = 1
     finally:
-        sink.close()
-        if args.csv:
-            rows = sink.export_csv(args.csv)
-            print(f"[out] {rows} rows -> {args.csv}", flush=True)
-        print(
-            f"[out] {sink.written} new records ({sink.skipped} duplicates skipped) -> {sink.path}",
-            flush=True,
-        )
-        if bibtex is not None:
-            bibtex.close()
-            print(
-                f"[out] {bibtex.written} BibTeX entries "
-                f"({bibtex.skipped} duplicates skipped) -> {bibtex.path}",
-                flush=True,
-            )
-        if profiles.written:
-            print(f"[out] {profiles.written} profile updates -> {profiles.path}", flush=True)
-        if crawler is not None:
-            print(f"[run] {crawler.stats().render()}", flush=True)
+        outputs.close_and_report(crawler)
     return exit_code
 
 

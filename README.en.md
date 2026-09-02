@@ -317,7 +317,7 @@ The slowdown has two stages: every takeover widens the delays by `--backoff-fact
 ## Development
 
 ```sh
-python3 -m pytest -q     # 173 tests, fully offline
+python3 -m pytest -q     # 175 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -330,6 +330,7 @@ All tests run offline (no network at all), grouped by area:
 - **Citation graph**: most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence
 - **Output and resume state**: JSONL dedup, CSV export, profile upserts, `.bib` dedup, state review and reset (signatures rendered back, timestamps, older files), a target capped by `-n` staying resumable
 - **Offline tools**: digest merge precedence, filters and summaries, grouping with venue normalization, bibliography building (transliteration and surnames, truncated author lists, key reuse and collisions, entry types, escaping and double braces)
+- **Plan versus reality**: the load count `--dry-run` computes is compared against the loads the real crawl loop performs for the same arguments, including three `-n` truncation cases
 - **Command line**: argument validation, `--dry-run` numbers with no files written, `--self-check`, BibTeX link discovery (by href, not label) and `<pre>` extraction, `--quiet` combinations
 
 ## Compliance
@@ -345,11 +346,13 @@ scholar_crawler/
   challenge.py  challenge detection + human takeover wait
   browser.py    persistent-profile browser session
   crawler.py    crawl loop: pacing, takeover, pagination and author batching, BibTeX loads, HTML dumps
+  run.py        executing one run: crawling targets, expanding, opening and reporting outputs
   expand.py     citation-graph expansion: seed choice, caps, dedup
   plan.py       run plan: pages, loads and duration estimates
   selfcheck.py  parser self-check: per-field health report
   rehearsal.py  takeover rehearsal: local challenge page, full-path drill
-  digest.py     offline digest: merge, filter, summarize, export
+  digest.py     offline digest: merge, filter, command line
+  analysis.py   offline analysis: overview counts and grouping
   bibsynth.py   offline bibliography: BibTeX from stored fields
   storage.py    JSONL/CSV writers, author profile records, the .bib file, resume state
   cli.py        command-line entry point
