@@ -132,6 +132,20 @@ $ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
 
 所有数字都是上限：列表提前抓完、引文网络无可展开时都会更少。目标写错（比如一个入口都没给）在 `--dry-run` 下同样会报错，所以它也能当参数检查用。
 
+## 真实结构回归夹具
+
+`tests/pages/` 里放着四份**真实抓取页面**的脱敏副本（结果页、作者主页、cite 弹窗、BibTeX 导出页）。手写夹具能证明解析逻辑对，但证明不了它还贴合 Scholar 的真实结构；这几份夹具补的就是这块，而且离线跑：结果页那份会把 `--self-check` 的 10 项检查完整跑一遍。
+
+脱敏由 `tests/sanitize.py` 完成，规则是「结构全留，凭证全去」：删掉 `<script>`/`<style>`/`<iframe>`，图片 `src` 换成 `about:blank`，签名与会话参数（`scisig`、`xsrf`、`scisdr`、`usg`…）无论在 URL 里还是嵌在 `continue=` 这类编码参数里都替换成 `REDACTED`，隐藏表单里的 xsrf 值同样替换，`Verified email at ...` 改写成 `example.edu`，重复卡片裁到几条。解析器要用的 class 名、`data-cid`、`cites=`/`cluster=` 链接、`scisf=4` 这类标记一个不动。另有一条测试专门扫这四份文件，确保里面没有 `<script>`、没有未脱敏的长 token。
+
+Scholar 改版时刷新夹具：
+
+```sh
+scholar-crawler -q "graph attention networks" -p 1 -n 2 --bibtex out/x.bib \
+    --dump-html out/dump -o out/d.jsonl
+python3 -m tests.sanitize out/dump/<结果页>.html tests/pages/results.html 6
+```
+
 ## 自检
 
 怀疑 Scholar 改版、解析结果变空时，先跑一次自检（只发一次请求）：
@@ -246,11 +260,11 @@ scholar-crawler --rehearse-handoff
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 147 个用例，全部离线
+python3 -m pytest -q     # 154 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
-测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、BibTeX 链接识别（按 href 而非按标签文字）与 `<pre>` 内容提取、`.bib` 去重、导出过程中的接管、断点查看与清除（签名还原、时间戳、旧格式兼容、按子串清除、被 `-n` 截断的目标仍可续抓）、抓取计划（页数被 `-n` 收窄、作者按 100 条一页、展开与 BibTeX 的乘法成本、时长格式、`--dry-run` 不落地任何文件）、运行摘要（长短两种时长格式、按类型统计接管）、连续被拦时的静默等待与关闭开关、接管演练（真实 DOM 里被识别为验证页、按钮按下后恢复、未恢复与未识别的报告、headless 拒绝）、离线汇总（合并取舍、`extra` 合并、层级取最浅、过滤组合、统计与排序、写文件、参数校验）、自检报告（健康页面、空结果页、字段缺失定位、末页判定、输出格式）、作者条目的 `data-cid` 解析回退、引文网络展开（按被引排序、宽度上限、访问去重、引用下限、逐层推进与提前收敛）、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
+测试覆盖：结果页解析（含仅引用条目、PDF 侧链、被引/版本计数、`<b>` 高亮词断词、第二页起的结果总数、无结果页）、作者主页解析（头部、按行位置读取的统计表、论文行、0 被引与缺年份、"show more" 状态）、URL 与过滤参数拼装、id/URL 解析、JSONL 去重与 CSV 导出、profile 覆盖写、断点状态读写、challenge 判定（真实 headless Chromium 加载 DOM）、接管等待/超时/窗口关闭/headless 拒绝、BibTeX 链接识别（按 href 而非按标签文字）与 `<pre>` 内容提取、`.bib` 去重、导出过程中的接管、真实页面回归（结果页 10 项自检全过、字段完整性、作者统计与论文行、cite 弹窗到 BibTeX、脱敏规则与「夹具不含凭证」扫描）、断点查看与清除（签名还原、时间戳、旧格式兼容、按子串清除、被 `-n` 截断的目标仍可续抓）、抓取计划（页数被 `-n` 收窄、作者按 100 条一页、展开与 BibTeX 的乘法成本、时长格式、`--dry-run` 不落地任何文件）、运行摘要（长短两种时长格式、按类型统计接管）、连续被拦时的静默等待与关闭开关、接管演练（真实 DOM 里被识别为验证页、按钮按下后恢复、未恢复与未识别的报告、headless 拒绝）、离线汇总（合并取舍、`extra` 合并、层级取最浅、过滤组合、统计与排序、写文件、参数校验）、自检报告（健康页面、空结果页、字段缺失定位、末页判定、输出格式）、作者条目的 `data-cid` 解析回退、引文网络展开（按被引排序、宽度上限、访问去重、引用下限、逐层推进与提前收敛）、翻页与作者分批推进、结果上限截断、未知主页版式报错、接管后自动减速、HTML dump、命令行参数到请求的组装。GitHub Actions 在 Python 3.10 与 3.13 上跑同一套。
 
 ## 合规
 
