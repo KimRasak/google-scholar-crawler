@@ -78,9 +78,12 @@ scholar-digest --collection out --report out/report.md --bibtex out/refs.bib
 
 The digest document adds `"overview"` with exactly `records`, `citations`, `with_bibtex`,
 `citation_only`, `unknown_year`, `years`, `venues`, `most_cited`; and with `--since` a `"delta"`
-with exactly `before`, `after`, `added`, `gone`, `unchanged`, `citations_gained`, `moved` — the
-answer to "what changed since last time" without re-crawling. Its `"counts"` are `records`,
-`read`, `files`, `duplicates`, `filtered_out`, `unreadable_lines`.
+with exactly `before`, `after`, `added`, `gone`, `unchanged`, `reclustered`, `citations_gained`,
+`moved` — the answer to "what changed since last time" without re-crawling. `reclustered` names
+the titles listed as both added and gone: one work Scholar gave a new id, not two works. A count
+arriving where there was none is a movement from 0, because Scholar shows no citing-works link
+until a work has one. Its `"counts"` are `records`, `read`, `files`, `duplicates`,
+`filtered_out`, `unreadable_lines`.
 
 ## Exit codes and errors
 

@@ -225,7 +225,7 @@ $ scholar-crawler -q "graph attention networks" -p 1 --json 2>/dev/null
 - **失败也是一个文档**：`error` 是 `{kind, message, next_steps}`，`kind` 取自一份封闭的词表（`challenge_unattended`、`rate_limited`、`unknown_layout`、`connection_refused`……），调用方可以直接 `switch`。词表由测试保证：代码里写出一个词表外的 `kind` 会直接抛错。
 - **报告类模式与 `--json` 互斥**：`--doctor`、`--recipes`、`--self-check` 本身就是给人读的报告，配上 `--json` 只会承诺一个不存在的结果，所以直接拒绝（并且拒绝本身也是一个 `unsupported_mode` 文档）。
 
-`scholar-digest --json` 同理，另加 `overview`（记录数、被引总数、年份、期刊、被引最高）和 `--since` 的 `delta`（新增、不在了、被引变动、净增），也就是「这轮和上次比变了什么」——不用重抓。
+`scholar-digest --json` 同理，另加 `overview`（记录数、被引总数、年份、期刊、被引最高）和 `--since` 的 `delta`（新增、不在了、换了 id、被引变动、净增），也就是「这轮和上次比变了什么」——不用重抓。
 
 最重要的一条给 agent 的约定是**验证码只能交给人**：`--headless` 下遇到验证会以 `challenge_unattended` 结束，正确的反应不是重试更狠，而是把这件事交给人处理一次。完整的调用约定写在 [AGENTS.md](AGENTS.md)（一页），它是给程序读的，人读 README。
 
@@ -430,7 +430,10 @@ $ scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl
 
 - **new**：这次输入里有、上次合并里没有的。
 - **with a new citation count**：两边都有但数字变了，按变化幅度绝对值排序。**降**也会如实报（`-32`）：Scholar 自己会下修被引数。注意合并规则是「同一篇在多份输入里出现时保留被引数更高的那条」，所以只有当前输入确实报了更小的数字时才会看到降。
-- **no longer here**：上次有、这次没有。这**不是** Scholar 删了论文，而是那条记录所在的文件被移走了，或者当前的过滤条件（`--min-citations`/`--year-from`）把它排除了——输出里就直接这么写着，免得被误读成数据丢失。
+- **no longer here**：上次有、这次没有。这**不是** Scholar 删了论文，而是那条记录所在的文件被移走了、当前过滤条件把它排除了，或者 Scholar 给同一篇换了 id——输出里就直接这么写着，免得被误读成数据丢失。
+- **同时出现在 new 和 no longer here 里的同名论文**：那是 Scholar 重新聚类（换了 `cluster_id`），一篇论文被记成「走了一篇 + 来了一篇」。报告会点出来（`N works appear as both new and gone under one title`），免得把它读成库在剧烈变动。
+
+被引数从「没有」变成一个数字，算作**从 0 涨上来**，不是「没变」：Scholar 在一篇论文还没有被引时根本不显示那条链接，所以「没有」就是 0。反过来，数字从有变没有**不**算跌到 0——那是 Scholar 不再显示这个信息，不是被引数归零，硬报成 `-346` 等于凭空造出一次损失。
 
 什么都没变时只有一行：`nothing changed since out/merged.jsonl: the same 20 works, same counts`。
 
@@ -856,13 +859,13 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 511 个用例，全部离线
+python3 -m pytest -q     # 513 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
 测试全部离线（不发任何网络请求）。CI 在 3.10 与 3.13 上跑同样两条；另外在一个全新的 venv 里从这个 git URL 装一遍再跑，验证的是「新装用户拿到的依赖版本」——最近一次是 playwright 1.62.0、bs4 4.15.0、lxml 6.1.3，比开发机上的都新，整套用例全过。按覆盖面分组，细节直接读 `tests/`：
 
-- **解析**：结果卡片与作者主页的每个字段，加上四份真实页面夹具（`tests/pages/`），保证解析既对又贴合 Scholar 的真实结构；那两份真实页面解析出的 9 条记录还要喂给 `--audit`、概览、`--network` 与 `--stale`——报告的责任是评判真实数据，所以它们必须先在真实数据上站得住（0 个 error，警告只针对 Scholar 自己做的事）。`--refresh-list` 写出的文件还要真的被 `scholar-crawler --clusters-file … --dry-run` 读回去，把「一进一出闭环」这句话跑成测试
+- **解析**：结果卡片与作者主页的每个字段，加上四份真实页面夹具（`tests/pages/`），保证解析既对又贴合 Scholar 的真实结构；那两份真实页面解析出的 9 条记录还要喂给 `--audit`、概览、`--network`、`--stale` 与 `--since`——报告的责任是评判真实数据，所以它们必须先在真实数据上站得住（0 个 error，警告只针对 Scholar 自己做的事）。`--refresh-list` 写出的文件还要真的被 `scholar-crawler --clusters-file … --dry-run` 读回去，把「一进一出闭环」这句话跑成测试
 - **抓取循环**：翻页、作者分批、节奏与冷却、连续被拦后的静默等待、HTML dump、运行摘要
 - **人工接管**：真实 headless Chromium 上的验证判定、等待与超时、窗口被关、headless 拒绝、接管记录与跨运行减速
 - **全链路**：真实浏览器打本地假 Scholar（`tests/fakescholar.py`）——翻页上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、headless 拒绝时已抓数据仍在盘上、一次完全由设置文件描述的运行
@@ -879,7 +882,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 62 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 64 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

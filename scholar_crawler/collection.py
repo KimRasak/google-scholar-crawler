@@ -99,6 +99,8 @@ class Delta:
     :param gone: works present before and absent now.
     :param moved: works whose citation count changed, largest movement first.
     :param same: works present in both with an unchanged count.
+    :param reclustered: titles listed as both added and gone, which is Scholar giving one work
+        a new id rather than two works changing hands.
     :param before_total: records in the earlier set.
     :param after_total: records in the current set.
     """
@@ -107,6 +109,7 @@ class Delta:
     gone: list[str]
     moved: list[Moved]
     same: int
+    reclustered: list[str]
     before_total: int
     after_total: int
 
@@ -144,16 +147,20 @@ def compare(before: list[Record], after: list[Record]) -> Delta:
     same = 0
     for key in old.keys() & new.keys():
         was, now = _citations(old[key]), _citations(new[key])
-        if was is None or now is None or was == now:
+        if now is None or was == now:
+            # A count that disappeared is information Scholar stopped showing, not a fall to
+            # zero, so it is not a movement. A count that appeared is the opposite: Scholar
+            # omits the citing-works link until a work has one, so absent means none yet.
             same += 1
             continue
-        moved.append(Moved(label=_label(new[key]), before=was, after=now))
+        moved.append(Moved(label=_label(new[key]), before=was or 0, after=now))
     moved.sort(key=lambda item: (-abs(item.change), item.label))
     return Delta(
         added=added,
         gone=gone,
         moved=moved,
         same=same,
+        reclustered=sorted(set(added) & set(gone)),
         before_total=len(old),
         after_total=len(new),
     )
@@ -175,6 +182,17 @@ def render_delta(delta: Delta, *, top: int = 5, since: Path | None = None) -> li
         f"{len(delta.added)} new, {len(delta.gone)} no longer here, "
         f"{len(delta.moved)} with a new citation count"
     ]
+    if delta.reclustered:
+        # The same title on both sides: one work with a new card id counts as gone and added,
+        # and reading that as two works overstates how much the collection churned.
+        count = len(delta.reclustered)
+        lines.append(
+            "1 work appears as both new and gone under one title: Scholar re-clustered it, "
+            "so one work with a new id counts as both"
+            if count == 1
+            else f"{count} works appear as both new and gone under one title each: "
+            "Scholar re-clustered them, so each counts as both"
+        )
     if delta.moved:
         gained = delta.citations_gained
         lines.append(f"citations gained across the works in both: {gained:+,}")
@@ -189,7 +207,7 @@ def render_delta(delta: Delta, *, top: int = 5, since: Path | None = None) -> li
             lines.append(f"  ... and {len(works) - top} more")
     if delta.gone:
         lines.append(
-            "a work goes missing when its file was removed or a filter now excludes it, "
-            "not because Scholar dropped it"
+            "a work goes missing when its file was removed or a filter now excludes it, or "
+            "when Scholar re-clustered it under a new id; not because Scholar dropped it"
         )
     return lines

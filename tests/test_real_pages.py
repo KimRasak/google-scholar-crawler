@@ -8,6 +8,7 @@ markup the parser no longer understands.
 
 from __future__ import annotations
 
+import copy
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,7 @@ from scholar_crawler.analysis import render_summary, summarize  # noqa: E402
 from scholar_crawler.audit import audit_records, render_audit  # noqa: E402
 from scholar_crawler.challenge import RESULTS_SELECTOR  # noqa: E402
 from scholar_crawler.cli import main as crawler_main  # noqa: E402
+from scholar_crawler.collection import compare, render_delta  # noqa: E402
 from scholar_crawler.graph import build_graph, render_network  # noqa: E402
 from scholar_crawler.parser import (  # noqa: E402
     bibtex_key,
@@ -208,6 +210,34 @@ def test_the_refresh_file_from_real_records_is_a_command_the_crawler_accepts(
         assert f"[explain]   target: cluster:{cluster_id}" in printed
         assert f"cluster={cluster_id}" in printed
     assert "[plan] total: up to 3 page loads for 30 records" in printed
+
+
+def test_a_watch_over_real_records_reports_a_first_citation_and_a_recluster(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Two generations of the same real records: one work picks up its first citations, one grows,
+    # one is re-clustered by Scholar, one leaves the collection.
+    now = _real_records()
+    earlier = copy.deepcopy(now)
+    earlier[1]["cited_by_count"] = None  # Scholar listed it with no citing works yet
+    earlier[0]["cited_by_count"] = 40_000  # 41,135 now
+    later = copy.deepcopy(now)
+    later[5]["cluster_id"] = "9" + str(later[5]["cluster_id"])[1:]
+    dropped = later.pop()
+
+    delta = compare(earlier, later)
+    for line in render_delta(delta, top=5):
+        print(line)
+    printed = capsys.readouterr().out
+
+    first = next(item for item in delta.moved if item.after == 346)
+    assert (first.before, first.change) == (0, 346), "a first citation must not read as unchanged"
+    assert delta.citations_gained == 346 + 1135
+    # The re-clustered work is one work with a new id, listed on both sides under one title.
+    assert delta.reclustered == [now[5]["title"]]
+    assert "1 work appears as both new and gone under one title" in printed
+    assert str(dropped["title"]) in printed
+    assert "its file was removed or a filter now excludes it" in printed
 
 
 def test_the_fixtures_carry_no_session_material() -> None:

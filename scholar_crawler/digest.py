@@ -570,6 +570,7 @@ def _sections(
             "added": delta.added,
             "gone": delta.gone,
             "unchanged": delta.same,
+            "reclustered": delta.reclustered,
             "citations_gained": delta.citations_gained,
             "moved": [
                 {"title": item.label, "before": item.before, "after": item.after,

@@ -302,6 +302,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "a first citation is a movement, not silence",
+        "scholar_crawler/collection.py",
+        "        if now is None or was == now:",
+        "        if was is None or now is None or was == now:",
+        "tests/test_collection.py tests/test_real_pages.py",
+    ),
+    Mutation(
+        "one work with a new id is not two works",
+        "scholar_crawler/collection.py",
+        "        reclustered=sorted(set(added) & set(gone)),",
+        "        reclustered=[],",
+        "tests/test_collection.py tests/test_real_pages.py",
+    ),
+    Mutation(
         "one crawl does not get reported as a span of ages",
         "scholar_crawler/refresh.py",
         '        if max(ages) - min(ages) < 1',

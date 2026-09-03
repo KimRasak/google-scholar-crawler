@@ -89,10 +89,24 @@ def test_the_biggest_movement_comes_first_whichever_way_it_went() -> None:
     assert [item.label for item in delta.moved] == ["Work b", "Work c", "Work a"]
 
 
-def test_a_record_without_a_count_on_either_side_is_not_a_movement() -> None:
+def test_a_first_citation_is_a_movement_and_a_vanished_count_is_not() -> None:
+    # Scholar shows no citing-works link until a work has one, so a count arriving out of
+    # nothing means the work picked up its first citations — the most interesting thing a watch
+    # can report. A count that disappears is information Scholar stopped showing, and reading it
+    # as a fall to zero would invent a loss.
     delta = compare([_record("a", None), _record("b", 10)], [_record("a", 30), _record("b", None)])
-    assert delta.moved == []
-    assert delta.same == 2
+    assert [(item.label, item.before, item.after) for item in delta.moved] == [("Work a", 0, 30)]
+    assert delta.same == 1
+    assert delta.citations_gained == 30
+
+
+def test_two_works_under_one_title_are_reported_as_one_re_clustered_work() -> None:
+    delta = compare([_record("old-id", title="A paper")], [_record("new-id", title="A paper")])
+    lines = render_delta(delta)
+
+    assert delta.reclustered == ["A paper"]
+    assert any("1 work appears as both new and gone under one title" in line for line in lines)
+    assert "2 works appear" not in "\n".join(lines)
 
 
 def test_an_unchanged_collection_says_so_in_one_line() -> None:
@@ -125,7 +139,9 @@ def test_a_movement_reads_as_a_signed_change_and_a_new_total() -> None:
 
 
 def test_an_empty_delta_is_still_a_delta() -> None:
-    delta = Delta(added=[], gone=[], moved=[], same=0, before_total=0, after_total=0)
+    delta = Delta(
+        added=[], gone=[], moved=[], same=0, reclustered=[], before_total=0, after_total=0
+    )
     assert delta.quiet()
     assert delta.citations_gained == 0
 

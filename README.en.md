@@ -225,7 +225,7 @@ The eight top-level keys stay put: `tool`, `version`, `ok`, `exit_code`, `counts
 - **A failure is also a document**: `error` is `{kind, message, next_steps}`, and `kind` comes from a closed vocabulary (`challenge_unattended`, `rate_limited`, `unknown_layout`, `connection_refused`, …) that a caller can switch on. The vocabulary is enforced: writing a `kind` outside it raises rather than reaching a caller.
 - **Report modes and `--json` are mutually exclusive.** `--doctor`, `--recipes` and `--self-check` *are* reports for people; pairing them with `--json` would promise a result that does not exist, so it is refused — and the refusal is itself an `unsupported_mode` document.
 
-`scholar-digest --json` works the same way and adds `overview` (records, citations, years, venues, most cited) plus, with `--since`, `delta` (added, gone, moved, citations gained): what changed since last time, without re-crawling.
+`scholar-digest --json` works the same way and adds `overview` (records, citations, years, venues, most cited) plus, with `--since`, `delta` (added, gone, re-clustered, moved, citations gained): what changed since last time, without re-crawling.
 
 The rule that matters most to an agent is that **a challenge belongs to a human**: under `--headless` a challenge ends the run with `challenge_unattended`, and the correct response is not to retry harder but to hand it to a person once. The whole calling interface is one page: [AGENTS.md](AGENTS.md), written for programs, while this README is written for people.
 
@@ -433,7 +433,10 @@ There is a trap `--collection` exists for: run `scholar-digest out/*.jsonl -o ou
 
 - **new** — in this run's inputs, absent from the earlier merge.
 - **with a new citation count** — present on both sides with a different number, sorted by how far it moved. A fall is reported as a fall (`-32`); Scholar does revise counts down. Note that merging keeps the higher count when one work appears in several inputs, so a fall shows only when the current inputs really report fewer.
-- **no longer here** — in the earlier merge, absent now. This is **not** Scholar dropping a paper: its file was moved away, or the current filters (`--min-citations`, `--year-from`) now exclude it. The report says so in place, so the line cannot be misread as data loss.
+- **no longer here** — in the earlier merge, absent now. This is **not** Scholar dropping a paper: its file was moved away, the current filters (`--min-citations`, `--year-from`) now exclude it, or Scholar gave the same work a new id. The report says so in place, so the line cannot be misread as data loss.
+- **the same title in both new and no longer here** — Scholar re-clustered that work, so one paper is counted as one leaving and one arriving. The report names it (`N works appear as both new and gone under one title`) rather than letting it read as churn.
+
+A citation count that arrives where there was none counts as **a rise from 0**, not as unchanged: Scholar shows no citing-works link at all until a work has one, so absent means none yet. The reverse is not a fall to zero — a count that stops being shown is information Scholar withdrew, and reporting `-346` there would invent a loss.
 
 When nothing moved, that is one line: `nothing changed since out/merged.jsonl: the same 20 works, same counts`.
 
@@ -859,7 +862,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 511 tests, fully offline
+python3 -m pytest -q     # 513 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -867,7 +870,7 @@ Every test is offline (no network). CI runs the same two commands on 3.10 and 3.
 
 Grouped by what they cover; read `tests/` for the detail:
 
-- **Parsing**: every field of result cards and author profiles, plus four real-page fixtures (`tests/pages/`) so parsing is both correct and still true to Scholar's markup; the nine records those two real pages yield are then fed to `--audit`, the overview, `--network` and `--stale`, because a report whose job is to judge real data has to hold up on real data first (no errors at all, and warnings only for what Scholar itself did). The file `--refresh-list` writes is then read back by `scholar-crawler --clusters-file … --dry-run`, so the loop the file's own comment promises is a test rather than a claim
+- **Parsing**: every field of result cards and author profiles, plus four real-page fixtures (`tests/pages/`) so parsing is both correct and still true to Scholar's markup; the nine records those two real pages yield are then fed to `--audit`, the overview, `--network`, `--stale` and `--since`, because a report whose job is to judge real data has to hold up on real data first (no errors at all, and warnings only for what Scholar itself did). The file `--refresh-list` writes is then read back by `scholar-crawler --clusters-file … --dry-run`, so the loop the file's own comment promises is a test rather than a claim
 - **Crawl loop**: paging, author batching, pacing and cooldowns, the quiet wait after back-to-back blocks, HTML dumps, run summaries
 - **Human takeover**: challenge detection on real headless Chromium, waiting and timeouts, a closed window, a headless refusal, the takeover log and cross-run slowdown
 - **End to end**: a real browser against a local fake Scholar (`tests/fakescholar.py`) — page budget, no loss across a takeover, `--resume`, author profiles, collected records surviving a headless refusal, and one run described entirely by a settings file
@@ -886,7 +889,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 62 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 64 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
