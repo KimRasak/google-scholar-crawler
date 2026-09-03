@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scholar_crawler.cli import build_parser as crawler_parser  # noqa: E402
 from scholar_crawler.digest import build_parser as digest_parser  # noqa: E402
+from scholar_crawler.models import ScholarResult  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 READMES = (ROOT / "README.md", ROOT / "README.en.md")
@@ -121,3 +122,32 @@ def test_every_command_in_the_agent_guide_parses() -> None:
 def test_both_readmes_point_at_the_agent_guide() -> None:
     for path in READMES:
         assert "AGENTS.md" in path.read_text(encoding="utf-8"), path.name
+
+def test_the_agent_guide_lists_exactly_the_keys_a_record_carries() -> None:
+    # An agent builds its parsing against this list, so a field added to the record without a
+    # line in AGENTS.md is a silent interface change.
+    text = AGENTS.read_text(encoding="utf-8")
+    listed = text.split("One record carries exactly these keys:", 1)[1].split(". Absent", 1)[0]
+    documented = set(re.findall(r"`([a-z_]+)`", listed))
+    carried = set(
+        ScholarResult(
+            cluster_id="1",
+            position=1,
+            title="t",
+            link=None,
+            resource_link=None,
+            resource_type=None,
+            byline="",
+            authors=None,
+            venue=None,
+            year=None,
+            snippet="",
+            cited_by_count=None,
+            cited_by_url=None,
+            versions_count=None,
+            versions_url=None,
+            related_url=None,
+            citation_only=False,
+        ).to_dict()
+    )
+    assert documented == carried, f"AGENTS.md is out of step: {documented ^ carried}"

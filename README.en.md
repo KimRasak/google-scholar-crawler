@@ -521,6 +521,10 @@ That answers the questions that actually matter afterwards: at which request the
 
 `--rehearse-handoff` writes a record too (`outcome=rehearsed`), which also proves the log path is writable before a real challenge depends on it.
 
+### Slowing down within a run
+
+The slowdown has two stages: every takeover widens the delays by `--backoff-factor`, and a challenge that arrives with **no successful page in between** — meaning solving the first one did not restore trust — waits out `--challenge-cooldown` before resuming, doubling for a third consecutive challenge and so on. `--max-handoffs` still aborts the run outright.
+
 ### Learning to slow down across runs
 
 Getting blocked once should not stay in that one run. By default every start-up reads the takeover log and folds the lesson into this run's starting rhythm:
@@ -762,7 +766,7 @@ Author publications land in the same JSONL (with Scholar's citation id in `extra
  "i10_index":1106,"i10_index_recent":947,"fetched_at":"..."}
 ```
 
-## About citation-graph expansion
+## Crawling outward along citations: `--follow-cites`
 
 `--follow-cites DEPTH` takes the records already collected, keeps the `--follow-breadth` most-cited of them, opens each one's "Cited by" listing, and repeats for the requested number of levels.
 
@@ -771,7 +775,7 @@ Author publications land in the same JSONL (with Scholar's citation id in `extra
 - Expanded listings inherit the year, language and sorting filters given on the command line, and `--resume` tracks each one by its own signature.
 - Publications collected from an author profile can seed the expansion too.
 
-## About the BibTeX export
+## Exporting BibTeX while crawling: `--bibtex`
 
 `--bibtex` costs two extra page loads per record: Scholar's "Cite" popup, then the signed `scholar.bib` link inside it (the signature cannot be constructed locally). So:
 
@@ -790,7 +794,7 @@ scholar-crawler --rehearse-handoff
 
 The flow is the one a real challenge triggers: the page is detected as a challenge, the bell rings, the window comes to the front, the takeover notice prints, and the wait polls. Press the button on the page to stand in for solving it — the rehearsal then confirms the page reads as content again and reports how long the wait took, exiting 0. With nobody acting it fails at `--handoff-timeout` (exit 1), and with `--headless` it verifies the "no window, so refuse" path instead.
 
-## Run summary and adaptive slowdown
+## Run summary
 
 Every run ends with a one-line summary — after a normal finish, a Ctrl+C, or a failure alike:
 
@@ -799,8 +803,6 @@ Every run ends with a one-line summary — after a normal finish, a Ctrl+C, or a
 ```
 
 The request count includes cite popups and BibTeX exports, takeovers are broken down by kind, and `delay now` is the rhythm after any backoff — noticeably above your starting values means this run was challenged and the address or the pacing needs to be more conservative. Runs shorter than 30 seconds report seconds instead of a rate, which would mostly measure start-up.
-
-The slowdown has two stages: every takeover widens the delays by `--backoff-factor`, and a challenge that arrives with **no successful page in between** — meaning solving the first one did not restore trust — waits out `--challenge-cooldown` before resuming, doubling for a third consecutive challenge and so on. `--max-handoffs` still aborts the run outright.
 
 ## Failures in plain words
 
@@ -832,7 +834,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 438 tests, fully offline
+python3 -m pytest -q     # 439 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
