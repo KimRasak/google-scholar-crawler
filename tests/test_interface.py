@@ -84,7 +84,7 @@ def test_every_flag_sits_in_a_named_group_with_a_description(
             if option.startswith("--")
         )
     ungrouped = set(_options(parser)) - grouped
-    assert ungrouped <= {"--quiet"}, f"these flags belong in a group: {sorted(ungrouped)}"
+    assert not ungrouped, f"these flags belong in a group: {sorted(ungrouped)}"
 
 
 @pytest.mark.parametrize("parser", [crawler_parser(), digest_parser()], ids=["crawler", "digest"])

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from .browser import BrowserOptions, Session
@@ -13,11 +14,19 @@ from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
 from .expand import FollowPolicy
 from .explain import explain
 from .history import advise
+from .machine import document, emit, failure, human_lines_to_stderr, version
 from .models import AuthorRequest, SearchRequest
-from .modes import check_environment, forget_state, rehearse_takeover, self_check, show_state
+from .modes import (
+    check_environment,
+    forget_state,
+    install_browser,
+    rehearse_takeover,
+    self_check,
+    show_state,
+)
 from .plan import RunPlan, plan_run
 from .recipes import getting_started, render
-from .run import CrawlLimits, Outputs, crawl
+from .run import CrawlLimits, Outputs, RunOutcome, crawl
 from .storage import ChallengeLog
 from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
 
@@ -79,6 +88,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--recipes",
         action="store_true",
         help="print ready-to-run commands for the usual tasks and stop",
+    )
+    query.add_argument(
+        "--version",
+        action="store_true",
+        help="print the installed version and stop",
+    )
+    query.add_argument(
+        "--install-browser",
+        action="store_true",
+        help="download the browser Playwright drives (Chromium, about 150 MB) into this "
+        "installation and stop; run it once after installing",
     )
     query.add_argument(
         "--doctor",
@@ -186,6 +206,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="author profile headers (one record per author)",
     )
     output.add_argument("--dump-html", type=Path, help="save every fetched page's HTML here for debugging")
+    output.add_argument(
+        "--json",
+        action="store_true",
+        help="print one JSON object on stdout describing the run — counts, files, the records "
+        "collected, and what stopped it — with every human line on stderr instead",
+    )
     output.add_argument(
         "--explain",
         action="store_true",
@@ -460,6 +486,11 @@ def _run_offline_mode(args: argparse.Namespace) -> int | None:
     :param args: parsed arguments.
     :returns: the exit code of that mode, or None when a crawl should run.
     """
+    if args.version:
+        print(f"scholar-crawler {version()}", flush=True)
+        return 0
+    if args.install_browser:
+        return install_browser()
     if args.recipes:
         for line in render():
             print(line, flush=True)
@@ -507,6 +538,22 @@ def _plan_of(
     )
 
 
+@dataclass(slots=True)
+class _Ran:
+    """What one invocation produced, for a ``--json`` document to describe.
+
+    :param exit_code: the code this command returns.
+    :param outcome: how a crawl ended, or None when no crawl ran.
+    :param outputs: the files a crawl wrote, or None when no crawl ran.
+    :param plan: the estimate a ``--dry-run`` produced, or None when a crawl ran.
+    """
+
+    exit_code: int
+    outcome: RunOutcome | None = None
+    outputs: Outputs | None = None
+    plan: RunPlan | None = None
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the crawler from command-line arguments.
 
@@ -515,17 +562,129 @@ def main(argv: list[str] | None = None) -> int:
     """
     given = argv if argv is not None else sys.argv[1:]
     args = build_parser().parse_args(argv)
+    refused = _mode_that_json_cannot_describe(args) if args.json else ""
+    if refused:
+        print(
+            f"error: --json describes a crawl, and {refused} replaces it; run {refused} alone",
+            file=sys.stderr,
+        )
+        emit(
+            document(
+                tool="scholar-crawler",
+                exit_code=1,
+                counts={},
+                error=failure(
+                    "unsupported_mode",
+                    f"--json cannot describe {refused}",
+                    (f"run {refused} without --json and read its printed lines",),
+                ),
+            )
+        )
+        return 1
+    with human_lines_to_stderr(args.json):
+        ran = _run(args, argv, given)
+    if args.json:
+        emit(_document(ran))
+    return ran.exit_code
+
+
+def _mode_that_json_cannot_describe(args: argparse.Namespace) -> str:
+    """Name the mode that makes ``--json`` meaningless, if one was asked for.
+
+    A document describes a crawl or a costed crawl. The other modes answer questions about the
+    tool and print their own reports, so pairing them with ``--json`` would promise a result
+    that does not exist.
+
+    :param args: parsed arguments.
+    :returns: the offending flag, or an empty string when the run is describable.
+    """
+    modes = {
+        "--version": args.version,
+        "--install-browser": args.install_browser,
+        "--recipes": args.recipes,
+        "--doctor": args.doctor,
+        "--self-check": args.self_check,
+        "--rehearse-handoff": args.rehearse_handoff,
+        "--show-state": args.show_state,
+        "--forget": args.forget is not None,
+        "--explain": args.explain,
+    }
+    return next((flag for flag, asked in modes.items() if asked), "")
+
+
+def _document(ran: _Ran) -> dict[str, object]:
+    """Describe a finished invocation for a program.
+
+    :param ran: what the invocation produced.
+    :returns: the JSON document to print.
+    """
+    counts = {"records": 0, "duplicates": 0, "requests": 0, "takeovers": 0}
+    records: list[dict[str, object]] = []
+    files: dict[str, Path | None] = {}
+    if ran.outputs is not None:
+        counts["records"] = ran.outputs.sink.written
+        counts["duplicates"] = ran.outputs.sink.skipped
+        records = ran.outputs.sink.fresh
+        files = {
+            "records": ran.outputs.sink.path,
+            "state": ran.outputs.state.path,
+            "csv": ran.outputs.csv_path,
+            "bibtex": ran.outputs.bibtex.path if ran.outputs.bibtex is not None else None,
+            "profiles": ran.outputs.profiles.path if ran.outputs.profiles.written else None,
+        }
+    if ran.outcome is not None and ran.outcome.stats is not None:
+        counts["requests"] = ran.outcome.stats.requests
+        counts["takeovers"] = ran.outcome.stats.handoffs
+    error = None
+    if ran.outcome is not None and not ran.outcome.ok:
+        error = failure(ran.outcome.kind, ran.outcome.message, ran.outcome.next_steps)
+    elif ran.exit_code != 0:
+        error = failure("usage", "the command did not describe a run; the reason is on stderr")
+    return document(
+        tool="scholar-crawler",
+        exit_code=ran.exit_code,
+        counts=counts,
+        files=files,
+        records=records,
+        error=error,
+        extra={"plan": _plan_section(ran.plan)} if ran.plan is not None else None,
+    )
+
+
+def _plan_section(plan: RunPlan) -> dict[str, object]:
+    """Describe what a costed run would spend, for a caller budgeting requests.
+
+    :param plan: the estimate a ``--dry-run`` produced.
+    :returns: the plan section of the document.
+    """
+    return {
+        "page_loads": plan.total_loads,
+        "records_at_most": plan.total_records,
+        "seconds": round(plan.seconds),
+        "cooldowns": plan.cooldowns,
+        "targets": [{"label": label, "url": url} for label, url in plan.targets],
+    }
+
+
+def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> _Ran:
+    """Run whichever mode the arguments describe.
+
+    :param args: parsed arguments.
+    :param argv: the argument vector as passed, for settings-file precedence.
+    :param given: the argument vector as the user typed it, empty when nothing was passed.
+    :returns: what the invocation produced.
+    """
     try:
         sources = resolve_settings(args, build_parser(), argv)
     except ConfigError as error:
         print(f"error: {error}", file=sys.stderr)
-        return 1
+        return _Ran(1)
     summary = sources.summary()
     if summary is not None and not args.explain:
         print(f"[config] {summary}", flush=True)
     offline = _run_offline_mode(args)
     if offline is not None:
-        return offline
+        return _Ran(offline)
     try:
         listings, authors = build_targets(args)
         follow = FollowPolicy(
@@ -540,19 +699,20 @@ def main(argv: list[str] | None = None) -> int:
             print("\nStart from one of these, or see --recipes:\n", file=sys.stderr)
             for line in getting_started():
                 print(line, file=sys.stderr)
-        return 1
+        return _Ran(1)
 
     if args.explain:
         for line in explain(args, listings, authors, follow, pacing, sources):
             print(f"[explain] {line}" if line else "[explain]", flush=True)
         if not args.dry_run:
             print("[explain] nothing was requested; drop --explain to start", flush=True)
-            return 0
+            return _Ran(0)
     if args.dry_run:
-        for line in _plan_of(args, listings, authors, follow, pacing).render():
+        plan = _plan_of(args, listings, authors, follow, pacing)
+        for line in plan.render():
             print(f"[plan] {line}", flush=True)
         print("[plan] nothing was requested; drop --dry-run to start", flush=True)
-        return 0
+        return _Ran(0, plan=plan)
 
     outputs = Outputs.open_for(
         out=args.out,
@@ -573,7 +733,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{follow.estimate(len(listings) + len(authors))} listings this run",
             flush=True,
         )
-    return crawl(
+    outcome = crawl(
         _session_of(args),
         pacing,
         _limits_of(args),
@@ -583,6 +743,7 @@ def main(argv: list[str] | None = None) -> int:
         filter_template(args),
         outputs,
     )
+    return _Ran(outcome.exit_code, outcome=outcome, outputs=outputs)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from scholar_crawler.doctor import (  # noqa: E402
     REQUIREMENTS,
     Requirement,
     Status,
+    check_bundled_chromium,
     check_channel,
     check_module,
     check_profile,
@@ -169,6 +171,60 @@ def test_the_report_puts_fixes_last_and_ends_on_what_to_do_next(tmp_path: Path) 
     clean = [finding for finding in findings if finding.status is Status.OK]
     ready = render_environment(clean)
     assert ready[-1] == "this machine is ready; run --self-check next to test Scholar itself"
+
+
+def test_the_browser_probe_keeps_only_the_path_the_child_printed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Playwright 1.62 prints asyncio teardown noise from a driver that never launched a
+    # browser, and the first command a new user runs should not show it.
+    browser = tmp_path / "chrome"
+    browser.write_text("", encoding="utf-8")
+
+    def _noisy(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            command, 0, stdout=f"{browser}\n", stderr="Task was destroyed but it is pending!\n"
+        )
+
+    monkeypatch.setattr(subprocess, "run", _noisy)
+    finding = check_bundled_chromium()
+    assert (finding.status, finding.detail) == (Status.OK, str(browser))
+
+
+def test_a_browser_that_was_never_downloaded_says_how_to_get_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def _absent(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout=f"{tmp_path / 'nope'}\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _absent)
+    finding = check_bundled_chromium()
+    assert finding.status is Status.FAIL
+    assert finding.fix == "scholar-crawler --install-browser"
+
+
+def test_a_probe_that_cannot_import_playwright_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _missing(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            command, 1, stdout="", stderr="ModuleNotFoundError: No module named 'playwright'\n"
+        )
+
+    monkeypatch.setattr(subprocess, "run", _missing)
+    finding = check_bundled_chromium()
+    assert finding.detail == "playwright is not installed"
+    assert finding.fix == "pip install -e ."
+
+
+def test_a_probe_that_fails_for_another_reason_keeps_the_last_error_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _broken(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            command, 1, stdout="", stderr="Traceback...\nOSError: driver refused to start\n"
+        )
+
+    monkeypatch.setattr(subprocess, "run", _broken)
+    assert "driver refused to start" in check_bundled_chromium().detail
 
 
 def test_the_toml_reader_is_checked_before_a_config_run_needs_it() -> None:

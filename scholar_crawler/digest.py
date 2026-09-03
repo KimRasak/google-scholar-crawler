@@ -22,8 +22,9 @@ from .analysis import (
 )
 from .audit import audit_records, render_audit
 from .bibsynth import write_bibtex
-from .collection import SUFFIX, collection_files, compare, render_delta
+from .collection import SUFFIX, Delta, collection_files, compare, render_delta
 from .graph import FORMATS, build_graph, format_for, render_graph, render_network
+from .machine import document, emit, failure, human_lines_to_stderr, version
 from .models import record_key
 from .refresh import (
     DEFAULT_REFRESH_LIMIT,
@@ -229,7 +230,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("inputs", nargs="*", type=Path, metavar="FILE", help="JSONL files to read")
-    parser.add_argument("--quiet", action="store_true", help="print only what was written")
+    talking = parser.add_argument_group(
+        "how this command reports", "who reads the output: a person, a file, or a program"
+    )
+    talking.add_argument("--quiet", action="store_true", help="print only what was written")
+    talking.add_argument(
+        "--json",
+        action="store_true",
+        help="print one JSON object on stdout — counts, the overview, the comparison and the "
+        "kept records — with every human line on stderr instead",
+    )
+    talking.add_argument(
+        "--version", action="store_true", help="print the installed version and stop"
+    )
 
     collection = parser.add_argument_group(
         "collection", "treat a directory as one collection instead of listing files by hand"
@@ -366,6 +379,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _fail(kind: str, message: str, *next_steps: str) -> tuple[int, dict[str, object]]:
+    """Report a refusal in both registers: a line for a person, a document for a program.
+
+    :param kind: stable machine name of the refusal.
+    :param message: the line already printed for a person.
+    :param next_steps: concrete actions, most useful first.
+    :returns: the exit code and the JSON document.
+    """
+    print(f"error: {message}", flush=True)
+    return 1, document(
+        tool="scholar-digest",
+        exit_code=1,
+        counts={},
+        error=failure(kind, message, next_steps),
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the digest from command-line arguments.
 
@@ -374,29 +404,40 @@ def main(argv: list[str] | None = None) -> int:
         would produce no output at all.
     """
     args = build_parser().parse_args(argv)
+    if args.version:
+        print(f"scholar-digest {version()}", flush=True)
+        return 0
+    with human_lines_to_stderr(args.json):
+        exit_code, payload = _run(args)
+    if args.json:
+        emit(payload)
+    return exit_code
+
+
+def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
+    """Digest whatever the arguments describe.
+
+    :param args: parsed arguments.
+    :returns: the exit code and the JSON document describing the run.
+    """
     try:
-        inputs = _resolve_inputs(args)
+        args.inputs = _resolve_inputs(args)
     except (NotADirectoryError, ValueError) as error:
-        print(f"error: {error}", flush=True)
-        return 1
-    args.inputs = inputs
+        return _fail("bad_inputs", str(error))
     if args.quiet and not (
         args.out or args.csv or args.bibtex or args.report or args.refresh_list or args.graph
     ):
-        print(
-            "error: --quiet needs --out, --csv, --bibtex, --report, --refresh-list or --graph, "
+        return _fail(
+            "usage",
+            "--quiet needs --out, --csv, --bibtex, --report, --refresh-list or --graph, "
             "otherwise the run prints nothing",
-            flush=True,
         )
-        return 1
     try:
         records, malformed = load_records(args.inputs)
     except OSError as error:
-        print(f"error: {error}", flush=True)
-        return 1
+        return _fail("unreadable_input", str(error))
     if not records:
-        print("error: no records found in the given files", flush=True)
-        return 1
+        return _fail("no_records", "no records found in the given files")
 
     merged, duplicates = merge_records(records)
     earlier: list[Record] | None = None
@@ -404,17 +445,16 @@ def main(argv: list[str] | None = None) -> int:
         try:
             earlier, _ = load_records([args.since])
         except FileNotFoundError:
-            print(f"error: {args.since}: no earlier merge to compare against", flush=True)
-            return 1
+            return _fail("missing_since", f"{args.since}: no earlier merge to compare against")
         except OSError as error:
-            print(f"error: {error}", flush=True)
-            return 1
+            return _fail("unreadable_input", str(error))
     kept = filter_records(
         merged,
         min_citations=args.min_citations,
         year_low=args.year_from,
         year_high=args.year_to,
     )
+    delta = compare(earlier, kept) if earlier is not None else None
     if not args.quiet:
         print(
             f"[in] {len(records)} records from {len(args.inputs)} file(s), "
@@ -430,8 +470,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.network:
             for line in render_network(build_graph(records, kept), top=args.top):
                 print(f"  {line}", flush=True)
-        if earlier is not None:
-            for line in render_delta(compare(earlier, kept), top=args.top, since=args.since):
+        if delta is not None:
+            for line in render_delta(delta, top=args.top, since=args.since):
                 print(f"  {line}", flush=True)
         if args.stale is not None:
             for line in render_staleness(kept, days=args.stale, top=args.top):
@@ -440,25 +480,28 @@ def main(argv: list[str] | None = None) -> int:
             groups = group_records(kept, args.group_by, min_size=args.min_group_size)
             for line in render_groups(groups, args.group_by, limit=args.groups):
                 print(f"  {line}", flush=True)
+    written: dict[str, Path | None] = {}
     if args.out:
         print(f"[out] {write_jsonl(kept, args.out)} records -> {args.out}", flush=True)
+        written["records"] = args.out
     if args.csv:
         print(f"[out] {write_csv(kept, args.csv)} rows -> {args.csv}", flush=True)
+        written["csv"] = args.csv
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         markdown = build_report(kept, title=args.report_title, top=args.report_top)
         args.report.write_text(markdown, encoding="utf-8")
         counted = f"{len(kept)} record" + ("" if len(kept) == 1 else "s")
         print(f"[out] report on {counted} -> {args.report}", flush=True)
+        written["report"] = args.report
     if args.graph:
         fmt = args.graph_format or format_for(args.graph.suffix)
         if fmt is None:
-            print(
-                f"error: cannot tell the format of {args.graph.name}; "
+            return _fail(
+                "unknown_graph_format",
+                f"cannot tell the format of {args.graph.name}; "
                 f"use a .graphml or .dot suffix, or pass --graph-format",
-                flush=True,
             )
-            return 1
         graph = build_graph(records, kept)
         args.graph.parent.mkdir(parents=True, exist_ok=True)
         args.graph.write_text(render_graph(graph, fmt), encoding="utf-8")
@@ -467,25 +510,85 @@ def main(argv: list[str] | None = None) -> int:
             f"-> {args.graph}",
             flush=True,
         )
+        written["graph"] = args.graph
     if args.refresh_list:
         days = args.stale if args.stale is not None else float(DEFAULT_STALE_DAYS)
         aged = rank_stale(kept, days=days)
         lines = render_refresh_list(aged, limit=args.refresh_limit)
         args.refresh_list.parent.mkdir(parents=True, exist_ok=True)
         args.refresh_list.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        written = len(refresh_ids(aged, limit=args.refresh_limit))
+        ids = len(refresh_ids(aged, limit=args.refresh_limit))
         print(
-            f"[out] {written} id(s) to re-list -> {args.refresh_list} "
+            f"[out] {ids} id(s) to re-list -> {args.refresh_list} "
             f"(of {len(aged)} records older than {days:g} days)",
             flush=True,
         )
+        written["refresh_list"] = args.refresh_list
     if args.bibtex:
         report = write_bibtex(kept, args.bibtex)
         print(
             f"[out] {report.written} entries -> {args.bibtex} ({report.describe()})",
             flush=True,
         )
-    return 0
+        written["bibtex"] = args.bibtex
+    return 0, document(
+        tool="scholar-digest",
+        exit_code=0,
+        counts={
+            "records": len(kept),
+            "read": len(records),
+            "files": len(args.inputs),
+            "duplicates": duplicates,
+            "filtered_out": len(merged) - len(kept),
+            "unreadable_lines": malformed,
+        },
+        files=written,
+        records=kept,
+        extra=_sections(kept, delta, top=args.top),
+    )
+
+
+def _sections(
+    kept: list[Record], delta: Delta | None, *, top: int
+) -> dict[str, object]:
+    """Assemble the digest-specific sections of the document.
+
+    :param kept: the records that survived filtering.
+    :param delta: the comparison against an earlier merge, when one was asked for.
+    :param top: how many most-cited records to name.
+    :returns: the overview, and the comparison when there is one.
+    """
+    overview = summarize(kept, top=top)
+    sections: dict[str, object] = {
+        "overview": {
+            "records": overview.records,
+            "citations": overview.citations,
+            "with_bibtex": overview.with_bibtex,
+            "citation_only": overview.citation_only,
+            "unknown_year": overview.unknown_year,
+            "years": [{"year": year, "records": count} for year, count in overview.years],
+            "venues": [{"venue": venue, "records": count} for venue, count in overview.venues],
+            "most_cited": [
+                {"citations": citations, "year": year, "title": title}
+                for citations, year, title in overview.top
+            ],
+        }
+    }
+    if delta is not None:
+        sections["delta"] = {
+            "before": delta.before_total,
+            "after": delta.after_total,
+            "added": delta.added,
+            "gone": delta.gone,
+            "unchanged": delta.same,
+            "citations_gained": delta.citations_gained,
+            "moved": [
+                {"title": item.label, "before": item.before, "after": item.after,
+                 "change": item.change}
+                for item in delta.moved
+            ],
+        }
+    return sections
 
 
 if __name__ == "__main__":

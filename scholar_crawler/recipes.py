@@ -51,6 +51,11 @@ RECIPES: tuple[Recipe, ...] = (
         note="cp scholar.toml.example scholar.toml first; --explain names where every value came from",
     ),
     Recipe(
+        purpose="Collect from a script or an agent, and parse the result",
+        command='scholar-crawler -q "graph attention networks" -p 2 --json',
+        note="one JSON object on stdout, every progress line on stderr; see AGENTS.md",
+    ),
+    Recipe(
         purpose="Search one topic",
         command='scholar-crawler -q "graph attention networks" -p 3 -o out/gat.jsonl',
         note="3 pages, 10 records each, roughly a minute at the default rhythm",

@@ -7,15 +7,21 @@ checked, and the mirror is required to carry the same sections.
 from __future__ import annotations
 
 import re
+import shlex
 import sys
 import unicodedata
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scholar_crawler.cli import build_parser as crawler_parser  # noqa: E402
+from scholar_crawler.digest import build_parser as digest_parser  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 READMES = (ROOT / "README.md", ROOT / "README.en.md")
+AGENTS = ROOT / "AGENTS.md"
 LINK = re.compile(r"\]\(#([^)]+)\)")
+SHELL = re.compile(r"```sh\n(.*?)```", re.DOTALL)
 
 
 def _anchor(title: str) -> str:
@@ -81,3 +87,37 @@ def test_both_readmes_document_the_same_module_layout() -> None:
     assert chinese == english, f"layout differs: {chinese ^ english}"
     package = {path.name for path in (ROOT / "scholar_crawler").glob("*.py")} - {"__init__.py"}
     assert chinese == package, f"undocumented or stale modules: {chinese ^ package}"
+
+
+def _commands(text: str) -> list[str]:
+    """Collect the shell commands a document tells a reader to run.
+
+    :param text: the document.
+    :returns: one command per line, comments and continuations stripped.
+    """
+    commands = []
+    for block in SHELL.findall(text):
+        for line in block.splitlines():
+            command = line.split("#", 1)[0].strip()
+            if command.startswith(("scholar-crawler", "scholar-digest")):
+                commands.append(command)
+    return commands
+
+
+def test_the_agent_guide_stays_short_enough_to_be_read_in_full() -> None:
+    # It exists because README.md is 700 lines; a guide that grows into a second README
+    # defeats its own purpose.
+    lines = AGENTS.read_text(encoding="utf-8").splitlines()
+    assert len(lines) < 150, f"AGENTS.md is {len(lines)} lines; keep it an interface, not a manual"
+
+
+def test_every_command_in_the_agent_guide_parses() -> None:
+    for command in _commands(AGENTS.read_text(encoding="utf-8")):
+        argv = shlex.split(command)
+        parser = crawler_parser() if argv[0] == "scholar-crawler" else digest_parser()
+        assert parser.parse_args(argv[1:]) is not None, command
+
+
+def test_both_readmes_point_at_the_agent_guide() -> None:
+    for path in READMES:
+        assert "AGENTS.md" in path.read_text(encoding="utf-8"), path.name

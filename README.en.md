@@ -18,6 +18,7 @@ The code never tries to solve, bypass or hide a verification challenge. Verifica
 | It stopped with an error | [Failures in plain words](#failures-in-plain-words) → [Self-check](#self-check) |
 | Parsing looks wrong | [Self-check](#self-check) → [Real-structure regression fixtures](#real-structure-regression-fixtures) → `--dump-html` |
 | Interrupted run | [Reviewing and resetting resume state](#reviewing-and-resetting-resume-state) → `--resume` |
+| Driving it from an agent | [Calling it from a program](#calling-it-from-a-program---json) → [AGENTS.md](AGENTS.md) (the whole interface on one page) |
 | Changing the code | [Development](#development) → [Layout](#layout) → [How it works](#how-it-works) |
 
 The short version: `scholar-crawler --recipes` hands you working commands; come back to the matching section when something goes wrong.
@@ -35,14 +36,25 @@ Detection uses the URL (`/sorry/`, `consent.google.`, `accounts.google.com`), DO
 
 ## Install
 
+Two commands:
+
+```sh
+pipx install git+https://github.com/KimRasak/google-scholar-crawler   # or pip install
+scholar-crawler --install-browser                                     # downloads Chromium once
+```
+
+`--install-browser` runs Playwright's download through the current interpreter, so the browser lands in the right place whether the tool sits in a pipx environment, a venv, or the system Python. It is the one step a new user cannot guess, which is why it is a command rather than a paragraph.
+
+To change the code, install from a checkout:
+
 ```sh
 git clone https://github.com/KimRasak/google-scholar-crawler.git
 cd google-scholar-crawler
 python3 -m pip install -e .              # provides the scholar-crawler command
-python3 -m playwright install chromium   # only if you do not use local Chrome (--channel "")
+scholar-crawler --install-browser
 ```
 
-Python 3.10+. Keep the default `--channel chrome` when Chrome is installed. `scholar-crawler ...` and `python3 -m scholar_crawler ...` are equivalent.
+Python 3.10+. Keep the default `--channel chrome` when Chrome is installed. `scholar-crawler ...` and `python3 -m scholar_crawler ...` are equivalent, and `scholar-crawler --version` reports which version is installed.
 
 Check the machine first; this sends no request:
 
@@ -68,7 +80,7 @@ Once the machine is sound, `--self-check` goes on to test the network.
 
 ## Usage
 
-Rather than reading the flag table, start from `--recipes`: sixteen complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, a settings file, one topic, costing a run, batch plus CSV, an author, crawling the citation graph, resuming, auditing, exporting that graph, staleness and refreshing, keeping a collection current, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
+Rather than reading the flag table, start from `--recipes`: seventeen complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, a settings file, calling it from a program, one topic, costing a run, batch plus CSV, an author, crawling the citation graph, resuming, auditing, exporting that graph, staleness and refreshing, keeping a collection current, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
 
 ```sh
 $ scholar-crawler --recipes
@@ -133,6 +145,35 @@ The wait does not go quiet on you, because the person it is waiting for has usua
 - **A change of challenge is announced.** Clearing a captcha only to land on a sign-in wall asks something different of you, so the wait says `the page is now a sign_in`.
 - **It rings again before giving up**, 60 seconds ahead, saying the run will stop with whatever it collected. When the first bell went unheard, this is the one that matters.
 - **The timeout message names what happened**: `the window showed captcha -> sign_in` tells you afterwards which step actually blocked.
+
+## Calling it from a program: `--json`
+
+This tool is increasingly run by agents, which do not want progress lines — they want one call and one parsable result. `--json` gives stdout to a single JSON object and sends every human line to stderr, so `json.loads(stdout)` always works:
+
+```sh
+$ scholar-crawler -q "graph attention networks" -p 1 --json 2>/dev/null
+{
+  "tool": "scholar-crawler",
+  "version": "0.2.0",
+  "ok": true,
+  "exit_code": 0,
+  "counts": { "records": 10, "duplicates": 0, "requests": 1, "takeovers": 0 },
+  "files": { "records": "out/results.jsonl", "state": "out/state.json" },
+  "records": [ { "title": "...", "cluster_id": "...", "cited_by_count": 1234, "...": "..." } ],
+  "error": null
+}
+```
+
+The eight top-level keys stay put: `tool`, `version`, `ok`, `exit_code`, `counts`, `files`, `records`, `error`. The conventions around them:
+
+- **`records` carries the records themselves**, so a caller never reads the file back. The files are still written, and `files` names them.
+- **`--dry-run --json` costs a run without sending anything** and adds `plan` (`page_loads`, `records_at_most`, `seconds`, `cooldowns`, `targets`) — the way an agent decides whether a search is worth its requests.
+- **A failure is also a document**: `error` is `{kind, message, next_steps}`, and `kind` comes from a closed vocabulary (`challenge_unattended`, `rate_limited`, `unknown_layout`, `connection_refused`, …) that a caller can switch on. The vocabulary is enforced: writing a `kind` outside it raises rather than reaching a caller.
+- **Report modes and `--json` are mutually exclusive.** `--doctor`, `--explain`, `--recipes` and friends *are* reports for people; pairing them with `--json` would promise a result that does not exist, so it is refused — and the refusal is itself an `unsupported_mode` document.
+
+`scholar-digest --json` works the same way and adds `overview` (records, citations, years, venues, most cited) plus, with `--since`, `delta` (added, gone, moved, citations gained): what changed since last time, without re-crawling.
+
+The rule that matters most to an agent is that **a challenge belongs to a human**: under `--headless` a challenge ends the run with `challenge_unattended`, and the correct response is not to retry harder but to hand it to a person once. The whole calling interface is one page: [AGENTS.md](AGENTS.md), written for programs, while this README is written for people.
 
 ## Digesting collected results (no requests)
 
@@ -697,7 +738,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 406 tests, fully offline
+python3 -m pytest -q     # 439 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -712,6 +753,7 @@ All tests run offline (no network at all), grouped by area:
 - **The report**: stating that the numbers are as-collected, the counts at a glance, links only where a destination exists, the grouped tables, a chart scaled to the busiest year, which query each record came from, its own trust section, an escaped pipe in a title, an em dash for a missing field, and counting as output under `--quiet`
 - **Record audit**: a clean record trips nothing, page-range venues and leftover years, a year the byline never mentioned, citations without a link, negative counts, the severity of missing and lossy fields, citation-only records not blamed for a missing card id, counts with examples, and zero errors on records parsed from the real fixtures
 - **Documentation**: in-page links in both READMEs resolve to real sections, the navigation table covers at least seven situations, and both documents list exactly the modules that exist
+- **The document for programs**: the eight top-level keys are always present, only written files are named, non-ASCII is not escaped, `--dry-run` fills `plan` with numbers, a `kind` outside the vocabulary raises, AGENTS.md matches that vocabulary word for word, a refused report mode is itself a document, stdout carries the document while every progress line goes to stderr, the digest's `overview`/`delta`/`files`, `--install-browser` runs through the current interpreter and says how to see a failure, and the browser probe keeps only the child's path while discarding Playwright's teardown noise
 - **Collections**: only `.jsonl` is read and subdirectories are not walked, the files this run writes are excluded from its inputs, the diff pairs records by the crawler's own dedup key (new, no longer here, counts moved including falls), movements sort by size either way, a record without a count is not a movement, an unchanged collection is one line, long lists are cut with a count, and an emptied folder, a non-directory, no inputs at all and a missing `--since` file each fail by name
 - **Settings files**: a table and a top-level key mean the same thing, dashes and underscores both work, a flag beats the file and the override is reported, a repeated flag replaces the file's list, a misspelled key suggests the closest real one, modes are refused, every type mismatch is refused by name (number-as-string, switch-as-string, list-versus-single, outside choices), a nested table, a key set twice, broken TOML, a missing file, and the shipped `scholar.toml.example` reading back in full and running its recipe as written under `--explain`
 - **The interface**: both parsers are read back and compared — a shared flag parses the same way in both commands, every flag has help, every flag sits in a described group, a flag with a default states it, and terminal lists and the written report are governed by separate options
@@ -761,6 +803,7 @@ scholar_crawler/
   bibsynth.py   offline bibliography: BibTeX from stored fields
   storage.py    JSONL/CSV writers, author profile records, the .bib file, resume state
   config.py     TOML settings files: reading, validation, precedence, provenance
+  machine.py    the JSON document for programs: fixed keys, failure vocabulary, stdout discipline
   cli.py        command-line entry point: flag definitions and mode dispatch
   __main__.py   makes python3 -m scholar_crawler equivalent to scholar-crawler
 tests/          offline tests, including headless-Chromium detection tests

@@ -1,14 +1,16 @@
 """The modes that run instead of a crawl.
 
-``--doctor``, ``--self-check``, ``--rehearse-handoff``, ``--show-state`` and ``--forget`` each
-answer a question about the tool rather than collecting records: can this machine run a crawl
-at all, does Scholar still parse, does the takeover path work, where did previous runs stop,
-and drop that progress. They share the crawler's browser settings and its takeover log but
-none of its paging, so they live apart from both the crawl loop and argument parsing.
+``--install-browser``, ``--doctor``, ``--self-check``, ``--rehearse-handoff``,
+``--show-state`` and ``--forget`` each answer a question about the tool rather than collecting
+records: finish the installation, can this machine run a crawl at all, does Scholar still
+parse, does the takeover path work, where did previous runs stop, and drop that progress. They
+share the crawler's browser settings and its takeover log but none of its paging, so they live
+apart from both the crawl loop and argument parsing.
 """
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
@@ -16,7 +18,7 @@ from pathlib import Path
 from .browser import Session, browser_session
 from .challenge import ChallengeUnattended
 from .crawler import ScholarCrawler
-from .doctor import Status, diagnose_environment, render_environment
+from .doctor import Status, check_bundled_chromium, diagnose_environment, render_environment
 from .models import SearchRequest
 from .rehearsal import rehearse
 from .selfcheck import check_page, report
@@ -27,6 +29,35 @@ SELF_CHECK_QUERY = "machine learning"
 
 RECENT_TAKEOVERS = 5
 """How many of the most recent takeovers :func:`show_state` prints."""
+
+
+def install_browser() -> int:
+    """Download the browser Playwright drives into this installation.
+
+    A fresh install has the library but no browser, and the download is the one step a user
+    cannot guess. Running it through this interpreter is what makes it land in the right
+    place when the tool was installed into its own environment, as pipx does.
+
+    :returns: process exit code — 0 when a browser is available afterwards, 1 when not.
+    """
+    print("[install] downloading Chromium for Playwright (about 150 MB, once)", flush=True)
+    completed = subprocess.run(  # noqa: S603 - fixed command, no user input
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+        check=False,
+    )
+    if completed.returncode != 0:
+        print(
+            f"[install] playwright install exited {completed.returncode}; "
+            f"run '{sys.executable} -m playwright install chromium' to see why",
+            file=sys.stderr,
+        )
+        return 1
+    finding = check_bundled_chromium()
+    print(f"[install] {finding.describe()}", flush=True)
+    if finding.status is Status.FAIL:
+        return 1
+    print("[install] ready; run --doctor to check the rest, then --self-check", flush=True)
+    return 0
 
 
 def check_environment(*, profile: Path, out: Path, state: Path, channel: str | None) -> int:

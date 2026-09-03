@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from enum import Enum
@@ -44,6 +45,9 @@ REQUIREMENTS: tuple[Requirement, ...] = (
 
 INSTALL_COMMAND = "pip install -e ."
 """What fixes a missing or too-old dependency, from a checkout."""
+
+BROWSER_COMMAND = "scholar-crawler --install-browser"
+"""What downloads the browser Playwright drives, in whichever environment holds this tool."""
 
 CHROME_PATHS: dict[str, tuple[str, ...]] = {
     "chrome": (
@@ -191,32 +195,54 @@ def check_module(requirement: Requirement) -> Finding:
     return Finding(requirement.module, Status.OK, version or f"installed, version unknown (needs {floor}+)")
 
 
+PROBE = (
+    "from playwright.sync_api import sync_playwright\n"
+    "with sync_playwright() as playwright:\n"
+    "    print(playwright.chromium.executable_path)\n"
+)
+"""Script that asks Playwright where its Chromium is; see :func:`check_bundled_chromium`."""
+
+
 def check_bundled_chromium() -> Finding:
     """Check that Playwright's own Chromium has been downloaded.
 
+    The question is answered in a child process because reading the path starts Playwright's
+    driver, and a driver session that never launches a browser prints asyncio teardown noise on
+    some versions (1.62 does). Keeping only the child's stdout means the first command a new
+    user runs reports one clean line either way.
+
     :returns: the finding.
     """
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:  # already reported by check_module; nothing further to add
-        return Finding("bundled chromium", Status.FAIL, "playwright is not installed", "pip install -e .")
-    try:
-        with sync_playwright() as playwright:
-            executable = Path(playwright.chromium.executable_path)
-    except Exception as error:  # the driver refuses to start or reports no browser
+    probe = subprocess.run(  # noqa: S603 - fixed script, no user input
+        [sys.executable, "-c", PROBE],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    reported = probe.stdout.strip().splitlines()
+    if probe.returncode != 0 or not reported:
+        detail = next(
+            (line for line in reversed(probe.stderr.strip().splitlines()) if line.strip()),
+            "no output",
+        )
+        if "ModuleNotFoundError" in probe.stderr:
+            return Finding(
+                "bundled chromium", Status.FAIL, "playwright is not installed", INSTALL_COMMAND
+            )
         return Finding(
             "bundled chromium",
             Status.FAIL,
-            f"playwright cannot report a browser: {str(error).splitlines()[0]}",
-            "playwright install chromium",
+            f"playwright cannot report a browser: {detail}",
+            BROWSER_COMMAND,
         )
+    executable = Path(reported[-1])
     if executable.exists():
         return Finding("bundled chromium", Status.OK, str(executable))
     return Finding(
         "bundled chromium",
         Status.FAIL,
         f"not downloaded (expected at {executable})",
-        "playwright install chromium",
+        BROWSER_COMMAND,
     )
 
 

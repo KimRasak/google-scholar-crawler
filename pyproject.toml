@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "google-scholar-crawler"
-version = "0.1.0"
+version = "0.2.0"
 description = "Google Scholar crawler that automates academic search in a real browser and hands the window to a human when Google asks for verification"
 readme = "README.md"
 requires-python = ">=3.10"

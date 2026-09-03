@@ -297,11 +297,12 @@ def test_an_unattended_challenge_stops_the_run_without_losing_what_it_had(
             host=host,
         )
         outputs = _outputs(tmp_path)
-        exit_code = crawl(
+        outcome = crawl(
             session, NO_WAIT, CrawlLimits(pages=3), [QUERY], [], FollowPolicy(), TEMPLATE, outputs
         )
 
-    assert exit_code == 1
+    assert (outcome.exit_code, outcome.kind) == (1, "challenge_unattended")
+    assert "without --headless" in " ".join(outcome.next_steps)
     assert len(_records(tmp_path / "results.jsonl")) == 10  # page one survived the stop
     assert "[out] 10 new records" in capsys.readouterr().out
     recorded = ChallengeLog(tmp_path / "challenges.jsonl").entries()
@@ -334,7 +335,7 @@ def test_a_host_that_refuses_the_connection_is_explained(
         pass
 
     outputs = _outputs(tmp_path)
-    exit_code = crawl(
+    outcome = crawl(
         _session(tmp_path, host),
         NO_WAIT,
         CrawlLimits(pages=1),
@@ -345,7 +346,8 @@ def test_a_host_that_refuses_the_connection_is_explained(
         outputs,
     )
 
-    assert exit_code == 1
+    assert (outcome.exit_code, outcome.kind) == (1, "connection_refused")
+    assert outcome.next_steps, "a caller reading --json needs something to do next"
     captured = capsys.readouterr()
     assert "refused the connection" in captured.err
     assert "try: open the same address in a normal browser" in captured.err
@@ -360,7 +362,7 @@ def test_a_page_this_tool_cannot_read_is_not_reported_as_no_results(
     site = FakeScholar(body="<html><head><title>Wi-Fi login</title></head><body>sign in</body></html>")
     outputs = _outputs(tmp_path)
     with serving(site) as host:
-        exit_code = crawl(
+        outcome = crawl(
             _session(tmp_path, host),
             NO_WAIT,
             CrawlLimits(pages=2),
@@ -371,7 +373,7 @@ def test_a_page_this_tool_cannot_read_is_not_reported_as_no_results(
             outputs,
         )
 
-    assert exit_code == 1
+    assert (outcome.exit_code, outcome.kind) == (1, "unknown_layout")
     assert len(site.requests) == 1  # it stopped instead of paging through a site it cannot read
     printed = _stderr_of(capsys)
     assert "carries none of Scholar's markers" in printed
@@ -387,7 +389,7 @@ def test_a_refusal_to_serve_is_reported_as_a_block_not_a_bug(
     site = FakeScholar(status=429, body="<html><head><title>Sorry</title></head><body>too many</body></html>")
     outputs = _outputs(tmp_path)
     with serving(site) as host:
-        exit_code = crawl(
+        outcome = crawl(
             _session(tmp_path, host),
             NO_WAIT,
             CrawlLimits(pages=1),
@@ -398,7 +400,7 @@ def test_a_refusal_to_serve_is_reported_as_a_block_not_a_bug(
             outputs,
         )
 
-    assert exit_code == 1
+    assert (outcome.exit_code, outcome.kind) == (1, "rate_limited")
     printed = _stderr_of(capsys)
     assert "HTTP 429" in printed and "refusing requests from here" in printed
     assert "try: stop for a while" in printed

@@ -7,12 +7,12 @@ crawl can be driven — and tested — without argparse.
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .browser import Session, browser_session
 from .challenge import ChallengeUnattended
-from .crawler import Pacing, ScholarCrawler
+from .crawler import Pacing, RunStats, ScholarCrawler
 from .diagnose import CrawlFailure
 from .expand import FollowPolicy, next_level
 from .models import AuthorProfile, AuthorRequest, ScholarResult, SearchRequest
@@ -308,6 +308,32 @@ def crawl_targets(
     follow_citations(crawler, harvest, limits, follow, template, sink, state, bibtex)
 
 
+@dataclass(slots=True, frozen=True)
+class RunOutcome:
+    """How a crawl ended, for the caller that has to explain it or act on it.
+
+    :param exit_code: process exit code — 0 on success, 1 on a crawl failure, 130 on Ctrl+C.
+    :param kind: stable machine name of the failure, empty when the run succeeded.
+    :param message: one line naming what stopped the run, empty when nothing did.
+    :param next_steps: concrete actions, most useful first.
+    :param stats: what the run cost, or None when the browser never opened.
+    """
+
+    exit_code: int
+    kind: str = ""
+    message: str = ""
+    next_steps: tuple[str, ...] = ()
+    stats: RunStats | None = None
+
+    @property
+    def ok(self) -> bool:
+        """Report whether the crawl finished.
+
+        :returns: True when nothing stopped the run.
+        """
+        return self.exit_code == 0
+
+
 def crawl(
     session: Session,
     pacing: Pacing,
@@ -317,7 +343,7 @@ def crawl(
     follow: FollowPolicy,
     template: SearchRequest,
     outputs: Outputs,
-) -> int:
+) -> RunOutcome:
     """Open the browser and crawl every target, reporting the run whatever happens.
 
     Interruption and failure are ordinary endings here: whatever was collected has already
@@ -331,9 +357,9 @@ def crawl(
     :param follow: expansion policy.
     :param template: the filters generated citation listings inherit.
     :param outputs: the opened output files.
-    :returns: process exit code — 0 on success, 1 on a crawl failure, 130 on Ctrl+C.
+    :returns: how the run ended, including what stopped it.
     """
-    exit_code = 0
+    outcome = RunOutcome(0)
     crawler: ScholarCrawler | None = None
     try:
         with browser_session(session.options) as (_context, page):
@@ -349,15 +375,32 @@ def crawl(
             crawl_targets(crawler, limits, listings, authors, follow, template, outputs)
     except KeyboardInterrupt:
         print("\n[stop] interrupted by user", flush=True)
-        exit_code = 130
+        outcome = RunOutcome(130, kind="interrupted", message="interrupted by user")
     except CrawlFailure as failure:
-        for index, line in enumerate(failure.diagnosis.render()):
+        diagnosis = failure.diagnosis
+        for index, line in enumerate(diagnosis.render()):
             prefix = "\n[stop]" if index == 0 else "[stop]"
             print(f"{prefix} {line}", file=sys.stderr)
-        exit_code = 1
-    except (ChallengeUnattended, RuntimeError) as error:
+        outcome = RunOutcome(
+            1,
+            kind=diagnosis.failure.value,
+            message=diagnosis.what,
+            next_steps=diagnosis.next_steps,
+        )
+    except ChallengeUnattended as unattended:
+        print(f"\n[stop] {unattended}", file=sys.stderr)
+        outcome = RunOutcome(
+            1,
+            kind="challenge_unattended",
+            message=str(unattended),
+            next_steps=(
+                "run the same command without --headless, so the window can be handed to a person",
+                "a person clears the challenge once and the persistent profile reuses the cookies",
+            ),
+        )
+    except RuntimeError as error:
         print(f"\n[stop] {error}", file=sys.stderr)
-        exit_code = 1
+        outcome = RunOutcome(1, kind="runtime_error", message=str(error))
     finally:
         outputs.close_and_report(crawler)
-    return exit_code
+    return replace(outcome, stats=crawler.stats() if crawler is not None else None)

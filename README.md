@@ -19,6 +19,7 @@
 | 解析结果不对 | [自检](#自检) → [真实结构回归夹具](#真实结构回归夹具) → `--dump-html` |
 | 中途断了 | [查看与重置断点](#查看与重置断点) → `--resume` |
 | 想改代码 | [开发](#开发) → [结构](#结构) → [工作方式](#工作方式) |
+| 让 AI agent 来调研 | [给程序调用：`--json`](#给程序调用--json) → [AGENTS.md](AGENTS.md)（一页写完的调用约定） |
 
 一句话版本：`scholar-crawler --recipes` 会直接给你能用的命令，遇到问题再回来查对应那节。
 
@@ -35,14 +36,25 @@
 
 ## 安装
 
+两条命令，装完即可用：
+
+```sh
+pipx install git+https://github.com/KimRasak/google-scholar-crawler   # 或 pip install
+scholar-crawler --install-browser                                     # 下载 Playwright 用的 Chromium
+```
+
+`--install-browser` 用当前解释器去执行 Playwright 的下载，所以无论装在 pipx 的独立环境、venv 还是全局，浏览器都落在对的地方——这一步是新装用户唯一猜不到的动作，所以它是一个命令而不是一段说明。
+
+想改代码就从源码装：
+
 ```sh
 git clone https://github.com/KimRasak/google-scholar-crawler.git
 cd google-scholar-crawler
 python3 -m pip install -e .          # 提供 scholar-crawler 命令；或 pip install -r requirements.txt
-python3 -m playwright install chromium   # 若不用本机 Chrome（--channel ""）
+scholar-crawler --install-browser
 ```
 
-需要 Python 3.10+。本机已安装 Chrome 时保持默认 `--channel chrome`，指纹更自然。装好后 `scholar-crawler ...` 与 `python3 -m scholar_crawler ...` 等价。
+需要 Python 3.10+。本机已安装 Chrome 时保持默认 `--channel chrome`，指纹更自然。装好后 `scholar-crawler ...` 与 `python3 -m scholar_crawler ...` 等价，`scholar-crawler --version` 报告装的是哪一版。
 
 装完先跑一次环境体检，它不发任何请求：
 
@@ -68,7 +80,7 @@ $ scholar-crawler --doctor
 
 ## 快速开始
 
-不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十六条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、设置文件、单查询、先算账、批量+CSV、作者主页、抓引文网络、断点续抓、数据体检、导出引文网络、判旧与重抓、维护文献库、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
+不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十七条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、设置文件、给程序调用、单查询、先算账、批量+CSV、作者主页、抓引文网络、断点续抓、数据体检、导出引文网络、判旧与重抓、维护文献库、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
 
 ```sh
 $ scholar-crawler --recipes
@@ -133,6 +145,35 @@ scholar-crawler -q 'author:"Yoshua Bengio" source:"NeurIPS"' -p 2
 - **验证类型变了会说**：验证码点完却跳出登录墙时，你要做的事不一样，所以它明确报出来（`the page is now a sign_in`）。
 - **放弃前再响一次铃**：超时前 60 秒会重新响铃并说明「再不处理就带着已抓到的数据停机」——第一次铃没听见时，这一声才是真正有用的那声。
 - **超时信息带上经过**：`the window showed captcha -> sign_in`，事后能看出当时到底卡在哪一步。
+
+## 给程序调用：`--json`
+
+这个工具越来越常被 AI agent 调用：它要的不是终端里的进度，而是一次调用、一个可解析的结果。`--json` 把 stdout 让给一个 JSON 对象，所有给人看的行改走 stderr，所以 `json.loads(stdout)` 永远成立：
+
+```sh
+$ scholar-crawler -q "graph attention networks" -p 1 --json 2>/dev/null
+{
+  "tool": "scholar-crawler",
+  "version": "0.2.0",
+  "ok": true,
+  "exit_code": 0,
+  "counts": { "records": 10, "duplicates": 0, "requests": 1, "takeovers": 0 },
+  "files": { "records": "out/results.jsonl", "state": "out/state.json" },
+  "records": [ { "title": "...", "cluster_id": "...", "cited_by_count": 1234, "...": "..." } ],
+  "error": null
+}
+```
+
+八个顶层键固定不变：`tool`、`version`、`ok`、`exit_code`、`counts`、`files`、`records`、`error`。几条约定：
+
+- **`records` 直接给记录本身**，调用方不用再去读文件；文件照旧会写，`files` 里列出路径。
+- **`--dry-run --json` 只算账不发请求**，多一个 `plan`（`page_loads`、`records_at_most`、`seconds`、`cooldowns`、`targets`），这是让 agent 先估价再决定的入口。
+- **失败也是一个文档**：`error` 是 `{kind, message, next_steps}`，`kind` 取自一份封闭的词表（`challenge_unattended`、`rate_limited`、`unknown_layout`、`connection_refused`……），调用方可以直接 `switch`。词表由测试保证：代码里写出一个词表外的 `kind` 会直接抛错。
+- **报告类模式与 `--json` 互斥**：`--doctor`、`--explain`、`--recipes` 等本身就是给人读的报告，配上 `--json` 只会承诺一个不存在的结果，所以直接拒绝（并且拒绝本身也是一个 `unsupported_mode` 文档）。
+
+`scholar-digest --json` 同理，另加 `overview`（记录数、被引总数、年份、期刊、被引最高）和 `--since` 的 `delta`（新增、不在了、被引变动、净增），也就是「这轮和上次比变了什么」——不用重抓。
+
+最重要的一条给 agent 的约定是**验证码只能交给人**：`--headless` 下遇到验证会以 `challenge_unattended` 结束，正确的反应不是重试更狠，而是把这件事交给人处理一次。完整的调用约定写在 [AGENTS.md](AGENTS.md)（一页），它是给程序读的，人读 README。
 
 ## 汇总已抓到的结果（不发请求）
 
@@ -697,7 +738,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 406 个用例，全部离线
+python3 -m pytest -q     # 439 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -716,6 +757,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **综述报告**：说明数字来自抓取当时、规模统计、链接只在有目标时生成、分组表、柱状图按最忙的一年缩放、查询来源、自带可信度一节、标题里的竖线被转义、缺失字段显示为破折号、`--quiet` 下也算输出
 - **数据体检**：干净记录不误报、页码型 venue 与残留年份、与灰字矛盾的年份、有被引数无链接、负计数、缺失与有损字段的档位、仅引用条目不因缺 card id 被判错、占比与例子、真实夹具记录零 error
 - **文档导航**：两份 README 的页内链接都指向真实小节、导航表覆盖至少 7 种情况、两份文档的模块清单一致且与实际模块完全对应
+- **给程序的文档**：八个顶层键始终存在、只列写出的文件、非 ASCII 不转义、`--dry-run` 的 `plan` 数字、词表外的 `kind` 直接抛错、AGENTS.md 与词表逐词一致、报告类模式被拒也是一个文档、stdout 只有文档而进度全在 stderr、digest 的 `overview`/`delta`/`files`、`--install-browser` 走当前解释器且失败时说怎么看原因、浏览器探测只取子进程的路径而丢掉 Playwright 的收尾噪声
 - **文献库**：目录里只读 `.jsonl` 且不递归、这一轮要写的文件被排除在输入之外、差异按抓取时的同一口径配对（新增/不在了/被引数变动，含下降）、变动按幅度绝对值排序、缺被引数的记录不算变动、什么都没变时只有一行、列表过长时给出「还有几条」、目录空了/路径不是目录/没给任何输入/`--since` 文件不存在各自报错
 - **设置文件**：表与顶层键等价、键名可用横线或下划线、命令行覆盖文件且被记录、可重复参数是替换而非追加、拼错的键给出最接近的建议、模式类参数被拒、类型不符（数字写成字符串、开关写成字符串、列表与单值互换、超出 choices）各自报错、表嵌套过深、同键两次、坏 TOML、文件不存在、随仓库发布的 `scholar.toml.example` 能被完整读入，并按 recipe 原样跑通一次 `--explain`
 - **命令行界面**：两条命令的参数表直接读回来比对——同名参数在两边的取值方式一致、每个参数都有说明、每个参数都在有说明的分组里、有默认值的参数必须在帮助里写出来、终端列表与写出综述各归各的参数管
@@ -765,6 +807,7 @@ scholar_crawler/
   bibsynth.py   离线书目：由已存字段拼出 BibTeX
   storage.py    JSONL/CSV 写入、作者主页记录、BibTeX 文件、断点状态
   config.py     TOML 设置文件：读取校验、与命令行的优先级、来源追溯
+  machine.py    给程序看的一份 JSON 文档：字段固定、失败词表、stdout 只放它
   cli.py        命令行入口：参数定义、模式分发
   __main__.py   让 python3 -m scholar_crawler 等价于 scholar-crawler
 tests/          离线测试（含 headless Chromium 判定测试）

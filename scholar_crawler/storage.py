@@ -49,10 +49,13 @@ class ResultSink:
 
     :param path: JSONL output path; existing content is kept and used for dedup.
     :param tally: audits every written record so a run can report fields that parsed badly.
+    :param fresh: the records written this run, in output order, for ``--json`` callers that
+        want the result without reading the file back.
     """
 
     path: Path
     tally: AuditTally = field(default_factory=AuditTally)
+    fresh: list[dict[str, Any]] = field(default_factory=list)
     _seen: set[str] = field(default_factory=set)
     _handle: TextIO | None = None
     written: int = 0
@@ -85,6 +88,7 @@ class ResultSink:
             return False
         self._seen.add(key)
         payload = result.to_dict()
+        self.fresh.append(payload)
         self.tally.observe(payload)
         self._handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
         self._handle.flush()
