@@ -57,6 +57,7 @@ def crawl_listing(
     state: StateStore,
     bibtex: BibtexSink | None = None,
     depth: int = 0,
+    position: str = "",
 ) -> list[ScholarResult]:
     """Crawl one keyword, citation or version listing into ``sink``.
 
@@ -67,11 +68,12 @@ def crawl_listing(
     :param state: resume cursor store.
     :param bibtex: when set, each record's BibTeX entry is exported as well.
     :param depth: citation-graph level this listing came from, recorded on every record.
+    :param position: place in the seed batch, such as ``2/7``; empty for a single target.
     :returns: every record parsed from this listing, for the next expansion level.
     """
     signature = request.signature()
     start = state.next_start(signature, limits.start) if limits.resume else limits.start
-    label = f"[query] {request.label!r} from offset {start}"
+    label = f"[query] {position + ' ' if position else ''}{request.label!r} from offset {start}"
     print(f"\n{label}" + (f" (level {depth})" if depth else ""), flush=True)
     collected: list[ScholarResult] = []
     for page in crawler.search(
@@ -147,6 +149,7 @@ def crawl_author(
     state: StateStore,
     profiles: ProfileStore,
     bibtex: BibtexSink | None = None,
+    position: str = "",
 ) -> list[ScholarResult]:
     """Crawl one author profile into ``sink`` and its header into ``profiles``.
 
@@ -157,11 +160,13 @@ def crawl_author(
     :param state: resume cursor store.
     :param profiles: writer for the profile header record.
     :param bibtex: when set, each publication's BibTeX entry is exported as well.
+    :param position: place in the seed batch, such as ``2/7``; empty for a single target.
     :returns: every publication record parsed, for the next expansion level.
     """
     signature = request.signature()
     start = state.next_start(signature, limits.start) if limits.resume else limits.start
-    print(f"\n[author] {request.user_id} from publication {start}", flush=True)
+    place = f"{position} " if position else ""
+    print(f"\n[author] {place}{request.user_id} from publication {start}", flush=True)
     latest: AuthorProfile | None = None
     collected: list[ScholarResult] = []
     for batch in crawler.crawl_author(
@@ -314,10 +319,16 @@ def crawl_targets(
     """
     sink, state, bibtex = outputs.sink, outputs.state, outputs.bibtex
     harvest: list[ScholarResult] = []
-    for listing in listings:
-        harvest += crawl_listing(crawler, listing, limits, sink, state, bibtex)
-    for author in authors:
-        harvest += crawl_author(crawler, author, limits, sink, state, outputs.profiles, bibtex)
+    # A batch from --queries-file runs for an hour or more, so each target says how far along
+    # the batch is; a single target would only be told "1/1".
+    seeds = len(listings) + len(authors)
+    place = (lambda index: f"{index}/{seeds}") if seeds > 1 else (lambda _index: "")
+    for index, listing in enumerate(listings, start=1):
+        harvest += crawl_listing(crawler, listing, limits, sink, state, bibtex, position=place(index))
+    for offset, author in enumerate(authors, start=len(listings) + 1):
+        harvest += crawl_author(
+            crawler, author, limits, sink, state, outputs.profiles, bibtex, position=place(offset)
+        )
     follow_citations(crawler, harvest, limits, follow, template, sink, state, bibtex)
 
 

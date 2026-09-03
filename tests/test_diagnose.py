@@ -31,6 +31,8 @@ def test_each_network_failure_is_named_from_the_browser_error() -> None:
     assert _failure_of("net::ERR_NAME_NOT_RESOLVED") is Failure.DNS
     assert _failure_of("net::ERR_INTERNET_DISCONNECTED") is Failure.OFFLINE
     assert _failure_of("net::ERR_PROXY_CONNECTION_FAILED") is Failure.PROXY
+    # Chromium refuses its own blocked ports before connecting, which a --host typo can hit.
+    assert _failure_of("net::ERR_UNSAFE_PORT at http://127.0.0.1:9/") is Failure.CONNECTION_REFUSED
     assert _failure_of("net::ERR_TUNNEL_CONNECTION_FAILED") is Failure.PROXY
     assert _failure_of("net::ERR_CONNECTION_RESET") is Failure.RESET
     assert _failure_of("net::ERR_EMPTY_RESPONSE") is Failure.RESET

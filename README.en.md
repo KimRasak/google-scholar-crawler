@@ -164,6 +164,7 @@ scholar-crawler -q "retrieval augmented generation" \
   --year-from 2023 --sort-by-date -n 40 -o out/rag.jsonl
 
 # Batch queries (one per line, # comments allowed) with resume
+# with several targets each one reports its place: [query] 3/12 '...' from offset 0
 scholar-crawler --queries-file queries.example.txt -p 10 --resume -o out/batch.jsonl
 
 # Follow the citation graph: paste cited_by_url / versions_url from collected records
@@ -817,7 +818,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 461 tests, fully offline
+python3 -m pytest -q     # 462 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -840,7 +841,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 44 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 46 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
@@ -891,7 +892,7 @@ python3 -m tests.sanitize out/dump/<result-page>.html tests/pages/results.html 6
 
 Unit tests feed HTML strings to the parser and `--self-check` needs the real network; neither covers the path that matters most: a **real browser** navigating real URLs, tripping a challenge, resuming after a takeover and writing the files correctly. `tests/fakescholar.py` serves a fake Scholar on loopback with `http.server`, answering only `/scholar` and `/citations`, and can be told to answer a given offset with a challenge page the first time it is asked. The stand-in human in the tests clears it the way a person does — reload the page, the challenge is gone, the crawl continues.
 
-Behaviour that used to be verified once against the real Scholar now runs on every CI job: paging to the page budget and not one page further, all 20 records on disk, a cursor at 40, challenge → takeover → the same offset refetched → nothing lost, `resolved` in the takeover log with a redacted URL, `--resume` continuing from 20 to 40, an author profile and its header stored, clean data raising no audit alarm, when headless refuses the takeover, the 10 records already collected still on disk, exit code 1, and the cursor left at 10; and Ctrl+C between two pages giving exit code 130 with kind `interrupted`, the 10 records kept, and the cursor at 10.
+Behaviour that used to be verified once against the real Scholar now runs on every CI job: paging to the page budget and not one page further, all 20 records on disk, a cursor at 40, challenge → takeover → the same offset refetched → nothing lost, `resolved` in the takeover log with a redacted URL, `--resume` continuing from 20 to 40, an author profile and its header stored, clean data raising no audit alarm, when headless refuses the takeover, the 10 records already collected still on disk, exit code 1, and the cursor left at 10; Ctrl+C between two pages giving exit code 130 with kind `interrupted`, the 10 records kept, and the cursor at 10; and a batch whose second query hits a page this tool cannot read keeping the first query's 20 records and its cursor, leaving the failed target's cursor at 0 so `--resume` retries it, with both targets logged as `1/2` and `2/2`.
 
 ## Compliance
 

@@ -41,6 +41,7 @@ class FakeScholar:
         challenge_at: tuple[int, ...] = (),
         status: int = 200,
         body: str | None = None,
+        unreadable_for: tuple[str, ...] = (),
     ) -> None:
         """Build a site.
 
@@ -48,11 +49,14 @@ class FakeScholar:
         :param challenge_at: offsets answered with a challenge page the first time.
         :param status: HTTP status every response carries.
         :param body: HTML served instead of the result pages.
+        :param unreadable_for: queries answered with a page carrying no Scholar markers, so a
+            batch can fail on one target while the others succeed.
         """
         self.pages = pages
         self.challenge_at = set(challenge_at)
         self.status = status
         self.body = body
+        self.unreadable_for = set(unreadable_for)
         self.requests: list[str] = []
         self.challenges_served: list[int] = []
         self._served_challenge: set[int] = set()
@@ -71,6 +75,8 @@ class FakeScholar:
                 return self.body
             if path == "/citations":
                 return AUTHOR_PAGE_HTML
+            if query.get("q", [""])[0] in self.unreadable_for:
+                return "<html><body><p>nothing this tool can read</p></body></html>"
             start = int(query.get("start", ["0"])[0])
             if start in self.challenge_at and start not in self._served_challenge:
                 self._served_challenge.add(start)

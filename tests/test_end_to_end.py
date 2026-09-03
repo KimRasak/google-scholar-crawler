@@ -349,6 +349,40 @@ def test_ctrl_c_between_pages_keeps_the_first_page_and_exits_130(
     assert state.next_start(QUERY.signature()) == 10, "--resume continues from the cursor"
 
 
+def test_a_batch_that_dies_on_a_later_target_keeps_the_earlier_ones(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A --queries-file batch runs for an hour. When Scholar answers one query with a page this
+    # tool cannot read, the run stops — but the targets already collected must be on disk with
+    # their own cursors, so --resume picks the batch up instead of starting over.
+    first = SearchRequest(query="graph attention")
+    second = SearchRequest(query="unreadable topic")
+    site = FakeScholar(pages=2, unreadable_for=("unreadable topic",))
+    with serving(site) as host:
+        outcome = crawl(
+            _session(tmp_path, host),
+            NO_WAIT,
+            CrawlLimits(pages=2),
+            [first, second],
+            [],
+            FollowPolicy(),
+            TEMPLATE,
+            _outputs(tmp_path),
+        )
+
+    assert (outcome.exit_code, outcome.kind) == (1, "unknown_layout")
+    assert "unreadable+topic" in outcome.message, "the message names the target that failed"
+    printed = capsys.readouterr().out
+    assert "[query] 1/2 'graph attention'" in printed, "a batch says how far along it is"
+    assert "[query] 2/2 'unreadable topic'" in printed
+
+    assert len(_records(tmp_path / "results.jsonl")) == 20  # both pages of the first target
+    state = StateStore(tmp_path / "state.json")
+    state.load()
+    assert state.next_start(first.signature()) == 20
+    assert state.next_start(second.signature()) == 0, "the failed target has nothing to resume"
+
+
 def _session(tmp_path: Path, host: str) -> Session:
     return Session(
         options=BrowserOptions(user_data_dir=tmp_path / "profile", headless=True, channel=None),

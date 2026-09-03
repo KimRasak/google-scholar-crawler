@@ -97,6 +97,9 @@ class CrawlFailure(RuntimeError):
 
 _NETWORK_SIGNALS: tuple[tuple[str, Failure], ...] = (
     ("ERR_CONNECTION_REFUSED", Failure.CONNECTION_REFUSED),
+    # Chromium keeps a fixed list of ports it will not open, so a --host on one of them fails
+    # before any connection is attempted.
+    ("ERR_UNSAFE_PORT", Failure.CONNECTION_REFUSED),
     ("ERR_NAME_NOT_RESOLVED", Failure.DNS),
     ("ERR_NAME_RESOLUTION_FAILED", Failure.DNS),
     ("ERR_INTERNET_DISCONNECTED", Failure.OFFLINE),
@@ -121,6 +124,7 @@ _NETWORK_ADVICE: dict[Failure, tuple[str, tuple[str, ...]]] = {
         (
             "open the same address in a normal browser: if that fails too, the network is blocking it",
             "check --host if you pointed it somewhere other than scholar.google.com",
+            "a browser also refuses a --host port from its own blocked list, such as 9 or 6000",
             "check whether a VPN, firewall or corporate proxy is in the way",
         ),
     ),

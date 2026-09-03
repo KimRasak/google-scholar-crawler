@@ -302,6 +302,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "a batch tells each target its place",
+        "scholar_crawler/run.py",
+        'place = (lambda index: f"{index}/{seeds}") if seeds > 1 else (lambda _index: "")',
+        'place = lambda _index: ""  # noqa: E731',
+        "tests/test_end_to_end.py",
+    ),
+    Mutation(
+        "a port the browser blocks is named as a refusal",
+        "scholar_crawler/diagnose.py",
+        '    ("ERR_UNSAFE_PORT", Failure.CONNECTION_REFUSED),',
+        "",
+        "tests/test_diagnose.py",
+    ),
+    Mutation(
         "markdown punctuation in a title is escaped",
         "scholar_crawler/report.py",
         'MARKDOWN_SPECIALS = "\\\\`*_[]<>|"',

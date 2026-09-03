@@ -164,6 +164,7 @@ scholar-crawler -q "retrieval augmented generation" \
   --year-from 2023 --sort-by-date -n 40 -o out/rag.jsonl
 
 # 批量查询（文件内一行一个，# 开头为注释，见 queries.example.txt），断点续爬
+# 多个目标时日志里每条会标出进度：[query] 3/12 '...' from offset 0
 scholar-crawler --queries-file queries.example.txt -p 10 --resume -o out/batch.jsonl
 
 # 顺着引文网络走：把上一步结果里的 cited_by_url / versions_url 直接粘进来
@@ -814,7 +815,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 461 个用例，全部离线
+python3 -m pytest -q     # 462 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -835,7 +836,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 44 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 46 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```
@@ -866,7 +867,7 @@ python3 -m tests.sanitize out/dump/<结果页>.html tests/pages/results.html 6
 
 单元测试把 HTML 字符串喂给解析器，`--self-check` 需要真网络，两者都没覆盖最要紧的那条路：**真实浏览器**导航真实 URL、撞上验证页、接管后恢复、把文件写对。`tests/fakescholar.py` 用 `http.server` 在本地回环起一个假 Scholar，只答 `/scholar` 和 `/citations` 两条路径，可以指定某个 offset「第一次被请求时返回验证页」；测试里的替身「人」处理方式和真人一样——把页面重新加载一次，验证消失，抓取继续。
 
-于是这些以前只能在真 Scholar 上验证一次的行为，现在每次 CI 都跑：翻页到页数上限（不多请求一页）、20 条记录都在盘上、断点写到 40、遇验证 → 接管 → 同一 offset 重取 → 一条不丢、接管记录里 `resolved` 与 URL 脱敏、`--resume` 从 20 接着抓到 40、作者主页与档案落盘、干净数据不触发体检报警，以及 headless 下拒绝接管时**已抓到的 10 条仍在盘上**、退出码为 1、断点停在 10；Ctrl+C 打在两页之间时退出码 130、`interrupted`、已抓到的 10 条仍在盘上、断点停在 10；还有一条完全由设置文件描述的运行——查询、页数、host、profile、输出路径全从 TOML 读出，命令行只有 `--config`——抓到同样的 10 条。
+于是这些以前只能在真 Scholar 上验证一次的行为，现在每次 CI 都跑：翻页到页数上限（不多请求一页）、20 条记录都在盘上、断点写到 40、遇验证 → 接管 → 同一 offset 重取 → 一条不丢、接管记录里 `resolved` 与 URL 脱敏、`--resume` 从 20 接着抓到 40、作者主页与档案落盘、干净数据不触发体检报警，以及 headless 下拒绝接管时**已抓到的 10 条仍在盘上**、退出码为 1、断点停在 10；Ctrl+C 打在两页之间时退出码 130、`interrupted`、已抓到的 10 条仍在盘上、断点停在 10；一批查询里第二条撞上读不懂的页面时，第一条的 20 条与它自己的断点都还在（失败那条的断点仍是 0，`--resume` 会重试它），日志里两条目标分别标着 `1/2`、`2/2`；还有一条完全由设置文件描述的运行——查询、页数、host、profile、输出路径全从 TOML 读出，命令行只有 `--config`——抓到同样的 10 条。
 
 ## 合规
 
