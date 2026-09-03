@@ -9,6 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scholar_crawler.browser import locale_for  # noqa: E402
 from scholar_crawler.cli import build_parser, build_targets, main  # noqa: E402
 
 
@@ -93,3 +94,11 @@ def test_main_reports_usage_errors_without_touching_the_browser(capsys: pytest.C
 def test_main_reports_invalid_pacing(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["-q", "x", "--min-delay", "20", "--max-delay", "5"]) == 1
     assert "exceeds max_delay" in capsys.readouterr().err
+
+
+def test_the_browser_locale_follows_the_interface_language() -> None:
+    # One fact, one home: a window asking Scholar for German pages while reporting
+    # Accept-Language: en-US describes a browser nobody has.
+    assert locale_for("en") == "en-US", "plain en is not what a real browser sends"
+    assert locale_for("zh-CN") == "zh-CN"
+    assert locale_for("de") == "de"

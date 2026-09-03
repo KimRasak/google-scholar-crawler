@@ -179,7 +179,7 @@ scholar-crawler -q "chain of thought prompting" -p 1 \
 scholar-crawler -q "diffusion models" -p 2 --bibtex out/refs.bib -o out/diffusion.jsonl
 
 # 抓作者主页：一次请求最多 100 篇；主页头部（引用总数、h-index、i10、研究兴趣）单独落盘
-scholar-crawler --author kukA0LcAAAAJ -o out/bengio.jsonl --profiles-out out/profiles.jsonl
+scholar-crawler --author kukA0LcAAAAJ -o out/bengio.jsonl
 scholar-crawler --author "https://scholar.google.com/citations?user=kukA0LcAAAAJ&hl=en" --sort-by-date -p 2
 
 # Scholar 高级语法直接写进 query
@@ -701,12 +701,12 @@ $ scholar-crawler --self-check
 | `--start`、`--resume` | 起始 offset；从 state 断点继续 |
 | `--year-from/--year-to`、`--sort-by-date`、`--review-only` | 年份区间、按日期排序、只要综述 |
 | `--no-citations`、`--no-patents` | 排除仅引用条目、排除专利 |
-| `--lang`、`--host` | 界面语言 `hl`；镜像站如 `https://scholar.google.de` |
+| `--lang`、`--host` | 界面语言 `hl`（浏览器的 `Accept-Language` 跟着它，不另设旗标）；镜像站如 `https://scholar.google.de` |
 | `-o/--out`、`--state` | JSONL 输出、断点文件（CSV 交给 `scholar-digest --csv`，抓取本身不导表） |
 | `--challenge-log` | 接管记录文件（默认 `out/challenges.jsonl`，URL 已脱敏） |
 | `--bibtex` | 同时导出 BibTeX 到 `.bib` 文件；按引用键去重，记录里写入 `extra.bibtex_key` 便于关联 |
-| `--profiles-out`、`--dump-html` | 作者主页头部记录（每位作者一行，重复抓取覆盖旧值）、抓到的原始 HTML（排查解析问题用） |
-| `--profile`、`--channel`、`--locale`、`--timezone`、`--proxy` | 浏览器 profile 与环境参数 |
+| `--dump-html` | 抓到的原始 HTML（排查解析问题用） |
+| `--profile`、`--channel`、`--timezone`、`--proxy` | 浏览器 profile 与环境参数 |
 | `--min-delay/--max-delay`、`--cooldown-every/--cooldown-seconds` | 抓取节奏（默认 4-11s；不传时会按接管记录自动放慢） |
 | `--no-learn-from-history` | 不读接管记录，按默认节奏起跑 |
 | `--handoff-timeout`、`--max-handoffs`、`--backoff-factor`、`--challenge-cooldown` | 等人多久（0 = 无限等）、最多接管几次、每次接管后延迟放大倍数、连续被拦时恢复前的静默等待 |
@@ -737,7 +737,7 @@ JSONL 每行一条记录：
 
 去重按 `cluster_id`（缺失时用 标题+链接），跨页和跨次运行都生效——重复追加同一文件不会产生重复行。`query` 字段记录来源入口（关键词，或 `cites:<id>`、`cluster:<id>`、`author:<id>`）。
 
-作者主页的论文写进同一个 JSONL（`extra.citation_id` 记录 Scholar 的 citation id），主页头部另外写进 `--profiles-out`：
+作者主页的论文写进同一个 JSONL（`extra.citation_id` 记录 Scholar 的 citation id），主页头部写进 `-o` 旁边的 `<名字>.profiles.jsonl`（`-o out/bengio.jsonl` → `out/bengio.profiles.jsonl`，每位作者一行，重复抓取覆盖旧值）——它没有自己的旗标：抓作者主页本来就要解析这段头部，而跟着 `-o` 命名可以避免两次不同的运行悄悄共用一个档案文件：
 
 ```json
 {"user_id":"kukA0LcAAAAJ","name":"Yoshua Bengio",
@@ -817,7 +817,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 466 个用例，全部离线
+python3 -m pytest -q     # 469 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -838,7 +838,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 48 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 50 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

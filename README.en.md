@@ -179,7 +179,7 @@ scholar-crawler -q "chain of thought prompting" -p 1 \
 scholar-crawler -q "diffusion models" -p 2 --bibtex out/refs.bib -o out/diffusion.jsonl
 
 # Crawl an author profile: up to 100 publications per request, header stored separately
-scholar-crawler --author kukA0LcAAAAJ -o out/bengio.jsonl --profiles-out out/profiles.jsonl
+scholar-crawler --author kukA0LcAAAAJ -o out/bengio.jsonl
 scholar-crawler --author "https://scholar.google.com/citations?user=kukA0LcAAAAJ&hl=en" --sort-by-date -p 2
 
 # Scholar's advanced syntax goes straight into the query
@@ -704,12 +704,12 @@ It fetches one page of a broad query and reports, field by field, whether titles
 | `--start`, `--resume` | first offset; continue from the saved cursor |
 | `--year-from/--year-to`, `--sort-by-date`, `--review-only` | year range, date order, reviews only |
 | `--no-citations`, `--no-patents` | exclude citation-only records / patents |
-| `--lang`, `--host` | interface language (`hl`); mirror such as `https://scholar.google.de` |
+| `--lang`, `--host` | interface language (`hl`), which the browser's `Accept-Language` follows with no separate flag; mirror such as `https://scholar.google.de` |
 | `--challenge-log` | takeover log (default `out/challenges.jsonl`, URLs redacted) |
 | `-o/--out`, `--state` | JSONL output and resume state (CSV is `scholar-digest --csv`; a crawl does not export tables) |
 | `--bibtex` | also export BibTeX to a `.bib` file; deduplicated by citation key, with `extra.bibtex_key` recorded on each record |
-| `--profiles-out`, `--dump-html` | author profile headers (one record per author, re-crawls replace it), raw HTML of every fetched page |
-| `--profile`, `--channel`, `--locale`, `--timezone`, `--proxy` | browser profile and environment |
+| `--dump-html` | raw HTML of every fetched page |
+| `--profile`, `--channel`, `--timezone`, `--proxy` | browser profile and environment |
 | `--no-learn-from-history` | start at the default rhythm instead of reading the takeover log |
 | `--min-delay/--max-delay`, `--cooldown-every/--cooldown-seconds` | request rhythm |
 | `--handoff-timeout`, `--max-handoffs`, `--backoff-factor`, `--challenge-cooldown` | how long to wait for a human (0 = forever), takeover budget, slowdown per takeover, wait-out after back-to-back challenges |
@@ -740,7 +740,7 @@ One JSON object per line:
 
 Records are deduplicated by `cluster_id` (falling back to title + link) across pages and across runs, so appending to the same file never produces duplicate lines. The `query` field records the entry point: the keyword query, or `cites:<id>` / `cluster:<id>` / `author:<id>`.
 
-Author publications land in the same JSONL (with Scholar's citation id in `extra.citation_id`); the profile header goes to `--profiles-out`:
+Author publications land in the same JSONL (with Scholar's citation id in `extra.citation_id`); the profile header goes next to `-o` as `<name>.profiles.jsonl` (`-o out/bengio.jsonl` gives `out/bengio.profiles.jsonl`, one line per author, replaced on a re-crawl). It has no flag of its own: an author crawl parses that header anyway, and naming it after `-o` keeps two runs from quietly sharing one profile file:
 
 ```json
 {"user_id":"kukA0LcAAAAJ","name":"Yoshua Bengio",
@@ -820,7 +820,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 466 tests, fully offline
+python3 -m pytest -q     # 469 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -843,7 +843,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 48 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 50 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

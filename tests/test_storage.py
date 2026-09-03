@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scholar_crawler.parser import parse_result_page  # noqa: E402
-from scholar_crawler.storage import ResultSink, StateStore  # noqa: E402
+from scholar_crawler.storage import ResultSink, StateStore, profiles_beside  # noqa: E402
 from tests.fixtures import RESULT_PAGE_HTML  # noqa: E402
 
 
@@ -65,3 +65,9 @@ def test_state_round_trip(tmp_path: Path) -> None:
     reloaded.load()
     assert reloaded.next_start("sig") == 30
     assert reloaded.next_start("other", default=10) == 10
+
+
+def test_the_profile_file_is_named_after_the_records_file() -> None:
+    assert profiles_beside(Path("out/gnn.jsonl")) == Path("out/gnn.profiles.jsonl")
+    assert profiles_beside(Path("gnn")) == Path("gnn.profiles.jsonl")
+    assert profiles_beside(Path("out/a.jsonl")) != profiles_beside(Path("out/b.jsonl"))

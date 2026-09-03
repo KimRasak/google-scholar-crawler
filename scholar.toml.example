@@ -39,7 +39,6 @@ max-handoffs = 3
 
 [browser]
 profile = ".scholar-profile"
-locale = "en-US"
 
 [output]
 out = "out/gnn.jsonl"

@@ -70,6 +70,19 @@ def browser_session(options: BrowserOptions) -> Iterator[tuple[BrowserContext, P
             context.close()
 
 
+def locale_for(language: str) -> str:
+    """Choose the browser locale that matches the Scholar interface language.
+
+    The interface language and the browser locale are one fact: a window asking Scholar for
+    German pages while reporting ``Accept-Language: en-US`` describes a browser nobody has.
+    Plain ``en`` is sent as ``en-US`` because that is the form a real browser sends.
+
+    :param language: the ``--lang`` value, which becomes Scholar's ``hl``.
+    :returns: the locale for the browser context.
+    """
+    return "en-US" if language == "en" else language
+
+
 @dataclass(slots=True, frozen=True)
 class Session:
     """The browser-backed settings a crawl shares with the modes that replace it.

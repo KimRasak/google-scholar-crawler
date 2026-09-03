@@ -21,7 +21,7 @@ from .config import Sources
 from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
 from .expand import FollowPolicy
 from .models import AuthorRequest, SearchRequest
-from .storage import ChallengeLog, StateStore
+from .storage import ChallengeLog, StateStore, profiles_beside
 from .urls import SCHOLAR_HOST
 
 
@@ -163,7 +163,7 @@ def _files(args: argparse.Namespace) -> list[str]:
     planned: list[tuple[str, Path | None]] = [
         ("records", args.out),
         ("bibtex", args.bibtex),
-        ("author profiles", args.profiles_out if args.author else None),
+        ("author profiles", profiles_beside(args.out) if args.author else None),
         ("resume state", args.state),
         ("takeover log", args.challenge_log),
         ("page dumps", args.dump_html),
@@ -188,7 +188,7 @@ def _output_collisions(args: argparse.Namespace) -> list[Concern]:
         "--bibtex": args.bibtex,
         "--state": args.state,
         "--challenge-log": args.challenge_log,
-        "--profiles-out": args.profiles_out if args.author else None,
+        "the profile file beside --out": profiles_beside(args.out) if args.author else None,
     }
     seen: dict[Path, str] = {}
     concerns = []

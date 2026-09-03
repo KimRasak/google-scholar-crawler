@@ -281,6 +281,58 @@ def test_a_run_described_entirely_by_a_settings_file_collects_the_same_records(
     assert site.offsets_requested() == [0]
 
 
+def test_the_interface_language_reaches_the_wire_and_the_profile_file_follows_out(
+    tmp_path: Path,
+) -> None:
+    # --lang used to set Scholar's hl while a separate --locale set the browser's
+    # Accept-Language, so the two could disagree and describe a browser nobody has. And the
+    # profile file had its own flag defaulting to out/profiles.jsonl, so two crawls writing to
+    # two different records files quietly shared one profile file.
+    site = FakeScholar(pages=1)
+    records = tmp_path / "de.jsonl"
+    with serving(site) as host:
+        assert (
+            main(
+                [
+                    "--author",
+                    "kukA0LcAAAAJ",
+                    "--lang",
+                    "de",
+                    "-n",
+                    "3",
+                    "--headless",
+                    "--channel",
+                    "",
+                    "--host",
+                    host,
+                    "--profile",
+                    str(tmp_path / "profile"),
+                    "-o",
+                    str(records),
+                    "--state",
+                    str(tmp_path / "state.json"),
+                    "--challenge-log",
+                    str(tmp_path / "challenges.jsonl"),
+                    "--min-delay",
+                    "0.0",
+                    "--max-delay",
+                    "0.0",
+                    "--cooldown-every",
+                    "0",
+                ]
+            )
+            == 0
+        )
+
+    assert site.languages and all(sent.startswith("de") for sent in site.languages), site.languages
+    assert "hl=de" in site.requests[0]
+    profiles = tmp_path / "de.profiles.jsonl"
+    assert profiles.exists(), "the profile file is named after the records file"
+    assert not (tmp_path / "profiles.jsonl").exists()
+    stored = json.loads(profiles.read_text(encoding="utf-8").splitlines()[0])
+    assert stored["user_id"] == "kukA0LcAAAAJ"
+
+
 TAKEOVER_KEYS = {
     "at",
     "kind",

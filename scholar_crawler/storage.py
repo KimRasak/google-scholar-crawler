@@ -151,6 +151,19 @@ class BibtexSink:
             self._handle = None
 
 
+def profiles_beside(records: Path) -> Path:
+    """Name the profile file that belongs to a records file.
+
+    An author crawl parses the profile header anyway, so the file comes free with ``--author``
+    and needs no flag of its own. Deriving it from ``--out`` also keeps two crawls writing to
+    two different records files from sharing one profile file.
+
+    :param records: the ``--out`` path.
+    :returns: the profile path beside it.
+    """
+    return records.with_suffix(".profiles.jsonl")
+
+
 @dataclass(slots=True)
 class ProfileStore:
     """Author profiles kept as one JSONL record per profile, newest values winning.

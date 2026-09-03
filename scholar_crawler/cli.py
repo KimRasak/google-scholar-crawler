@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .browser import BrowserOptions, Session
+from .browser import BrowserOptions, Session, locale_for
 from .challenge import HumanHandoff
 from .config import ConfigError, resolve_settings
 from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
@@ -36,7 +36,7 @@ from .modes import (
 from .plan import RunPlan, plan_run
 from .recipes import getting_started, render
 from .run import CrawlLimits, Outputs, RunOutcome, crawl, report_ignored_progress
-from .storage import ChallengeLog, StateStore
+from .storage import ChallengeLog, StateStore, profiles_beside
 from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
 
 
@@ -214,12 +214,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="also export BibTeX entries to this .bib file; costs two extra requests "
         "per record, so expect a slower run and more challenges",
     )
-    output.add_argument(
-        "--profiles-out",
-        type=Path,
-        default=Path("out/profiles.jsonl"),
-        help="author profile headers (one record per author)",
-    )
     output.add_argument("--dump-html", type=Path, help="save every fetched page's HTML here for debugging")
     output.add_argument(
         "--json",
@@ -246,7 +240,6 @@ def build_parser() -> argparse.ArgumentParser:
         default="chrome",
         help="browser channel (default: chrome); empty string uses bundled Chromium"
     )
-    browser.add_argument("--locale", default="en-US", help="browser locale (default: en-US)")
     browser.add_argument(
         "--timezone",
         default="America/Los_Angeles",
@@ -415,7 +408,7 @@ def _browser_options(args: argparse.Namespace) -> BrowserOptions:
         user_data_dir=args.profile,
         headless=args.headless,
         channel=args.channel or None,
-        locale=args.locale,
+        locale=locale_for(args.lang),
         timezone=args.timezone,
         proxy_server=args.proxy,
     )
@@ -760,7 +753,7 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
     outputs = Outputs.open_for(
         out=args.out,
         state=args.state,
-        profiles=args.profiles_out,
+        profiles=profiles_beside(args.out),
         bibtex=args.bibtex,
     )
     if outputs.bibtex is not None and authors:

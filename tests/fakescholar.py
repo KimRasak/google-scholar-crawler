@@ -58,9 +58,18 @@ class FakeScholar:
         self.body = body
         self.unreadable_for = set(unreadable_for)
         self.requests: list[str] = []
+        self.languages: list[str] = []
         self.challenges_served: list[int] = []
         self._served_challenge: set[int] = set()
         self._lock = threading.Lock()
+
+    def note_language(self, header: str | None) -> None:
+        """Record the ``Accept-Language`` a request arrived with.
+
+        :param header: the header value, or None when the request carried none.
+        """
+        with self._lock:
+            self.languages.append(header or "")
 
     def body_for(self, path: str, query: dict[str, list[str]]) -> str:
         """Choose the page for one request.
@@ -113,6 +122,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 — the name is BaseHTTPRequestHandler's
         """Answer one GET with the page the site chooses."""
         parts = urlsplit(self.path)
+        self.site.note_language(self.headers.get("Accept-Language"))
         body = self.site.body_for(parts.path, parse_qs(parts.query)).encode("utf-8")
         self.send_response(self.site.status)
         self.send_header("Content-Type", "text/html; charset=utf-8")

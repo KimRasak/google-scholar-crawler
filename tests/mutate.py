@@ -302,6 +302,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "the profile file is named after the records file",
+        "scholar_crawler/storage.py",
+        'return records.with_suffix(".profiles.jsonl")',
+        'return Path("out/profiles.jsonl")',
+        "tests/test_storage.py",
+    ),
+    Mutation(
+        "the browser speaks the interface language",
+        "scholar_crawler/browser.py",
+        'return "en-US" if language == "en" else language',
+        'return "en-US"',
+        "tests/test_end_to_end.py",
+    ),
+    Mutation(
         "an unattended drill is not read as a block",
         "scholar_crawler/storage.py",
         'return self.outcome == "rehearsed" or self.target == REHEARSAL_TARGET',
