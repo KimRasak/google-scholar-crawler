@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+import traceback
 from dataclasses import dataclass, replace
 from pathlib import Path
+from traceback import format_exception_only
 
 from .browser import BrowserOptions, Session, locale_for, timezone_for
 from .challenge import HumanHandoff
@@ -599,8 +601,31 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 1
-    with human_lines_to_stderr(args.json):
-        ran = _run(args, argv, given)
+    try:
+        with human_lines_to_stderr(args.json):
+            ran = _run(args, argv, given)
+    except Exception:
+        if not args.json:
+            raise
+        # A caller parsing stdout gets a document for every outcome, including the one this
+        # tool did not foresee; the traceback still goes to stderr for whoever debugs it.
+        traceback.print_exc()
+        emit(
+            document(
+                tool="scholar-crawler",
+                exit_code=1,
+                counts={},
+                error=failure(
+                    "runtime_error",
+                    "".join(format_exception_only(*sys.exc_info()[:2])).strip(),
+                    (
+                        "read the traceback on stderr; this is a defect, not a Scholar problem",
+                        "run scholar-crawler --self-check to see whether the basics still work",
+                    ),
+                ),
+            )
+        )
+        return 1
     if args.json:
         emit(_document(ran))
     return ran.exit_code

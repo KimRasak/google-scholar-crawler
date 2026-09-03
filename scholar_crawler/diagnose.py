@@ -27,6 +27,8 @@ class Failure(str, Enum):
     CERTIFICATE = "certificate"
     TIMEOUT = "timeout"
     BROWSER_CLOSED = "browser_closed"
+    BROWSER_MISSING = "browser_missing"
+    PROFILE_UNWRITABLE = "profile_unwritable"
     HTTP_ERROR = "http_error"
     RATE_LIMITED = "rate_limited"
     UNKNOWN_LAYOUT = "unknown_layout"
@@ -204,6 +206,64 @@ def diagnose_navigation(error: Exception, url: str) -> Diagnosis:
         next_steps=(
             "rerun with --dump-html out/dump to keep the pages for inspection",
             "run --self-check to see whether plain Scholar still works from here",
+        ),
+        detail=text.split("\n")[0],
+    )
+
+
+_LAUNCH_SIGNALS: tuple[tuple[str, Failure], ...] = (
+    ("Unsupported chromium channel", Failure.BROWSER_MISSING),
+    ("is not found", Failure.BROWSER_MISSING),
+    ("Executable doesn't exist", Failure.BROWSER_MISSING),
+    ("Permission denied", Failure.PROFILE_UNWRITABLE),
+    ("Read-only file system", Failure.PROFILE_UNWRITABLE),
+    ("No space left", Failure.PROFILE_UNWRITABLE),
+)
+"""Fragments of a launch that never produced a window, most specific first."""
+
+
+def diagnose_launch(error: Exception, *, channel: str | None, profile: Path) -> Diagnosis:
+    """Explain a browser that never opened.
+
+    Every request this tool makes goes through a real window, so a launch that fails stops
+    everything before the first page. The causes are local — no browser of that name, or a
+    profile directory it cannot write — and each has a different way out.
+
+    :param error: the error the launch raised.
+    :param channel: the browser channel asked for, None for Playwright's own Chromium.
+    :param profile: the persistent-profile directory the launch was given.
+    :returns: the diagnosis for this failure.
+    """
+    text = str(error)
+    named = f"--channel {channel}" if channel else "the bundled Chromium"
+    advice: dict[Failure, tuple[str, tuple[str, ...]]] = {
+        Failure.BROWSER_MISSING: (
+            f"no browser could be launched for {named}, so nothing was crawled",
+            (
+                "run scholar-crawler --doctor to see which browsers this machine has",
+                "install Chrome, or pass --channel '' to use the Chromium Playwright downloads",
+                "run scholar-crawler --install-browser if --doctor asks for it",
+            ),
+        ),
+        Failure.PROFILE_UNWRITABLE: (
+            f"the profile directory {profile} cannot be written, so no browser could start",
+            (
+                f"check the permissions on {profile} and its parents",
+                "pass --profile somewhere writable, such as .scholar-profile in a project you own",
+                "check free disk space if the path itself looks fine",
+            ),
+        ),
+    }
+    for needle, failure in _LAUNCH_SIGNALS:
+        if needle in text:
+            what, steps = advice[failure]
+            return Diagnosis(failure=failure, what=what, next_steps=steps, detail=text.split("\n")[0])
+    return Diagnosis(
+        failure=Failure.UNKNOWN,
+        what=f"the browser for {named} did not start, and the reason is not one this tool recognizes",
+        next_steps=(
+            "run scholar-crawler --doctor, which checks the same browser this run would launch",
+            f"try a different --profile than {profile}, in case that directory is the problem",
         ),
         detail=text.split("\n")[0],
     )

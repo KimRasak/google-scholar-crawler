@@ -302,6 +302,27 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "a launch that fails is diagnosed, not raised",
+        "scholar_crawler/browser.py",
+        "        except PlaywrightError as error:",
+        "        except _NeverRaised as error:",
+        "tests/test_end_to_end.py",
+    ),
+    Mutation(
+        "a profile that cannot be made is diagnosed too",
+        "scholar_crawler/browser.py",
+        "    except OSError as error:",
+        "    except _NeverRaised as error:",
+        "tests/test_end_to_end.py",
+    ),
+    Mutation(
+        "an unforeseen failure still prints a document",
+        "scholar_crawler/cli.py",
+        "        if not args.json:\n            raise",
+        "        if True:\n            raise",
+        "tests/test_machine.py",
+    ),
+    Mutation(
         "a headless stop hands back an attended rerun",
         "scholar_crawler/recipes.py",
         '    if "--headless" not in given:\n        return None',

@@ -873,6 +873,10 @@ $ scholar-crawler -q "graph attention networks"
 
 区分开的情况：连接被拒 / DNS 解析不了 / 本机断网 / 代理拒绝 / 连接被中途掐断（自动化流量常见的下场，建议放慢重试）/ 证书被拒（通常是有东西在中间解 TLS，或本机时钟不对）/ 加载超时（`--nav-timeout` 可调）/ 浏览器窗口被提前关掉 / Scholar 返回 429 或 503（这是拒绝服务，不是 bug：停一段时间再 `--resume`）/ 其他 4xx-5xx / 页面能打开但不含任何 Scholar 标记。原始错误只保留第一行，调用日志不再糊满屏幕；猜错了也还能看到它。
 
+**浏览器根本没起来**也在这套翻译里，而且它发生在第一个请求之前：`--channel` 指向一个装不上的浏览器 → `browser_missing`，下一步是 `--doctor`、`--install-browser` 或 `--channel ''`；`--profile` 指向一个写不进去的目录 → `profile_unwritable`，下一步是换一个你有权限的路径。这两种以前会直接抛出 Playwright 的 traceback，`--json` 那边连文档都没有。
+
+顺带把 `--json` 的承诺补严了：**任何**结局都有一份文档，包括这个工具自己出 bug 的时候——那时 `kind` 是 `runtime_error`，`message` 是异常类型与文本，traceback 照旧打到 stderr 给修 bug 的人看。以前这种情况 stdout 是空的，`json.loads` 直接失败。
+
 一个重要的行为修正：以前「页面打开了但一个 Scholar 标记都没有」会被当成「这个查询没有结果」——于是一个门户认证页、一个陌生版式，看起来都像是搜了个没人写过的题目，程序还会继续往下翻页。现在这种页面直接停下来报 `--self-check` 与 dump 路径。真正的零结果页仍然是零结果：Scholar 自己的「did not match any articles」提示就是内容，照常解析成 0 条。
 
 ## 降低验证频率
@@ -886,7 +890,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 546 个用例，全部离线
+python3 -m pytest -q     # 550 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -896,7 +900,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **抓取循环**：翻页、作者分批、节奏与冷却、连续被拦后的静默等待、HTML dump、运行摘要
 - **人工接管**：真实 headless Chromium 上的验证判定、等待与超时、窗口被关、headless 拒绝、接管记录与跨运行减速
 - **全链路**：真实浏览器打本地假 Scholar（`tests/fakescholar.py`）——翻页上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、headless 拒绝时已抓数据仍在盘上、一次完全由设置文件描述的运行
-- **失败诊断**：九类网络错误各自归类、只重试可能是暂时的、认不出的错误保留原文并仍给下一步
+- **失败诊断**：九类网络错误各自归类、浏览器起不来的两种本机原因各自归类、只重试可能是暂时的、认不出的错误保留原文并仍给下一步
 - **给人的输出**：`--doctor`、`--dry-run`、`--recipes`、`--audit`、`--report` 各自说的话，以及计划数字与真实请求数逐一对齐
 - **给程序的输出**：JSON 文档的固定键、失败词表、stdout/stderr 分工，以及 AGENTS.md 与词表逐词一致
 - **离线工具**：合并去重、过滤、统计、分组、书目生成、判旧与重抓清单、文献库差异
@@ -909,7 +913,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 79 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 82 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

@@ -876,6 +876,10 @@ It also stops wasting time: a refused connection, an unresolvable name, a reject
 
 Told apart: a refused connection, a name that does not resolve, no internet at all, a proxy that refuses, a connection closed mid-request (how networks usually drop automated traffic — slow down and retry), a rejected certificate (something is intercepting HTTPS, or this machine's clock is wrong), a load that timed out (`--nav-timeout` raises the limit), a browser window closed early, HTTP 429 or 503 from Scholar (a refusal to serve, not a bug: wait, then `--resume`), any other 4xx/5xx, and a page that loaded while carrying none of Scholar's markers. Only the error's first line is kept, so the call log no longer fills the screen — and it is still there when the diagnosis guesses wrong.
 
+**A browser that never started** is translated the same way, before the first request: a `--channel` naming a browser that cannot be launched is `browser_missing`, whose next steps are `--doctor`, `--install-browser` or `--channel ''`; a `--profile` pointing somewhere unwritable is `profile_unwritable`, whose next step is a path you own. Both used to raise Playwright's traceback, and under `--json` there was no document at all.
+
+That tightens what `--json` promises: **every** outcome has a document, including one where this tool has a defect — `kind` is then `runtime_error`, `message` is the exception type and text, and the traceback still goes to stderr for whoever fixes it. Before, stdout was empty and `json.loads` simply failed.
+
 One behaviour was corrected along the way: a page that loaded with none of Scholar's markers used to be treated as "this query has no results", so a captive-portal login or an unfamiliar layout looked like an unwritten topic — and the run kept paging. Such a page now stops the run and names `--self-check` and the saved copy. A genuine zero-hit listing is still just empty: Scholar's own "did not match any articles" notice is content, parsed as zero records.
 
 ## Getting challenged less
@@ -889,7 +893,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 546 tests, fully offline
+python3 -m pytest -q     # 550 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -901,7 +905,7 @@ Grouped by what they cover; read `tests/` for the detail:
 - **Crawl loop**: paging, author batching, pacing and cooldowns, the quiet wait after back-to-back blocks, HTML dumps, run summaries
 - **Human takeover**: challenge detection on real headless Chromium, waiting and timeouts, a closed window, a headless refusal, the takeover log and cross-run slowdown
 - **End to end**: a real browser against a local fake Scholar (`tests/fakescholar.py`) — page budget, no loss across a takeover, `--resume`, author profiles, collected records surviving a headless refusal, and one run described entirely by a settings file
-- **Failure diagnosis**: nine network failures classified apart, only plausibly transient ones retried, unrecognized errors keeping their text and still offering a next step
+- **Failure diagnosis**: nine network failures classified apart, both local causes of a browser that never started classified apart, only plausibly transient ones retried, unrecognized errors keeping their text and still offering a next step
 - **Output for people**: what `--doctor`, `--dry-run`, `--recipes`, `--audit` and `--report` say, and the planned load count matched against the real one
 - **Output for programs**: the document's fixed keys, the failure vocabulary, the stdout/stderr split, and AGENTS.md matching that vocabulary word for word
 - **Offline tools**: merging, filtering, summaries, grouping, bibliography synthesis, staleness and refresh lists, collection deltas
@@ -916,7 +920,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 79 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 82 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

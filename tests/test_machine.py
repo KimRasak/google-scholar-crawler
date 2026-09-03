@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scholar_crawler import digest  # noqa: E402
+from scholar_crawler import cli, digest  # noqa: E402
 from scholar_crawler.cli import main  # noqa: E402
 from scholar_crawler.machine import (  # noqa: E402
     FALLBACK_VERSION,
@@ -272,6 +272,37 @@ def test_a_flag_that_does_not_exist_still_answers_with_one_document(
     assert "--nosuchflag" in parsed["error"]["message"]
     assert parsed["error"]["next_steps"] == ["scholar-crawler --help lists every flag"]
     assert captured.err == "", "the document said it; stderr would say it twice"
+
+
+def test_a_defect_in_this_tool_still_answers_with_one_document(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The promise is json.loads(stdout), and the outcome nobody planned for is exactly when a
+    # caller needs it most. The traceback still reaches stderr for whoever fixes the defect.
+    def broken(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("something nobody planned for")
+
+    monkeypatch.setattr(cli, "crawl", broken)
+    exit_code = main(
+        [
+            "-q",
+            "x",
+            "-p",
+            "1",
+            "--json",
+            "-o",
+            str(tmp_path / "results.jsonl"),
+            "--state",
+            str(tmp_path / "state.json"),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    parsed = json.loads(captured.out)
+    assert parsed["ok"] is False
+    assert parsed["error"]["kind"] == "runtime_error"
+    assert parsed["error"]["message"] == "ValueError: something nobody planned for"
+    assert "Traceback" in captured.err
 
 
 def test_the_digest_answers_a_bad_flag_the_same_way(capsys: pytest.CaptureFixture[str]) -> None:

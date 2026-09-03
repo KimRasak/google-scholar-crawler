@@ -15,6 +15,7 @@ from scholar_crawler.diagnose import (  # noqa: E402
     CrawlFailure,
     Failure,
     diagnose_challenge_loop,
+    diagnose_launch,
     diagnose_navigation,
     diagnose_page,
 )
@@ -66,6 +67,36 @@ def test_every_diagnosis_names_the_url_and_offers_a_next_step() -> None:
         assert URL in diagnosis.what, message
         assert diagnosis.next_steps, message
         assert all(step and not step.endswith(".") for step in diagnosis.next_steps), message
+
+
+def test_a_browser_that_never_opened_is_explained_by_its_local_cause() -> None:
+    # Nothing is crawled without a window, and both causes are on this machine, not at Scholar.
+    profile = Path("/nowhere/profile")
+    missing = diagnose_launch(
+        PlaywrightError('BrowserType.launch_persistent_context: Unsupported chromium channel "x"'),
+        channel="x",
+        profile=profile,
+    )
+    assert missing.failure is Failure.BROWSER_MISSING
+    assert "--channel x" in missing.what
+    assert any("--doctor" in step for step in missing.next_steps)
+
+    absent = diagnose_launch(
+        PlaywrightError("Chromium distribution 'chrome' is not found"), channel="chrome", profile=profile
+    )
+    assert absent.failure is Failure.BROWSER_MISSING
+
+    unwritable = diagnose_launch(
+        PermissionError(13, "Permission denied"), channel=None, profile=profile
+    )
+    assert unwritable.failure is Failure.PROFILE_UNWRITABLE
+    assert str(profile) in unwritable.what
+    assert any("--profile" in step for step in unwritable.next_steps)
+
+    strange = diagnose_launch(PlaywrightError("something else entirely"), channel=None, profile=profile)
+    assert strange.failure is Failure.UNKNOWN
+    assert "the bundled Chromium" in strange.what
+    assert any("--doctor" in step for step in strange.next_steps)
 
 
 def test_a_refusal_to_serve_is_told_apart_from_a_broken_server() -> None:

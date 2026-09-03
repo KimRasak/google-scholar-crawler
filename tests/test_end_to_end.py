@@ -9,6 +9,7 @@ every test run without contacting Google.
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import sys
 from collections.abc import Iterator
@@ -373,6 +374,70 @@ def test_a_timezone_given_on_the_command_line_wins_over_the_language(
     assert main(["-q", "x", "-p", "1", "--lang", "de", "--dry-run"]) == 0
     derived = capsys.readouterr().out
     assert "Accept-Language de and reports its clock in Europe/Berlin (matching" in derived
+
+
+def test_a_browser_that_cannot_start_stops_the_run_with_its_local_cause(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A launch failure happens before any request, so this reaches no network at all. It used to
+    # end in a Playwright traceback with no document for a caller parsing stdout.
+    exit_code = main(
+        [
+            "-q",
+            "graph attention",
+            "-p",
+            "1",
+            "--channel",
+            "nosuchbrowser",
+            "--profile",
+            str(tmp_path / "profile"),
+            "-o",
+            str(tmp_path / "results.jsonl"),
+            "--state",
+            str(tmp_path / "state.json"),
+            "--json",
+        ]
+    )
+    printed = capsys.readouterr()
+    assert exit_code == 1
+    assert "Traceback" not in printed.err
+    parsed = json.loads(printed.out)
+    assert parsed["error"]["kind"] == "browser_missing"
+    assert parsed["counts"]["requests"] == 0
+    assert any("--doctor" in step for step in parsed["error"]["next_steps"])
+
+
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root writes anywhere")
+def test_a_profile_that_cannot_be_written_stops_the_run_before_the_browser(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    closed = tmp_path / "closed"
+    closed.mkdir()
+    closed.chmod(0o500)
+    try:
+        exit_code = main(
+            [
+                "-q",
+                "graph attention",
+                "-p",
+                "1",
+                "--profile",
+                str(closed / "profile"),
+                "-o",
+                str(tmp_path / "results.jsonl"),
+                "--state",
+                str(tmp_path / "state.json"),
+                "--json",
+            ]
+        )
+    finally:
+        closed.chmod(0o700)
+    printed = capsys.readouterr()
+    assert exit_code == 1
+    assert "Traceback" not in printed.err
+    parsed = json.loads(printed.out)
+    assert parsed["error"]["kind"] == "profile_unwritable"
+    assert str(closed) in parsed["error"]["next_steps"][0]
 
 
 def test_a_headless_stop_hands_back_the_command_that_finishes_the_job(

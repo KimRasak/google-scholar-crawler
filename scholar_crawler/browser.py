@@ -13,8 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from playwright.sync_api import BrowserContext, Page, sync_playwright
+from playwright.sync_api import Error as PlaywrightError
 
 from .challenge import HumanHandoff
+from .diagnose import CrawlFailure, diagnose_launch
 from .storage import ChallengeLog
 from .urls import SCHOLAR_HOST
 
@@ -50,18 +52,30 @@ def browser_session(options: BrowserOptions) -> Iterator[tuple[BrowserContext, P
     :param options: launch settings.
     :returns: a context manager yielding the context and a ready page; both close on exit.
     """
-    options.user_data_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        options.user_data_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise CrawlFailure(
+            diagnose_launch(error, channel=options.channel, profile=options.user_data_dir)
+        ) from error
     with sync_playwright() as playwright:
-        context = playwright.chromium.launch_persistent_context(
-            user_data_dir=str(options.user_data_dir),
-            headless=options.headless,
-            channel=options.channel,
-            locale=options.locale,
-            timezone_id=options.timezone,
-            viewport={"width": 1280, "height": 900},
-            proxy={"server": options.proxy_server} if options.proxy_server else None,
-            args=["--disable-blink-features=AutomationControlled"],
-        )
+        try:
+            context = playwright.chromium.launch_persistent_context(
+                user_data_dir=str(options.user_data_dir),
+                headless=options.headless,
+                channel=options.channel,
+                locale=options.locale,
+                timezone_id=options.timezone,
+                viewport={"width": 1280, "height": 900},
+                proxy={"server": options.proxy_server} if options.proxy_server else None,
+                args=["--disable-blink-features=AutomationControlled"],
+            )
+        except PlaywrightError as error:
+            # No window means no request at all, so this ends the run with the local cause
+            # rather than a stack trace from inside Playwright.
+            raise CrawlFailure(
+                diagnose_launch(error, channel=options.channel, profile=options.user_data_dir)
+            ) from error
         context.add_init_script(_INIT_SCRIPT)
         page = context.pages[0] if context.pages else context.new_page()
         try:
