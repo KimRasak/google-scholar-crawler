@@ -12,7 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scholar_crawler.digest import main  # noqa: E402
-from scholar_crawler.report import build_report  # noqa: E402
+from scholar_crawler.report import GENERIC_TITLE, build_report, title_for  # noqa: E402
 
 
 def _record(**overrides: Any) -> dict[str, Any]:
@@ -138,6 +138,37 @@ def test_a_missing_field_is_an_em_dash_not_an_empty_cell() -> None:
     markdown = build_report([_record(year=None, venue=None)])
     row = next(line for line in markdown.splitlines() if "Graph attention networks](" in line)
     assert row.count("| — ") == 2
+
+
+def test_a_collection_from_one_query_names_its_own_report(tmp_path: Path) -> None:
+    # Typing the topic into --report-title when every record already carries it is work the tool
+    # can do; two queries or none have no single topic to claim.
+    one = [dict(record, query="graph attention networks") for record in CORPUS]
+    assert title_for(one) == "graph attention networks"
+    assert build_report(one).startswith("# graph attention networks\n")
+
+    mixed = [*one[:2], *[dict(record, query="cites:123") for record in CORPUS[2:]]]
+    assert title_for(mixed) == GENERIC_TITLE
+    assert title_for([{"title": "no query at all"}]) == GENERIC_TITLE
+    # A heading the caller gave is never second-guessed.
+    assert build_report(one, title="My own heading").startswith("# My own heading\n")
+
+
+def test_the_report_the_digest_writes_is_titled_by_the_query_unless_told(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "records.jsonl"
+    with source.open("w", encoding="utf-8") as handle:
+        for record in CORPUS:
+            handle.write(json.dumps(dict(record, query="graph attention networks")) + "\n")
+    derived, given = tmp_path / "derived.md", tmp_path / "given.md"
+
+    assert main([str(source), "--report", str(derived), "--quiet"]) == 0
+    assert derived.read_text(encoding="utf-8").startswith("# graph attention networks\n")
+
+    assert main([str(source), "--report", str(given), "--report-title", "Mine", "--quiet"]) == 0
+    assert given.read_text(encoding="utf-8").startswith("# Mine\n")
+    capsys.readouterr()
 
 
 def test_the_digest_writes_the_report_and_says_so(

@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scholar_crawler.browser import locale_for  # noqa: E402
+from scholar_crawler.browser import locale_for, timezone_for  # noqa: E402
 from scholar_crawler.cli import build_parser, build_targets, main  # noqa: E402
 
 
@@ -102,3 +102,17 @@ def test_the_browser_locale_follows_the_interface_language() -> None:
     assert locale_for("en") == "en-US", "plain en is not what a real browser sends"
     assert locale_for("zh-CN") == "zh-CN"
     assert locale_for("de") == "de"
+
+
+def test_the_timezone_follows_the_language_unless_one_is_given() -> None:
+    # The zone is part of the same fact as the locale: it has to agree with the language.
+    assert timezone_for("de") == "Europe/Berlin"
+    assert timezone_for("pt-BR") == "America/Sao_Paulo"
+    # A regional tag is read whole before its base language.
+    assert timezone_for("zh-CN") == "Asia/Shanghai"
+    assert timezone_for("zh-TW") == "Asia/Taipei"
+    assert timezone_for("en-GB") == "Europe/London"
+    # A language the table does not name gets a zone that still agrees with nothing in
+    # particular, rather than quietly claiming California.
+    assert timezone_for("sw") == "UTC"
+    assert timezone_for("EN") == "America/Los_Angeles"

@@ -302,6 +302,27 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "the browser clock agrees with the language it asks for",
+        "scholar_crawler/cli.py",
+        "        timezone=args.timezone or timezone_for(args.lang),",
+        '        timezone=args.timezone or "America/Los_Angeles",',
+        "tests/test_explain.py tests/test_end_to_end.py",
+    ),
+    Mutation(
+        "a regional language tag is read whole",
+        "scholar_crawler/browser.py",
+        "    return TIMEZONES.get(regional) or TIMEZONES.get(base, DEFAULT_TIMEZONE)",
+        "    return TIMEZONES.get(base, DEFAULT_TIMEZONE)",
+        "tests/test_cli.py tests/test_end_to_end.py",
+    ),
+    Mutation(
+        "a one-query collection titles its own report",
+        "scholar_crawler/report.py",
+        '        f"# {title if title is not None else title_for(records)}",',
+        '        f"# {title or GENERIC_TITLE}",',
+        "tests/test_report.py",
+    ),
+    Mutation(
         "a bare year is not a volume",
         "scholar_crawler/venues.py",
         '    r"\\s+(?P<volume>\\d+)"',
@@ -423,8 +444,8 @@ MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "one mode reads the command back and costs it",
         "scholar_crawler/cli.py",
-        "        for line in explain(args, listings, authors, follow, pacing, sources):",
-        "        for line in ():",
+        "        for line in explain(",
+        "        for line in () and explain(",
         "tests/test_explain.py",
     ),
     Mutation(

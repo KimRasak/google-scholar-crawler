@@ -297,7 +297,7 @@ $ scholar-digest out/all.jsonl
 | --- | --- |
 | `-o`、`--csv` | 写出合并后的 JSONL / CSV（表格导出只在这里） |
 | `--bibtex` | 离线拼出参考文献文件（不发请求） |
-| `--report`、`--report-title`、`--report-top` | 输出一份可读的 Markdown 综述；正文列多少条（默认 15） |
+| `--report`、`--report-title`、`--report-top` | 输出一份可读的 Markdown 综述；标题默认取记录共有的那个查询；正文列多少条（默认 15） |
 | `--refresh-list`、`--refresh-limit` | 写出该重抓的 cluster id 清单 |
 | `--quiet` | 只打印写出结果，需要配合任一写文件的参数 |
 
@@ -360,6 +360,8 @@ JSONL 和 CSV 是给程序看的，终端汇总会滚走。一次文献检索最
 ```sh
 scholar-digest out/*.jsonl --report out/report.md --report-title "图注意力网络：初步梳理"
 ```
+
+标题不写也行：一批记录全部来自同一个查询时，那个查询就是它的标题（`# graph attention networks`）；来自多个查询、或者是主页抓取，就没有唯一的题目可言，退回 `# Literature overview`。
 
 包含：一眼看完的规模（记录数、总被引、年份跨度、期刊数、第一作者数）、高被引清单（标题带原始链接）、按期刊/会议与按第一作者的两张分组表（记录数、总被引、中位数、年份跨度、代表作）、逐年分布的文本柱状图（复制粘贴不会坏）、这些记录分别来自哪个查询，最后是一节「这份报告有多可信」——直接复用 `--audit` 的检查结果，把缺失率和可疑字段摊开写。
 
@@ -680,6 +682,7 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry
 [explain] pausing 90s every 10 loads, and giving up on a page after 45s
 [explain] on a challenge: the window is brought to you, waiting up to 600s for you to clear it, up to 5 time(s) this run
 [explain] after each takeover the delays widen by x1.6
+[explain] the window sends Accept-Language en-US and reports its clock in America/Los_Angeles (matching the language)
 [explain] creating records: out/results.jsonl
 [explain] creating bibtex: out/refs.bib
 [explain] creating resume state: out/state.json
@@ -759,12 +762,12 @@ $ scholar-crawler --self-check
 | `--start`、`--resume` | 起始 offset；从 state 断点继续 |
 | `--year-from/--year-to`、`--sort-by-date`、`--review-only` | 年份区间、按日期排序、只要综述 |
 | `--no-citations`、`--no-patents` | 排除仅引用条目、排除专利 |
-| `--lang`、`--host` | 界面语言 `hl`（浏览器的 `Accept-Language` 跟着它，不另设旗标）；镜像站如 `https://scholar.google.de` |
+| `--lang`、`--host` | 界面语言 `hl`（浏览器的 `Accept-Language` 与时区都跟着它，不另设旗标）；镜像站如 `https://scholar.google.de` |
 | `-o/--out`、`--state` | JSONL 输出、断点文件（CSV 交给 `scholar-digest --csv`，抓取本身不导表） |
 | `--challenge-log` | 接管记录文件（默认 `out/challenges.jsonl`，URL 已脱敏） |
 | `--bibtex` | 同时导出 BibTeX 到 `.bib` 文件；按引用键去重，记录里写入 `extra.bibtex_key` 便于关联 |
 | `--dump-html` | 抓到的原始 HTML（排查解析问题用） |
-| `--profile`、`--channel`、`--timezone`、`--proxy` | 浏览器 profile 与环境参数 |
+| `--profile`、`--channel`、`--timezone`、`--proxy` | 浏览器 profile 与环境参数；`--timezone` 覆盖由 `--lang` 推出的时区 |
 | `--min-delay/--max-delay`、`--cooldown-every/--cooldown-seconds` | 抓取节奏（默认 4-11s；不传时会按接管记录自动放慢） |
 | `--no-learn-from-history` | 不读接管记录，按默认节奏起跑 |
 | `--handoff-timeout`、`--max-handoffs`、`--backoff-factor`、`--challenge-cooldown` | 等人多久（0 = 无限等）、最多接管几次、每次接管后延迟放大倍数、连续被拦时恢复前的静默等待 |
@@ -867,6 +870,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 降低验证频率
 
 - 别调小默认延迟；被封的主因是节奏，不是 User-Agent。
+- 界面语言、`Accept-Language` 和浏览器时区是同一件事，别让它们互相矛盾。`--lang de` 会自动把三者对齐（`Accept-Language: de` + `Europe/Berlin`）；一个用德语请求页面、却报着美国太平洋时间的窗口，是现实里不存在的浏览器。表里没有的语言用 `UTC`，因为编一个不相干的城市不会更可信。真要指定就用 `--timezone`，`--dry-run` 会把最终生效的那一行打出来。
 - 一个 profile 只做一件事，长期复用，不要每次删掉 `.scholar-profile`。
 - 单次运行页数控制在几十页以内；大批量拆成多天。
 - 需要稳定大规模元数据时，优先用有正式 API 的来源（Semantic Scholar、OpenAlex、Crossref），把本工具留给 Scholar 独有的检索与被引数据。
@@ -874,7 +878,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 527 个用例，全部离线
+python3 -m pytest -q     # 533 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -897,7 +901,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 68 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 71 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

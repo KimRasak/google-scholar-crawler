@@ -52,9 +52,6 @@ Record = dict[str, Any]
 DEFAULT_TOP = 5
 """Entries in every printed list, so one number governs what the terminal shows."""
 
-DEFAULT_REPORT_TITLE = "Literature overview"
-"""Heading of the Markdown report when the caller names none."""
-
 DEFAULT_REPORT_TOP = 15
 """Records listed in the Markdown report, which has room for more than the terminal."""
 
@@ -347,9 +344,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     written.add_argument(
         "--report-title",
-        default=DEFAULT_REPORT_TITLE,
         metavar="TEXT",
-        help=f"heading for --report (default: {DEFAULT_REPORT_TITLE!r})",
+        help="heading for --report (default: the query the records share, when there is one)",
     )
     written.add_argument(
         "--report-top",

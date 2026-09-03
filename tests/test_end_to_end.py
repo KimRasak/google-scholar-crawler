@@ -19,7 +19,13 @@ from playwright.sync_api import Page
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scholar_crawler import crawler as crawler_module  # noqa: E402
-from scholar_crawler.browser import BrowserOptions, Session, browser_session  # noqa: E402
+from scholar_crawler.browser import (  # noqa: E402
+    BrowserOptions,
+    Session,
+    browser_session,
+    locale_for,
+    timezone_for,
+)
 from scholar_crawler.challenge import (  # noqa: E402
     Challenge,
     HumanHandoff,
@@ -331,6 +337,41 @@ def test_the_interface_language_reaches_the_wire_and_the_profile_file_follows_ou
     assert not (tmp_path / "profiles.jsonl").exists()
     stored = json.loads(profiles.read_text(encoding="utf-8").splitlines()[0])
     assert stored["user_id"] == "kukA0LcAAAAJ"
+
+
+def test_the_window_reports_a_clock_that_matches_the_language_it_asks_for(tmp_path: Path) -> None:
+    # The locale and the timezone are one fact about the window: a browser asking Scholar for
+    # German pages while sitting in US Pacific time is as odd as one sending Accept-Language
+    # en-US with a German query. This reads both back from a real browser.
+    site = FakeScholar(pages=1)
+    for language, zone in (("de", "Europe/Berlin"), ("zh-TW", "Asia/Taipei"), ("xx", "UTC")):
+        options = BrowserOptions(
+            user_data_dir=tmp_path / language,
+            headless=True,
+            channel=None,
+            locale=locale_for(language),
+            timezone=timezone_for(language),
+        )
+        with serving(site) as host, browser_session(options) as (_context, browser_page):
+            browser_page.goto(host, wait_until="domcontentloaded")
+            reported = browser_page.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
+            spoken = browser_page.evaluate("navigator.language")
+
+        assert reported == zone, f"{language} reported {reported}"
+        assert spoken.startswith("xx" if language == "xx" else language.split("-")[0])
+    assert site.languages and site.languages[-1].startswith("xx")
+
+
+def test_a_timezone_given_on_the_command_line_wins_over_the_language(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["-q", "x", "-p", "1", "--lang", "de", "--timezone", "Asia/Tokyo", "--dry-run"]) == 0
+    given = capsys.readouterr().out
+    assert "reports its clock in Asia/Tokyo (yours)" in given
+
+    assert main(["-q", "x", "-p", "1", "--lang", "de", "--dry-run"]) == 0
+    derived = capsys.readouterr().out
+    assert "Accept-Language de and reports its clock in Europe/Berlin (matching" in derived
 
 
 TAKEOVER_KEYS = {

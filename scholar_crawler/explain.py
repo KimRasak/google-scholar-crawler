@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from .browser import BrowserOptions
 from .config import Sources
 from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
 from .expand import FollowPolicy
@@ -151,6 +152,23 @@ def _takeover(args: argparse.Namespace) -> list[str]:
         f"on a challenge: the window is brought to you, {waiting} for you to clear it, "
         f"up to {args.max_handoffs} time(s) this run",
         f"after each takeover the delays widen by x{args.backoff_factor:g}",
+    ]
+
+
+def _browser(options: BrowserOptions, given: str | None) -> list[str]:
+    """Describe what the window will claim to be.
+
+    The launch settings are read back rather than recomputed, so this line is what the run is
+    about to do and not a second opinion about it.
+
+    :param options: the launch settings this run resolved.
+    :param given: the timezone the command line asked for, when it named one.
+    :returns: the line naming the locale and timezone the window reports.
+    """
+    source = "yours" if given else "matching the language"
+    return [
+        f"the window sends Accept-Language {options.locale} "
+        f"and reports its clock in {options.timezone} ({source})"
     ]
 
 
@@ -392,6 +410,7 @@ def explain(
     authors: list[AuthorRequest],
     follow: FollowPolicy,
     pacing: Pacing,
+    options: BrowserOptions,
     sources: Sources | None = None,
 ) -> list[str]:
     """Describe this command in plain words, then list what is worth knowing about it.
@@ -401,6 +420,7 @@ def explain(
     :param authors: author profiles.
     :param follow: expansion policy.
     :param pacing: the resolved pacing.
+    :param options: the launch settings this run resolved, described as they are.
     :param sources: where the settings in effect came from, when a settings file was read.
     :returns: printable lines.
     """
@@ -412,6 +432,7 @@ def explain(
         *_expansion(follow, len(listings) + len(authors)),
         *_rhythm(pacing),
         *_takeover(args),
+        *_browser(options, args.timezone),
         *_files(args),
     ]
     found = concerns_of(args, listings, authors, follow, pacing)

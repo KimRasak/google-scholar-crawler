@@ -297,7 +297,7 @@ When the same work appears in several files, the higher citation count wins as t
 | --- | --- |
 | `-o`, `--csv` | write the merged records as JSONL / CSV (the only CSV export) |
 | `--bibtex` | build a bibliography offline (no requests) |
-| `--report`, `--report-title`, `--report-top` | write a readable Markdown overview; how many records it lists (default: 15) |
+| `--report`, `--report-title`, `--report-top` | write a readable Markdown overview; the heading defaults to the query the records share; how many records it lists (default: 15) |
 | `--refresh-list`, `--refresh-limit` | write the cluster ids worth re-listing |
 | `--quiet` | print only what was written; needs one of the writing options |
 
@@ -360,6 +360,8 @@ JSONL and CSV are for programs and the terminal summary scrolls away, while what
 ```sh
 scholar-digest out/*.jsonl --report out/report.md --report-title "Graph attention networks: a first pass"
 ```
+
+The title is optional: when every record came from one query, that query is the heading (`# graph attention networks`). Several queries, or a profile crawl, have no single topic to claim, so the heading falls back to `# Literature overview`.
 
 It contains the size of the collection at a glance (records, total citations, year span, venues, first authors), the most-cited works with their original links, two grouped tables — by venue and by first author, each with records, citations, median, year span and the group's most-cited work — a text bar chart of records per year (which survives copy-paste), which query each record came from, and finally a "how much of this to trust" section that reuses the `--audit` checks to state the missing rates and doubtful fields outright.
 
@@ -684,6 +686,7 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry
 [explain] pausing 90s every 10 loads, and giving up on a page after 45s
 [explain] on a challenge: the window is brought to you, waiting up to 600s for you to clear it, up to 5 time(s) this run
 [explain] after each takeover the delays widen by x1.6
+[explain] the window sends Accept-Language en-US and reports its clock in America/Los_Angeles (matching the language)
 [explain] creating records: out/results.jsonl
 [explain] creating bibtex: out/refs.bib
 [explain] creating resume state: out/state.json
@@ -762,12 +765,12 @@ It fetches one page of a broad query and reports, field by field, whether titles
 | `--start`, `--resume` | first offset; continue from the saved cursor |
 | `--year-from/--year-to`, `--sort-by-date`, `--review-only` | year range, date order, reviews only |
 | `--no-citations`, `--no-patents` | exclude citation-only records / patents |
-| `--lang`, `--host` | interface language (`hl`), which the browser's `Accept-Language` follows with no separate flag; mirror such as `https://scholar.google.de` |
+| `--lang`, `--host` | interface language (`hl`), which the browser's `Accept-Language` and timezone both follow with no separate flag; mirror such as `https://scholar.google.de` |
 | `--challenge-log` | takeover log (default `out/challenges.jsonl`, URLs redacted) |
 | `-o/--out`, `--state` | JSONL output and resume state (CSV is `scholar-digest --csv`; a crawl does not export tables) |
 | `--bibtex` | also export BibTeX to a `.bib` file; deduplicated by citation key, with `extra.bibtex_key` recorded on each record |
 | `--dump-html` | raw HTML of every fetched page |
-| `--profile`, `--channel`, `--timezone`, `--proxy` | browser profile and environment |
+| `--profile`, `--channel`, `--timezone`, `--proxy` | browser profile and environment; `--timezone` overrides the zone derived from `--lang` |
 | `--no-learn-from-history` | start at the default rhythm instead of reading the takeover log |
 | `--min-delay/--max-delay`, `--cooldown-every/--cooldown-seconds` | request rhythm |
 | `--handoff-timeout`, `--max-handoffs`, `--backoff-factor`, `--challenge-cooldown` | how long to wait for a human (0 = forever), takeover budget, slowdown per takeover, wait-out after back-to-back challenges |
@@ -870,6 +873,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Getting challenged less
 
 - Do not shrink the default delays; rhythm, not the User-Agent, is what gets a client blocked.
+- The interface language, `Accept-Language` and the browser's timezone are one fact; do not let them contradict each other. `--lang de` aligns all three (`Accept-Language: de` plus `Europe/Berlin`), because a window asking Scholar for German pages while reporting US Pacific time is a browser nobody has. A language the table does not name gets `UTC`, since inventing an unrelated city is no more credible. Override with `--timezone`, and `--dry-run` prints the line that ends up in effect.
 - Reuse one long-lived profile instead of deleting `.scholar-profile` between runs.
 - Keep a single run to tens of pages; spread large collections over days.
 - For large-scale metadata, prefer sources with real APIs (Semantic Scholar, OpenAlex, Crossref) and keep this tool for what only Scholar has.
@@ -877,7 +881,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 527 tests, fully offline
+python3 -m pytest -q     # 533 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -904,7 +908,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 68 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 71 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

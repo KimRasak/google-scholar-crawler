@@ -27,9 +27,9 @@ def _explained(argv: list[str]) -> list[str]:
     follow = FollowPolicy(
         depth=args.follow_cites, breadth=args.follow_breadth, min_citations=args.follow_min_citations
     )
-    from scholar_crawler.cli import _resolve_pacing
+    from scholar_crawler.cli import _browser_options, _resolve_pacing
 
-    return explain(args, listings, authors, follow, _resolve_pacing(args))
+    return explain(args, listings, authors, follow, _resolve_pacing(args), _browser_options(args))
 
 
 def _concerns(argv: list[str]) -> list[str]:
@@ -45,6 +45,18 @@ def _concerns(argv: list[str]) -> list[str]:
 def _workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep every explanation pointed at a throwaway directory."""
     monkeypatch.chdir(tmp_path)
+
+
+def test_the_explanation_reads_back_what_the_window_will_claim_to_be() -> None:
+    # The line is the launch settings themselves, so it cannot drift from what gets launched.
+    assert any(
+        "Accept-Language de and reports its clock in Europe/Berlin (matching the language)" in line
+        for line in _explained(["-q", "x", "--lang", "de"])
+    )
+    assert any(
+        "Accept-Language en-US and reports its clock in Asia/Tokyo (yours)" in line
+        for line in _explained(["-q", "x", "--timezone", "Asia/Tokyo"])
+    )
 
 
 def test_a_plain_run_is_described_without_any_concern() -> None:

@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .browser import BrowserOptions, Session, locale_for
+from .browser import BrowserOptions, Session, locale_for, timezone_for
 from .challenge import HumanHandoff
 from .config import ConfigError, resolve_settings
 from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
@@ -241,8 +241,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     browser.add_argument(
         "--timezone",
-        default="America/Los_Angeles",
-        help="IANA timezone (default: America/Los_Angeles)",
+        help="IANA timezone reported to Scholar (default: one that matches --lang)",
     )
     browser.add_argument("--proxy", help="proxy server URL")
 
@@ -408,7 +407,7 @@ def _browser_options(args: argparse.Namespace) -> BrowserOptions:
         headless=args.headless,
         channel=args.channel or None,
         locale=locale_for(args.lang),
-        timezone=args.timezone,
+        timezone=args.timezone or timezone_for(args.lang),
         proxy_server=args.proxy,
     )
 
@@ -737,7 +736,7 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
         print(f"[state] {line}", flush=True)
     if args.dry_run:
         # One question, one mode: what this command means, and what it would cost.
-        for line in explain(args, listings, authors, follow, pacing, sources):
+        for line in explain(args, listings, authors, follow, pacing, _browser_options(args), sources):
             print(f"[explain] {line}" if line else "[explain]", flush=True)
         plan = _plan_of(args, listings, authors, follow, pacing)
         for line in plan.render():

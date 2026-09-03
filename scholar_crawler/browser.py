@@ -70,6 +70,61 @@ def browser_session(options: BrowserOptions) -> Iterator[tuple[BrowserContext, P
             context.close()
 
 
+TIMEZONES = {
+    "en": "America/Los_Angeles",
+    "de": "Europe/Berlin",
+    "fr": "Europe/Paris",
+    "es": "Europe/Madrid",
+    "it": "Europe/Rome",
+    "nl": "Europe/Amsterdam",
+    "pl": "Europe/Warsaw",
+    "pt": "America/Sao_Paulo",
+    "ru": "Europe/Moscow",
+    "tr": "Europe/Istanbul",
+    "ja": "Asia/Tokyo",
+    "ko": "Asia/Seoul",
+    "zh": "Asia/Shanghai",
+    "id": "Asia/Jakarta",
+    "hi": "Asia/Kolkata",
+    "ar": "Asia/Dubai",
+    "he": "Asia/Jerusalem",
+    "th": "Asia/Bangkok",
+    "vi": "Asia/Ho_Chi_Minh",
+    "zh-TW": "Asia/Taipei",
+    "zh-HK": "Asia/Hong_Kong",
+    "pt-PT": "Europe/Lisbon",
+    "en-GB": "Europe/London",
+}
+"""A plausible timezone for each interface language Scholar serves.
+
+One of many, not the only one: the point is only that the zone and the language agree. A window
+asking Scholar for German pages from US Pacific time is as odd a browser as one asking for
+German pages while sending ``Accept-Language: en-US``.
+"""
+
+DEFAULT_TIMEZONE = "UTC"
+"""Zone for a language this table does not name.
+
+Spelled the way Chromium reports it back, so what the window is asked to claim is exactly what
+a page reads from it — ``Etc/UTC`` is the same zone but comes back as ``UTC``.
+"""
+
+
+def timezone_for(language: str) -> str:
+    """Choose the browser timezone that matches the Scholar interface language.
+
+    A regional tag is looked up whole before its base language, so ``zh-TW`` is read from Taipei
+    rather than from Shanghai.
+
+    :param language: the ``--lang`` value, which becomes Scholar's ``hl``.
+    :returns: a timezone consistent with that language; ``--timezone`` overrides it.
+    """
+    tag = language.strip()
+    base = tag.split("-")[0].lower()
+    regional = f"{base}-{tag.split('-')[1].upper()}" if "-" in tag else tag
+    return TIMEZONES.get(regional) or TIMEZONES.get(base, DEFAULT_TIMEZONE)
+
+
 def locale_for(language: str) -> str:
     """Choose the browser locale that matches the Scholar interface language.
 

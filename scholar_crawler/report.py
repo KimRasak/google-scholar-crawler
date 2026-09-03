@@ -24,6 +24,9 @@ BAR_WIDTH = 28
 
 
 MARKDOWN_SPECIALS = "\\`*_[]<>|"
+
+GENERIC_TITLE = "Literature overview"
+"""Heading when the records were not collected by one query, so nothing names the topic."""
 """Characters a Markdown reader would act on instead of printing.
 
 Paper titles really carry them: ``*SEM 2021``, ``C*-algebras``, ``[Re] reproducibility``,
@@ -227,17 +230,34 @@ def _data_quality(records: list[Record]) -> list[str]:
     return _table(("", "Check", "Records", "What it means"), rows)
 
 
+def title_for(records: list[Record]) -> str:
+    """Choose the heading a set of records names for itself.
+
+    A collection built from one query is about that query, and repeating it in --report-title is
+    work the caller should not have to do. Anything else — several queries, a profile crawl,
+    records with no query — has no single topic to claim.
+
+    :param records: merged records to report on.
+    :returns: the query they all share, or the generic heading.
+    """
+    queries = {str(record["query"]) for record in records if record.get("query")}
+    if len(queries) != 1:
+        return GENERIC_TITLE
+    only = queries.pop().strip()
+    return only or GENERIC_TITLE
+
+
 def build_report(
     records: list[Record],
     *,
-    title: str = "Literature overview",
+    title: str | None = None,
     top: int = 15,
     groups: int = 8,
 ) -> str:
     """Build the Markdown report for a set of records.
 
     :param records: merged records to report on.
-    :param title: heading for the document.
+    :param title: heading for the document; the records name their own when this is None.
     :param top: how many most-cited works to list.
     :param groups: how many venues and authors to list.
     :returns: the report as Markdown text ending in a newline.
@@ -252,7 +272,7 @@ def build_report(
         ("How much of this to trust", _data_quality(records)),
     ]
     lines = [
-        f"# {title}",
+        f"# {title if title is not None else title_for(records)}",
         "",
         f"Built from {len(records)} records collected with "
         "[google-scholar-crawler](https://github.com/KimRasak/google-scholar-crawler). "
