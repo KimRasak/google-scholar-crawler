@@ -813,7 +813,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 443 tests, fully offline
+python3 -m pytest -q     # 444 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -828,6 +828,29 @@ Every test is offline (no network). Grouped by what they cover; read `tests/` fo
 - **Output for programs**: the document's fixed keys, the failure vocabulary, the stdout/stderr split, and AGENTS.md matching that vocabulary word for word
 - **Offline tools**: merging, filtering, summaries, grouping, bibliography synthesis, staleness and refresh lists, collection deltas
 - **Configuration and interface**: settings-file equivalence and errors, both parsers (groups, help, defaults), and both READMEs' links and module lists
+
+### Checking that the guards guard
+
+A test that never fails and a test that cannot fail look the same from outside.
+`tests/mutate.py` keeps a table of deliberate defects, each naming the file and line to
+break, the wrong version, and the tests that must fail because of it:
+
+```sh
+python3 -m tests.mutate          # 29 entries, about 3 minutes; every file is restored after
+python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
+python3 -m tests.mutate offset   # only entries whose label matches
+```
+
+It rewrites source files and restores them, so do not run it over uncommitted work. Anything
+no test noticed is listed at the end, and the exit code is 1.
+
+The table is what two rounds of hand-run auditing found, which is also how three real holes
+turned up: the `--min-citations` threshold was inclusive by accident, nothing bounded the
+length of the staleness list, and "a crash never loses collected data" rested on a `flush()`
+no test read back. Two rules came out of the same exercise: a mutation must match exactly
+once in its file — otherwise it lands in a docstring and reports a hole that does not exist —
+and the break must be confirmed to take effect. `check_table()` enforces the first one, and a
+test runs it in CI, since the audit itself edits sources and cannot live in the suite.
 
 ### Real-structure regression fixtures
 
@@ -888,7 +911,7 @@ scholar_crawler/
   text.py       fitting text to a terminal column, marking every cut
   cli.py        command-line entry point: flag definitions and mode dispatch
   __main__.py   makes python3 -m scholar_crawler equivalent to scholar-crawler
-tests/          offline tests, including headless-Chromium detection tests
+tests/          offline tests, headless-Chromium detection, and mutate.py's guard audit
 scholar.toml.example   sample settings file; copy it to scholar.toml
 queries.example.txt    sample query list
 ```

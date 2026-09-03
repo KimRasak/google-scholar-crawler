@@ -810,7 +810,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 443 个用例，全部离线
+python3 -m pytest -q     # 444 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -825,6 +825,20 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **给程序的输出**：JSON 文档的固定键、失败词表、stdout/stderr 分工，以及 AGENTS.md 与词表逐词一致
 - **离线工具**：合并去重、过滤、统计、分组、书目生成、判旧与重抓清单、文献库差异
 - **配置与界面**：设置文件的等价与报错、两条命令的参数表（分组、说明、默认值）、两份 README 的链接与模块清单
+
+### 检查守卫是否真在守
+
+一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
+
+```sh
+python3 -m tests.mutate          # 29 条，约 3 分钟；跑完自动把文件改回去
+python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
+python3 -m tests.mutate offset   # 只跑标签里含 offset 的
+```
+
+它会修改源文件再改回来，所以别在有未保存改动的树上跑。有测试没抓住的项会在最后列出来，退出码 1。
+
+这批清单不是凭空拟的，是两轮人工审计的产物，当时抓出三处真实漏洞：`--min-citations` 的边界是偶然正确的、判旧清单的长度没人管、以及「崩溃不丢数据」全靠一个没人检查的 `flush()`。另外两条方法论也是踩出来的——破坏点必须在文件里**只出现一次**（否则可能改到 docstring 里，得出「测试无效」的假结论），而且必须确认破坏真的生效。前者现在由 `check_table()` 强制，并由一条测试在 CI 里跑（审计本身会改源文件，不能进测试套件）。
 
 ### 真实结构回归夹具
 
@@ -885,7 +899,7 @@ scholar_crawler/
   text.py       终端列宽内的截断：截了就标出来
   cli.py        命令行入口：参数定义、模式分发
   __main__.py   让 python3 -m scholar_crawler 等价于 scholar-crawler
-tests/          离线测试（含 headless Chromium 判定测试）
+tests/          离线测试（含 headless Chromium 判定测试）与 mutate.py 守卫审计
 scholar.toml.example   设置文件样例，直接 cp 成 scholar.toml 用
 queries.example.txt    批量查询样例
 ```

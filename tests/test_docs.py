@@ -156,3 +156,12 @@ def test_the_agent_guide_lists_exactly_the_keys_a_record_carries() -> None:
         ).to_dict()
     )
     assert documented == carried, f"AGENTS.md is out of step: {documented ^ carried}"
+
+
+def test_the_mutation_table_still_fits_the_source() -> None:
+    # The audit rewrites source files, so it cannot run in the suite; what can run is the
+    # check that each entry still names exactly one place, which is how it rots.
+    from tests.mutate import MUTATIONS, check_table
+
+    assert len(MUTATIONS) >= 25, "the audit is only as good as the invariants it lists"
+    assert check_table() == []
