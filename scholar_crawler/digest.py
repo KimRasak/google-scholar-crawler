@@ -216,7 +216,9 @@ def _resolve_inputs(args: argparse.Namespace) -> list[Path]:
         if not args.inputs:
             raise ValueError("give some JSONL files to read, or a folder with --collection DIR")
         return args.inputs
-    written = [path for path in (args.out, args.since) if path is not None]
+    # --since and -o are commonly the same file (merge into last time's merge), and naming it
+    # twice in the error below reads as two different files.
+    written = list(dict.fromkeys(path for path in (args.out, args.since) if path is not None))
     found = collection_files(args.collection, exclude=written)
     if not found and not args.inputs:
         raise ValueError(

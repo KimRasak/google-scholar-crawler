@@ -834,11 +834,11 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 468 个用例，全部离线
+python3 -m pytest -q     # 496 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
-测试全部离线（不发任何网络请求）。CI 在 3.10 与 3.13 上跑同样两条；另外在一个全新的 venv 里从这个 git URL 装一遍再跑，验证的是「新装用户拿到的依赖版本」——最近一次是 playwright 1.62.0、bs4 4.15.0、lxml 6.1.3，比开发机上的都新，468 条全过。按覆盖面分组，细节直接读 `tests/`：
+测试全部离线（不发任何网络请求）。CI 在 3.10 与 3.13 上跑同样两条；另外在一个全新的 venv 里从这个 git URL 装一遍再跑，验证的是「新装用户拿到的依赖版本」——最近一次是 playwright 1.62.0、bs4 4.15.0、lxml 6.1.3，比开发机上的都新，整套用例全过。按覆盖面分组，细节直接读 `tests/`：
 
 - **解析**：结果卡片与作者主页的每个字段，加上四份真实页面夹具（`tests/pages/`），保证解析既对又贴合 Scholar 的真实结构
 - **抓取循环**：翻页、作者分批、节奏与冷却、连续被拦后的静默等待、HTML dump、运行摘要
@@ -849,13 +849,14 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **给程序的输出**：JSON 文档的固定键、失败词表、stdout/stderr 分工，以及 AGENTS.md 与词表逐词一致
 - **离线工具**：合并去重、过滤、统计、分组、书目生成、判旧与重抓清单、文献库差异
 - **配置与界面**：设置文件的等价与报错、两条命令的参数表（分组、说明、默认值）、两份 README 的链接与模块清单
+- **文档里的命令**：两份 README 与 AGENTS.md 里的每一条 `scholar-crawler`/`scholar-digest` 命令，凡是不发请求的都在临时目录里真跑一遍（读取的文件由测试自己造），文档里贴出的 `-> https://…` 也逐字比对；剩下的必须在测试里登记「为什么离线跑不了」（发请求抓取、`--self-check` 一次请求、`--install-browser` 要下载、`--rehearse-handoff` 要人）。新加一条命令逃不掉这两条中的任何一条
 
 ### 检查守卫是否真在守
 
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 52 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 55 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

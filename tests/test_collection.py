@@ -176,3 +176,18 @@ def test_a_folder_and_named_files_can_be_read_together(
     extra = _write(tmp_path / "elsewhere.jsonl", [_record("z")])
     assert main(["--collection", str(tmp_path / "folder"), str(extra)]) == 0
     assert "2 records from 2 file(s)" in capsys.readouterr().out
+
+
+def test_an_empty_collection_names_the_files_it_skipped_once_each(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Merging into last time's merge means --since and -o are the same file, and the error used
+    # to name it twice, which reads as two different files being in the way.
+    merged = tmp_path / "merged.jsonl"
+    _write(merged, [_record("a")])
+    code = main(["--collection", str(tmp_path), "--since", str(merged), "-o", str(merged)])
+    printed = capsys.readouterr().out
+
+    assert code == 1
+    assert printed.count(str(merged)) == 1, printed
+    assert "holds no .jsonl files to read besides" in printed

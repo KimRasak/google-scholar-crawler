@@ -837,11 +837,11 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 468 tests, fully offline
+python3 -m pytest -q     # 496 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
-Every test is offline (no network). CI runs the same two commands on 3.10 and 3.13; separately, a clean venv installs the tool from this git URL and runs them against whatever dependency versions a new install resolves to — most recently playwright 1.62.0, bs4 4.15.0 and lxml 6.1.3, all newer than the development machine's, with all 468 passing.
+Every test is offline (no network). CI runs the same two commands on 3.10 and 3.13; separately, a clean venv installs the tool from this git URL and runs them against whatever dependency versions a new install resolves to — most recently playwright 1.62.0, bs4 4.15.0 and lxml 6.1.3, all newer than the development machine's, with the whole suite passing.
 
 Grouped by what they cover; read `tests/` for the detail:
 
@@ -854,6 +854,7 @@ Grouped by what they cover; read `tests/` for the detail:
 - **Output for programs**: the document's fixed keys, the failure vocabulary, the stdout/stderr split, and AGENTS.md matching that vocabulary word for word
 - **Offline tools**: merging, filtering, summaries, grouping, bibliography synthesis, staleness and refresh lists, collection deltas
 - **Configuration and interface**: settings-file equivalence and errors, both parsers (groups, help, defaults), and both READMEs' links and module lists
+- **The commands in the documentation**: every `scholar-crawler`/`scholar-digest` command in both READMEs and AGENTS.md — each one that sends no request is actually run in a scratch directory (the test creates whatever files it reads), and any `-> https://…` printed in the docs is compared verbatim; the rest must be registered in the test with the reason it cannot run offline (it crawls, `--self-check` costs one request, `--install-browser` downloads, `--rehearse-handoff` needs a person). A new command escapes neither branch
 
 ### Checking that the guards guard
 
@@ -862,7 +863,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 52 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 55 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

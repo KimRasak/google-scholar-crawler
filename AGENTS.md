@@ -7,9 +7,9 @@ only needs the interface.
 ## Install
 
 ```sh
-pipx install git+https://github.com/KimRasak/google-scholar-crawler   # or: pip install .
-scholar-crawler --doctor                                              # says what is missing
-scholar-crawler --install-browser                                     # only if --doctor asks
+pip install git+https://github.com/KimRasak/google-scholar-crawler   # pipx install works too
+scholar-crawler --doctor                                             # says what is missing
+scholar-crawler --install-browser                                    # only if --doctor asks
 ```
 
 Runs drive the browser named by `--channel`, `chrome` by default, so a machine with Chrome

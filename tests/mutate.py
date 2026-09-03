@@ -302,6 +302,27 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "the skipped-file list names each file once",
+        "scholar_crawler/digest.py",
+        "    written = list(dict.fromkeys(path for path in (args.out, args.since) if path is not None))",
+        "    written = [path for path in (args.out, args.since) if path is not None]",
+        "tests/test_collection.py",
+    ),
+    Mutation(
+        "a documented URL is the URL the tool builds",
+        "README.md",
+        "q=graph+attention+networks&as_vis=0",
+        "q=graph+attention&as_vis=0",
+        "tests/test_documented_commands.py",
+    ),
+    Mutation(
+        "a documented command still runs",
+        "README.md",
+        "scholar-digest out/all.jsonl --min-citations 1000",
+        "scholar-digest out/all.jsonl --min-cites 1000",
+        "tests/test_documented_commands.py",
+    ),
+    Mutation(
         "a note is not listed among the problems to fix",
         "scholar_crawler/doctor.py",
         '        heading = "also worth knowing, but nothing to fix:"',
