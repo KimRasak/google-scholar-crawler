@@ -79,7 +79,7 @@ Expect one takeover on the very first run, because the profile has no cookies ye
 | Your situation | Sections to read |
 | --- | --- |
 | First time | [Three steps](#three-steps) → [What a block looks like](#what-a-block-looks-like) |
-| Collecting a batch | [More commands](#more-commands) → [Counting the cost first](#counting-the-cost-first---dry-run) → [Options](#options) |
+| Collecting a batch | [More commands](#more-commands) → [Reading the command back and costing it](#reading-the-command-back-and-costing-it---dry-run) → [Options](#options) |
 | Using what you collected | [Digesting collected results](#digesting-collected-results-no-requests) → [A readable overview](#a-readable-overview---report) → [Building a bibliography offline](#building-a-bibliography-offline) |
 | Blocked too often | [What a block looks like](#what-a-block-looks-like) → [Getting challenged less](#getting-challenged-less) → [The takeover log](#the-takeover-log) |
 | It stopped, or parsing looks wrong | [Failures in plain words](#failures-in-plain-words) → [Self-check](#self-check) → `--dump-html` |
@@ -209,7 +209,7 @@ The eight top-level keys stay put: `tool`, `version`, `ok`, `exit_code`, `counts
 - **`records` carries the records themselves**, so a caller never reads the file back. The files are still written, and `files` names them.
 - **`--dry-run --json` costs a run without sending anything** and adds `plan` (`page_loads`, `records_at_most`, `seconds`, `cooldowns`, `targets`) — the way an agent decides whether a search is worth its requests.
 - **A failure is also a document**: `error` is `{kind, message, next_steps}`, and `kind` comes from a closed vocabulary (`challenge_unattended`, `rate_limited`, `unknown_layout`, `connection_refused`, …) that a caller can switch on. The vocabulary is enforced: writing a `kind` outside it raises rather than reaching a caller.
-- **Report modes and `--json` are mutually exclusive.** `--doctor`, `--explain`, `--recipes` and friends *are* reports for people; pairing them with `--json` would promise a result that does not exist, so it is refused — and the refusal is itself an `unsupported_mode` document.
+- **Report modes and `--json` are mutually exclusive.** `--doctor`, `--recipes` and `--self-check` *are* reports for people; pairing them with `--json` would promise a result that does not exist, so it is refused — and the refusal is itself an `unsupported_mode` document.
 
 `scholar-digest --json` works the same way and adds `overview` (records, citations, years, venues, most cited) plus, with `--since`, `delta` (added, gone, moved, citations gained): what changed since last time, without re-crawling.
 
@@ -585,7 +585,7 @@ Precedence is one rule and it is not negotiable: **command line > file > built-i
 scholar-crawler --config scholar.toml -q "another topic" --pages 1
 ```
 
-`--explain` names where every value in effect came from, which is what makes "why was the delay 8 seconds?" answerable later:
+`--dry-run` names where every value in effect came from, which is what makes "why was the delay 8 seconds?" answerable later:
 
 ```
 [explain] settings file scholar.toml: 5 value(s) in effect
@@ -601,7 +601,7 @@ How a file is written:
 - **A key is the long flag without its dashes.** `min-delay` and `min_delay` both work, and so does `"--min-delay"`.
 - **Tables like `[pacing]` are for the reader only.** The crawler reads their contents exactly as if the keys stood at the top of the file, so organise a file however you like without memorising which flag belongs to which group.
 - **A repeatable flag takes an array** (`query = ["a", "b"]`). Passing `-q` on the command line *replaces* that list rather than adding to it — which is what "same settings, different query" needs.
-- **Modes may not live in a file.** `--doctor`, `--self-check`, `--rehearse-handoff`, `--show-state`, `--forget`, `--dry-run`, `--explain`, `--recipes` and `--config` decide *what the command does*, not how it behaves. A settings file naming one is an error: it should not be able to turn a crawl into something else behind your back.
+- **Modes may not live in a file.** `--doctor`, `--self-check`, `--rehearse-handoff`, `--show-state`, `--forget`, `--dry-run`, `--recipes` and `--config` decide *what the command does*, not how it behaves. A settings file naming one is an error: it should not be able to turn a crawl into something else behind your back.
 
 Anything wrong is reported before the first request, by name:
 
@@ -617,12 +617,12 @@ error: scholar.toml: 'min-delay' is set twice
 
 `tomllib` is stdlib from Python 3.11; 3.10 needs `tomli`, which `pyproject.toml` declares for `python_version < "3.11"`. `--doctor` reports a `settings files` line either way, so a missing reader surfaces before a `--config` run needs it.
 
-## Reading the command back: `--explain`
+## Reading the command back and costing it: `--dry-run`
 
-There are more than forty flags, and a wrong combination rarely fails — it quietly does something else. `--explain` translates the command into plain words (what it crawls, how deep, at what rhythm, what a challenge does, which files it touches) and then names the flags that contradict or cancel each other:
+There are more than fifty flags, and a wrong combination rarely fails — it quietly does something else; and `--pages`, `-n`, `--follow-cites` and `--bibtex` multiply, which makes it easy to start a run that takes hours. `--dry-run` sends nothing, translates the command into plain words (what it crawls, how deep, at what rhythm, what a challenge does, which files it touches), names the flags that contradict or cancel each other, and then bills it:
 
 ```sh
-$ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --explain
+$ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry-run
 [explain] crawling 1 listing(s)
 [explain]   target: graph attention networks
 [explain] up to 3 page(s) per listing, 10 records a page
@@ -634,6 +634,12 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --exp
 [explain] creating bibtex: out/refs.bib
 [explain] creating resume state: out/state.json
 [explain] creating takeover log: out/challenges.jsonl
+[plan] graph attention networks -> https://scholar.google.com/scholar?hl=en&q=graph+attention+networks&as_vis=0&as_sdt=0%2C5
+[plan] seed targets: 3 page loads, up to 30 records
+[plan] bibtex export: up to 60 page loads
+[plan] total: up to 63 page loads for 30 records
+[plan] estimated 20 min at 4-11s between requests plus 6 cooldowns of 90s
+[plan] nothing was requested; drop --dry-run to start
 ```
 
 What it catches (`warn` means a flag does not do what it looks like; `note` means a consequence worth knowing):
@@ -643,15 +649,13 @@ What it catches (`warn` means a flag does not do what it looks like; `note` mean
 - values that amount to doing no work, such as `--pages 0` or `--max-handoffs 0`;
 - delays shorter than the default 4–11s, and `--cooldown-every 0` removing the long pause;
 - `--no-learn-from-history` when the takeover log actually holds history (silent when it does not);
-- `--resume` with no cursor for these targets, which really means starting over, and `--resume` together with `--start`, where the cursor wins (a stored cursor without `--resume` needs no `--explain`: every run says so before it starts);
+- `--resume` with no cursor for these targets, which really means starting over, and `--resume` together with `--start`, where the cursor wins (a stored cursor without `--resume` needs no `--dry-run`: every run says so before it starts);
 - two output flags pointed at one file;
 - `--bibtex` with `--author` costing three page loads per record, `--dump-html` writing pages that carry session material to disk, `--proxy` addresses being challenged more, and a `--host` other than the default.
 
-It answers a different question from `--dry-run`: that one estimates how long a run takes, this one tells you whether the command is the one you meant. Both can be given together.
+The `[explain]` lines answer "is this the command I meant?" and the `[plan]` lines answer "what will it cost?". Those were two flags (`--explain` and `--dry-run`), and nobody ever wanted only one of them: neither sends a request, both need targets, and each is half the answer to "should I start this run?".
 
-## Counting the cost first: `--dry-run`
-
-`--pages`, `-n`, `--follow-cites` and `--bibtex` multiply, which makes it easy to start a run that takes hours. `--dry-run` sends nothing and spells out what would be requested, the worst-case page loads, and roughly how long the current rhythm would need:
+Here is a run whose cost gets away from you:
 
 ```sh
 $ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
@@ -692,7 +696,7 @@ It fetches one page of a broad query and reports, field by field, whether titles
 
 ## Options
 
-`--help` opens with the three shapes a run takes (a search, an id, an offline mode) rather than filling a screen with forty flags; the full list follows it in groups, and the table below is the same set arranged by purpose.
+`--help` opens with the three shapes a run takes (a search, an id, an offline mode) and closes with four lines saying which of the four collect-nothing modes answers which question, rather than filling a screen with fifty flags; the full list follows it in groups, and the table below is the same set arranged by purpose.
 
 | Option | Meaning |
 | --- | --- |
@@ -716,8 +720,7 @@ It fetches one page of a broad query and reports, field by field, whether titles
 | `--recipes` | print complete commands to copy (no requests) |
 | `--config FILE` | read settings from a TOML file; anything passed as a flag wins over it |
 | `--show-state`, `--forget PATTERN` | review stored progress and recent takeovers; drop cursors by signature substring (empty pattern drops all) |
-| `--explain` | read the command back in plain words and name flags that cancel each other |
-| `--dry-run` | print the run plan and duration estimate, then stop without requesting anything |
+| `--dry-run` | read the command back, name flags that cancel each other, print the plan and duration estimate, then stop without requesting anything |
 | `--self-check` | run the parser self-check (one request) and report field by field what still parses |
 | `--headless` | no window; **a challenge then aborts the run with instructions** |
 
@@ -820,7 +823,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 469 tests, fully offline
+python3 -m pytest -q     # 467 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -831,7 +834,7 @@ Every test is offline (no network). Grouped by what they cover; read `tests/` fo
 - **Human takeover**: challenge detection on real headless Chromium, waiting and timeouts, a closed window, a headless refusal, the takeover log and cross-run slowdown
 - **End to end**: a real browser against a local fake Scholar (`tests/fakescholar.py`) — page budget, no loss across a takeover, `--resume`, author profiles, collected records surviving a headless refusal, and one run described entirely by a settings file
 - **Failure diagnosis**: nine network failures classified apart, only plausibly transient ones retried, unrecognized errors keeping their text and still offering a next step
-- **Output for people**: what `--doctor`, `--explain`, `--dry-run`, `--recipes`, `--audit` and `--report` say, and the planned load count matched against the real one
+- **Output for people**: what `--doctor`, `--dry-run`, `--recipes`, `--audit` and `--report` say, and the planned load count matched against the real one
 - **Output for programs**: the document's fixed keys, the failure vocabulary, the stdout/stderr split, and AGENTS.md matching that vocabulary word for word
 - **Offline tools**: merging, filtering, summaries, grouping, bibliography synthesis, staleness and refresh lists, collection deltas
 - **Configuration and interface**: settings-file equivalence and errors, both parsers (groups, help, defaults), and both READMEs' links and module lists
@@ -843,7 +846,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 50 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 51 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

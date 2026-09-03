@@ -30,7 +30,6 @@ MODE_KEYS = frozenset(
         "config",
         "doctor",
         "dry_run",
-        "explain",
         "forget",
         "recipes",
         "rehearse_handoff",

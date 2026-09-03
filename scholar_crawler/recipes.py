@@ -36,9 +36,10 @@ RECIPES: tuple[Recipe, ...] = (
         note="no requests; reports Python, the libraries, the browser and the directories",
     ),
     Recipe(
-        purpose="Cost a run before starting it",
+        purpose="Read a command back and cost it before starting",
         command='scholar-crawler -q "diffusion models" -p 5 --bibtex out/refs.bib --dry-run',
-        note="prints page loads and duration; --bibtex costs two extra loads per record",
+        note="no requests; names the files it would touch, the flags that cancel each other, "
+        "the page loads and the duration",
     ),
     Recipe(
         purpose="Check the parser against Scholar before trusting a long run",
@@ -51,14 +52,9 @@ RECIPES: tuple[Recipe, ...] = (
         note="a local challenge page; press the button to prove the resume path works",
     ),
     Recipe(
-        purpose="Read a command back before running it",
-        command='scholar-crawler -q "diffusion models" -p 5 --bibtex out/refs.bib --explain',
-        note="no requests; names the files it would touch and any flags that cancel each other",
-    ),
-    Recipe(
         purpose="Keep the flags you always pass in a file",
-        command="scholar-crawler --config scholar.toml --explain",
-        note="cp scholar.toml.example scholar.toml first; --explain names where every value came from",
+        command="scholar-crawler --config scholar.toml --dry-run",
+        note="cp scholar.toml.example scholar.toml first; --dry-run names where every value came from",
     ),
     Recipe(
         purpose="Collect from a script or an agent, and parse the result",

@@ -255,8 +255,8 @@ MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "the usage line names only real flags",
         "scholar_crawler/cli.py",
-        "(--recipes | --doctor | --self-check | --dry-run | --explain)",
-        "(--recipes | --doctor | --self-check | --dry-run | --explain | --turbo)",
+        "(--recipes | --doctor | --self-check | --dry-run)",
+        "(--recipes | --doctor | --self-check | --dry-run | --turbo)",
         DOCS,
     ),
     Mutation(
@@ -300,6 +300,13 @@ MUTATIONS: tuple[Mutation, ...] = (
         '"exhausted": exhausted,',
         '"exhausted": False,',
         "tests/test_state.py tests/test_end_to_end.py",
+    ),
+    Mutation(
+        "one mode reads the command back and costs it",
+        "scholar_crawler/cli.py",
+        "        for line in explain(args, listings, authors, follow, pacing, sources):",
+        "        for line in ():",
+        "tests/test_explain.py",
     ),
     Mutation(
         "the profile file is named after the records file",

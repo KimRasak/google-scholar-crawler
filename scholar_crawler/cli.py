@@ -52,12 +52,16 @@ def build_parser() -> argparse.ArgumentParser:
         usage=(
             "scholar-crawler -q QUERY [-p PAGES] [-o FILE] [options]\n"
             "       scholar-crawler (--cites ID | --cluster ID | --author ID) [options]\n"
-            "       scholar-crawler (--recipes | --doctor | --self-check | --dry-run | --explain)"
+            "       scholar-crawler (--recipes | --doctor | --self-check | --dry-run)"
         ),
         description="Search Google Scholar in a real browser; hand the window to a human on CAPTCHA.",
         epilog=(
-            "Most of these flags exist to be left alone. Run --recipes for complete commands "
-            "to copy,\nand --dry-run to see what a run would cost before it starts."
+            "Most of these flags exist to be left alone. Four modes collect nothing and answer\n"
+            "one question each:\n"
+            "  --recipes     which commands to copy\n"
+            "  --doctor      whether this machine can crawl at all\n"
+            "  --dry-run     what a command would do and what it would cost\n"
+            "  --self-check  whether Scholar's layout still parses (this one sends 1 request)"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -142,8 +146,9 @@ def build_parser() -> argparse.ArgumentParser:
     query.add_argument(
         "--dry-run",
         action="store_true",
-        help="print what the run would request and how long it would take, then stop "
-        "without sending anything",
+        help="read this command back — what it will crawl, which files it will touch, which "
+        "flags contradict each other, and what it would cost — then stop without sending "
+        "anything",
     )
     query.add_argument(
         "--rehearse-handoff",
@@ -220,12 +225,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print one JSON object on stdout describing the run — counts, files, the records "
         "collected, and what stopped it — with every human line on stderr instead",
-    )
-    output.add_argument(
-        "--explain",
-        action="store_true",
-        help="read this command back in plain words — what it will crawl, which files it "
-        "will touch, and which flags contradict each other — and stop",
     )
 
     browser = parser.add_argument_group(
@@ -618,7 +617,6 @@ def _mode_that_json_cannot_describe(args: argparse.Namespace) -> str:
         "--rehearse-handoff": args.rehearse_handoff,
         "--show-state": args.show_state,
         "--forget": args.forget is not None,
-        "--explain": args.explain,
     }
     return next((flag for flag, asked in modes.items() if asked), "")
 
@@ -714,7 +712,7 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
         print(f"error: {error}", file=sys.stderr)
         return _Ran(1, reason=str(error))
     summary = sources.summary()
-    if summary is not None and not args.explain:
+    if summary is not None and not args.dry_run:
         print(f"[config] {summary}", flush=True)
     offline = _run_offline_mode(args)
     if offline is not None:
@@ -735,15 +733,12 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
                 print(line, file=sys.stderr)
         return _Ran(1, reason=str(error))
 
-    if args.explain:
-        for line in explain(args, listings, authors, follow, pacing, sources):
-            print(f"[explain] {line}" if line else "[explain]", flush=True)
-        if not args.dry_run:
-            print("[explain] nothing was requested; drop --explain to start", flush=True)
-            return _Ran(0)
     for line in _ignored_progress(args, listings, authors):
         print(f"[state] {line}", flush=True)
     if args.dry_run:
+        # One question, one mode: what this command means, and what it would cost.
+        for line in explain(args, listings, authors, follow, pacing, sources):
+            print(f"[explain] {line}" if line else "[explain]", flush=True)
         plan = _plan_of(args, listings, authors, follow, pacing)
         for line in plan.render():
             print(f"[plan] {line}", flush=True)

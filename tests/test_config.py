@@ -127,7 +127,7 @@ def test_a_setting_nobody_could_mean_is_still_refused(tmp_path: Path) -> None:
         _settings(tmp_path, "zzzz = 1\n")
 
 
-@pytest.mark.parametrize("mode", ["doctor", "recipes", "dry-run", "explain", "config"])
+@pytest.mark.parametrize("mode", ["doctor", "recipes", "dry-run", "self-check", "config"])
 def test_a_file_may_not_decide_what_the_command_does(tmp_path: Path, mode: str) -> None:
     with pytest.raises(ConfigError, match="stays on the command line"):
         _settings(tmp_path, f'{mode} = true\n')
@@ -210,8 +210,9 @@ def test_a_run_driven_by_a_file_plans_the_file_values(
     path = _write(tmp_path, body)
     assert main(["--config", str(path), "--dry-run"]) == 0
     printed = capsys.readouterr().out
-    assert "1 setting(s) from" not in printed, "a run reports every setting it took"
-    assert "4 setting(s) from" in printed
+    assert "4 value(s) in effect" in printed, "the mode lists every setting it took"
+    assert "max_delay, min_delay, pages, query" in printed
+    assert "[config]" not in printed, "the detail replaces the one-line summary"
     assert "graph attention" in printed
     assert "9-21s between requests" in printed
 
@@ -228,7 +229,7 @@ def test_explaining_a_run_lists_where_the_settings_came_from(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = _write(tmp_path, 'query = ["graph attention"]\npages = 4\n')
-    assert main(["--config", str(path), "--pages", "1", "--explain"]) == 0
+    assert main(["--config", str(path), "--pages", "1", "--dry-run"]) == 0
     printed = capsys.readouterr().out
     assert "[explain] settings file" in printed
     assert "pages came from the command line instead" in printed

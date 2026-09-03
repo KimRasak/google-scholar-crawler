@@ -79,7 +79,7 @@ scholar-digest out/rag.jsonl --report out/report.md   # 写成一份可读的 Ma
 | 你的情况 | 读这几节 |
 | --- | --- |
 | 第一次用 | [三步跑起来](#三步跑起来) → [被拦时会发生什么](#被拦时会发生什么) |
-| 要抓一批数据 | [更多用法](#更多用法) → [先算账：`--dry-run`](#先算账--dry-run) → [常用参数](#常用参数) |
+| 要抓一批数据 | [更多用法](#更多用法) → [先把命令读回来、并算清账：`--dry-run`](#先把命令读回来并算清账--dry-run) → [常用参数](#常用参数) |
 | 抓完了要用数据 | [汇总已抓到的结果](#汇总已抓到的结果不发请求) → [出一份可读的综述](#出一份可读的综述--report) → [离线生成参考文献](#离线生成参考文献) |
 | 老是被验证码拦 | [被拦时会发生什么](#被拦时会发生什么) → [降低验证频率](#降低验证频率) → [接管记录](#接管记录) |
 | 报错停了，或结果不对 | [出错时给人话](#出错时给人话) → [自检](#自检) → `--dump-html` |
@@ -209,7 +209,7 @@ $ scholar-crawler -q "graph attention networks" -p 1 --json 2>/dev/null
 - **`records` 直接给记录本身**，调用方不用再去读文件；文件照旧会写，`files` 里列出路径。
 - **`--dry-run --json` 只算账不发请求**，多一个 `plan`（`page_loads`、`records_at_most`、`seconds`、`cooldowns`、`targets`），这是让 agent 先估价再决定的入口。
 - **失败也是一个文档**：`error` 是 `{kind, message, next_steps}`，`kind` 取自一份封闭的词表（`challenge_unattended`、`rate_limited`、`unknown_layout`、`connection_refused`……），调用方可以直接 `switch`。词表由测试保证：代码里写出一个词表外的 `kind` 会直接抛错。
-- **报告类模式与 `--json` 互斥**：`--doctor`、`--explain`、`--recipes` 等本身就是给人读的报告，配上 `--json` 只会承诺一个不存在的结果，所以直接拒绝（并且拒绝本身也是一个 `unsupported_mode` 文档）。
+- **报告类模式与 `--json` 互斥**：`--doctor`、`--recipes`、`--self-check` 本身就是给人读的报告，配上 `--json` 只会承诺一个不存在的结果，所以直接拒绝（并且拒绝本身也是一个 `unsupported_mode` 文档）。
 
 `scholar-digest --json` 同理，另加 `overview`（记录数、被引总数、年份、期刊、被引最高）和 `--since` 的 `delta`（新增、不在了、被引变动、净增），也就是「这轮和上次比变了什么」——不用重抓。
 
@@ -581,7 +581,7 @@ scholar-crawler --config scholar.toml
 scholar-crawler --config scholar.toml -q "另一个题目" --pages 1
 ```
 
-`--explain` 会说明每个值的来源，「为什么这次延迟是 8 秒」有据可查：
+`--dry-run` 会说明每个值的来源，「为什么这次延迟是 8 秒」有据可查：
 
 ```
 [explain] settings file scholar.toml: 5 value(s) in effect
@@ -590,14 +590,14 @@ scholar-crawler --config scholar.toml -q "另一个题目" --pages 1
 [explain]   pages came from the command line instead, which wins over the file
 ```
 
-不带 `--explain` 的正常运行只打一行 `[config] 5 setting(s) from scholar.toml, 2 overridden by flags`。
+不带 `--dry-run` 的正常运行只打一行 `[config] 5 setting(s) from scholar.toml, 2 overridden by flags`。
 
 写法约定：
 
 - **键名就是长参数去掉前面的横线**，`min-delay` 和 `min_delay` 都认，`"--min-delay"` 也认。
 - **`[pacing]` 这类表只是给人分段用的**，程序把表里的键当作写在文件顶层完全一样。所以你可以按自己的习惯组织文件，不必记住哪个参数属于哪一组。
 - **可重复的参数写成数组**（`query = ["a", "b"]`）。命令行上再给 `-q` 是**替换**整个列表，不是追加——这正是「同样的设置，换个查询」想要的行为。
-- **模式类参数不许写进文件**：`--doctor`、`--self-check`、`--rehearse-handoff`、`--show-state`、`--forget`、`--dry-run`、`--explain`、`--recipes`、`--config` 决定这条命令**做什么**，不是它**怎么做**。文件里出现它们会直接报错——一个设置文件不该在你不知情时把抓取变成别的动作。
+- **模式类参数不许写进文件**：`--doctor`、`--self-check`、`--rehearse-handoff`、`--show-state`、`--forget`、`--dry-run`、`--recipes`、`--config` 决定这条命令**做什么**，不是它**怎么做**。文件里出现它们会直接报错——一个设置文件不该在你不知情时把抓取变成别的动作。
 
 任何不对的地方都在发出第一个请求前报错，而且指名道姓：
 
@@ -613,12 +613,12 @@ error: scholar.toml: 'min-delay' is set twice
 
 Python 3.11 起 `tomllib` 是标准库；3.10 需要 `tomli`（`pyproject.toml` 已按 `python_version < "3.11"` 声明），`--doctor` 会顺便报一行 `settings files`，不必等到真用 `--config` 时才发现读不了。
 
-## 先把命令读回来：`--explain`
+## 先把命令读回来、并算清账：`--dry-run`
 
-参数有四十多个，写错的组合通常不会报错，只是安静地做了另一件事。`--explain` 把这条命令翻译成人话——抓什么、翻多少页、按什么节奏、遇到验证怎么办、会动哪些文件——然后指出互相抵消或名不副实的参数：
+参数有五十多个，写错的组合通常不会报错，只是安静地做了另一件事；而 `--pages`、`-n`、`--follow-cites`、`--bibtex` 的成本是相乘的，很容易一不小心开出一个跑几小时的任务。`--dry-run` 不发任何请求，把这条命令翻译成人话——抓什么、翻多少页、按什么节奏、遇到验证怎么办、会动哪些文件——指出互相抵消或名不副实的参数，最后给出账单：
 
 ```sh
-$ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --explain
+$ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry-run
 [explain] crawling 1 listing(s)
 [explain]   target: graph attention networks
 [explain] up to 3 page(s) per listing, 10 records a page
@@ -630,6 +630,12 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --exp
 [explain] creating bibtex: out/refs.bib
 [explain] creating resume state: out/state.json
 [explain] creating takeover log: out/challenges.jsonl
+[plan] graph attention networks -> https://scholar.google.com/scholar?hl=en&q=graph+attention+networks&as_vis=0&as_sdt=0%2C5
+[plan] seed targets: 3 page loads, up to 30 records
+[plan] bibtex export: up to 60 page loads
+[plan] total: up to 63 page loads for 30 records
+[plan] estimated 20 min at 4-11s between requests plus 6 cooldowns of 90s
+[plan] nothing was requested; drop --dry-run to start
 ```
 
 会被点出来的组合（`warn` 是「这个参数不做你以为的事」，`note` 是「后果值得知道」）：
@@ -639,15 +645,13 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --exp
 - `--pages 0`、`--max-handoffs 0` 这类等于「不干活」的值；
 - 延迟比默认的 4–11 秒更短、`--cooldown-every 0` 去掉长暂停；
 - `--no-learn-from-history`，且接管记录里确实有历史（没有历史就不提）；
-- `--resume` 但断点里没有这些目标 → 其实是从头开始；`--resume` 与 `--start` 同时给 → 断点赢（「断点里有而没写 `--resume`」不必等 `--explain`，任何一次运行开始前都会说）；
+- `--resume` 但断点里没有这些目标 → 其实是从头开始；`--resume` 与 `--start` 同时给 → 断点赢（「断点里有而没写 `--resume`」不必等 `--dry-run`，任何一次运行开始前都会说）；
 - 两个输出参数指向同一个文件；
 - `--bibtex` 配 `--author` 每条要三次页面加载；`--dump-html` 会把含会话信息的页面写到磁盘；`--proxy` 的机房 IP 更容易被拦；`--host` 不是默认站点。
 
-它和 `--dry-run` 是两件事：`--dry-run` 回答「要花多久」，`--explain` 回答「这条命令是不是你想写的」。两个可以一起用，先读人话再看账单。
+`[explain]` 说的是「这条命令是不是你想写的」，`[plan]` 说的是「它要花多少」——这两个问题原来是两个旗标（`--explain` 和 `--dry-run`），但没人只想知道其中一个：都不发请求、都需要目标、都是「该不该开始这次运行」的一半答案，所以现在是一个模式。
 
-## 先算账：`--dry-run`
-
-`--pages`、`-n`、`--follow-cites`、`--bibtex` 的成本是相乘的，很容易一不小心开出一个跑几小时的任务。`--dry-run` 不发任何请求，先把这轮要抓什么、最多多少次页面加载、按当前节奏大概多久列清楚：
+再看一个成本会失控的例子：
 
 ```sh
 $ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
@@ -688,7 +692,7 @@ $ scholar-crawler --self-check
 
 ## 常用参数
 
-`--help` 开头只列三种运行形态（检索、按 id 抓、离线模式），而不是把四十多个旗标铺满一屏；完整列表在 `--help` 的分组里，下面这张表是同一批参数按用途的中文对照。
+`--help` 开头只列三种运行形态（检索、按 id 抓、离线模式），末尾用四行说清「四个不抓数据的模式各回答什么问题」，而不是把五十多个旗标铺满一屏；完整列表在 `--help` 的分组里，下面这张表是同一批参数按用途的中文对照。
 
 | 参数 | 说明 |
 | --- | --- |
@@ -713,8 +717,7 @@ $ scholar-crawler --self-check
 | `--recipes` | 打印可直接复制的完整命令（不发请求） |
 | `--config FILE` | 从 TOML 设置文件读参数；命令行给的值优先 |
 | `--show-state`、`--forget PATTERN` | 查看断点进度与最近的接管记录；按签名子串清除断点（空串清空全部） |
-| `--explain` | 把这条命令读回成人话，并指出互相抵消的参数 |
-| `--dry-run` | 只打印这轮的抓取计划与用时估算，不发任何请求 |
+| `--dry-run` | 把这条命令读回成人话、指出互相抵消的参数、并给出抓取计划与用时估算，不发任何请求 |
 | `--self-check` | 跑一次解析自检（一个请求），逐项报告哪些字段还能正常解析 |
 | `--headless` | 无窗口模式；**此时遇到验证会直接终止并提示改用有界面模式** |
 
@@ -817,7 +820,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 469 个用例，全部离线
+python3 -m pytest -q     # 467 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -828,7 +831,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **人工接管**：真实 headless Chromium 上的验证判定、等待与超时、窗口被关、headless 拒绝、接管记录与跨运行减速
 - **全链路**：真实浏览器打本地假 Scholar（`tests/fakescholar.py`）——翻页上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、headless 拒绝时已抓数据仍在盘上、一次完全由设置文件描述的运行
 - **失败诊断**：九类网络错误各自归类、只重试可能是暂时的、认不出的错误保留原文并仍给下一步
-- **给人的输出**：`--doctor`、`--explain`、`--dry-run`、`--recipes`、`--audit`、`--report` 各自说的话，以及计划数字与真实请求数逐一对齐
+- **给人的输出**：`--doctor`、`--dry-run`、`--recipes`、`--audit`、`--report` 各自说的话，以及计划数字与真实请求数逐一对齐
 - **给程序的输出**：JSON 文档的固定键、失败词表、stdout/stderr 分工，以及 AGENTS.md 与词表逐词一致
 - **离线工具**：合并去重、过滤、统计、分组、书目生成、判旧与重抓清单、文献库差异
 - **配置与界面**：设置文件的等价与报错、两条命令的参数表（分组、说明、默认值）、两份 README 的链接与模块清单
@@ -838,7 +841,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 50 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 51 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

@@ -3,7 +3,7 @@
 There are more than forty flags, and a wrong combination does not fail — it quietly does
 something other than what was meant: ``--headless`` gives up at the first challenge,
 ``--resume`` without a stored cursor starts over, an omitted ``--resume`` recollects what is
-already on disk, ``--follow-breadth 0`` turns expansion off while looking enabled. ``--explain``
+already on disk, ``--follow-breadth 0`` turns expansion off while looking enabled. ``--dry-run``
 states what this exact command will do, which files it will touch, and which of its flags
 contradict or cancel each other.
 

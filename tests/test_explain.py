@@ -1,4 +1,4 @@
-"""Reading a command back: what --explain states, and which combinations it catches."""
+"""Reading a command back: what --dry-run states, and which combinations it catches."""
 
 from __future__ import annotations
 
@@ -148,7 +148,7 @@ def test_resume_without_a_stored_cursor_says_it_starts_over() -> None:
 
 
 def test_a_stored_cursor_without_resume_is_left_to_the_run_to_report(tmp_path: Path) -> None:
-    # Every run prints it now, with or without --explain, so repeating it here would say the
+    # Every run prints it now, with or without --dry-run, so repeating it here would say the
     # same thing twice in one command.
     args = build_parser().parse_args(["-q", "x", "--state", str(tmp_path / "state.json")])
     listings, _authors = build_targets(args)
@@ -194,17 +194,15 @@ def test_warnings_come_before_notes() -> None:
     assert levels == sorted(levels, key=lambda level: 0 if level is Level.WARN else 1)
 
 
-def test_explain_prints_and_stops_without_requesting_anything(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["-q", "graph attention networks", "--explain"]) == 0
+def test_one_mode_reads_the_command_back_and_costs_it(capsys: pytest.CaptureFixture[str]) -> None:
+    # Reading a command back and costing it used to be two flags a newcomer had to choose
+    # between, and the honest answer was "you want both": neither sends a request, both need
+    # targets, and each answers half of "should I start this run?".
+    assert main(["-q", "graph attention networks", "-p", "2", "--dry-run"]) == 0
     printed = capsys.readouterr().out
-    assert "[explain] crawling 1 listing(s)" in printed
-    assert "[explain] nothing was requested; drop --explain to start" in printed
+    assert "[explain] crawling 1 listing(s)" in printed, "what the command means"
+    assert "[explain] creating records: out/results.jsonl" in printed, "which files it touches"
+    assert "[plan] total:" in printed, "what it would cost"
+    assert "[plan] nothing was requested; drop --dry-run to start" in printed
+    assert printed.index("[explain]") < printed.index("[plan]"), "meaning first, then cost"
     assert not Path("out").exists()
-
-
-def test_explain_combines_with_dry_run(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["-q", "x", "-p", "2", "--explain", "--dry-run"]) == 0
-    printed = capsys.readouterr().out
-    assert "[explain] crawling 1 listing(s)" in printed
-    assert "[plan] total:" in printed
-    assert "drop --explain to start" not in printed  # --dry-run prints its own closing line

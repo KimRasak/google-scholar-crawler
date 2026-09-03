@@ -1,7 +1,7 @@
 # Settings for scholar-crawler, read with --config scholar.toml
 #
 # Copy this file, edit it, and pass it with --config. Anything you also type as a flag
-# wins over the file, and the file wins over the built-in defaults; --explain prints
+# wins over the file, and the file wins over the built-in defaults; --dry-run prints
 # where every value in effect came from.
 #
 # Keys are the long flags without the leading dashes: --min-delay is min-delay (or
@@ -9,7 +9,7 @@
 # reads their contents exactly as if the keys stood at the top of the file.
 #
 # Modes stay on the command line: --doctor, --self-check, --rehearse-handoff,
-# --show-state, --forget, --dry-run, --explain and --recipes are decisions about what
+# --show-state, --forget, --dry-run and --recipes are decisions about what
 # the command does, not settings for how it behaves.
 
 # What to crawl. A repeatable flag takes a list; passing -q on the command line

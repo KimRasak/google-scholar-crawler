@@ -138,7 +138,7 @@ def test_a_run_with_nothing_to_crawl_fails_in_both_registers(
 
 
 @pytest.mark.parametrize(
-    "mode", [["--doctor"], ["--recipes"], ["--show-state"], ["--explain", "-q", "x"], ["--version"]]
+    "mode", [["--doctor"], ["--recipes"], ["--show-state"], ["--self-check"], ["--version"]]
 )
 def test_a_mode_that_json_cannot_describe_is_refused(
     mode: list[str], capsys: pytest.CaptureFixture[str]

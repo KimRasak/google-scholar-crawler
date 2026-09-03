@@ -33,14 +33,14 @@ CAPTCHA, the browser window is brought to the front and the run waits. So:
 
 ```sh
 scholar-crawler -q "graph attention networks" -p 2 --json          # 2 pages, 10 records each
-scholar-crawler -q "..." -p 5 --dry-run --json                     # cost it first, no requests
+scholar-crawler -q "..." -p 5 --dry-run --json                     # read it back and cost it
 scholar-crawler --cites 2960712678066186980 -p 2 --json            # who cites this paper
 scholar-crawler --author kukA0LcAAAAJ -n 200 --json                # one author's publications
 ```
 
 `--json` prints exactly one JSON object on stdout and sends every progress line to stderr, so
 `json.loads(stdout)` always works. Pass it with a real crawl or with `--dry-run`; it is refused
-together with the report modes (`--doctor`, `--explain`, `--recipes`, …) because those print
+together with the report modes (`--doctor`, `--recipes`, `--self-check`) because those print
 reports rather than results.
 
 ```json

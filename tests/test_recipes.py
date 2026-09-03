@@ -37,7 +37,7 @@ def test_the_first_recipe_collects_papers() -> None:
     argv = shlex.split(first.command)[1:]
     args = build_parser().parse_args(argv)
     assert args.query and args.out, f"the first recipe must collect, not diagnose: {first.command}"
-    assert not (args.doctor or args.dry_run or args.self_check or args.explain)
+    assert not (args.doctor or args.dry_run or args.self_check)
 
 
 def test_every_recipe_names_a_real_command_and_parses(workspace: Path) -> None:
@@ -81,26 +81,16 @@ def test_the_doctor_recipe_runs_as_written(
         assert "[doctor] + browser" in printed
 
 
-def test_the_explain_recipe_runs_as_written(
-    workspace: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    explained = [recipe for recipe in RECIPES if "--explain" in recipe.command]
-    assert explained, "keep a recipe that reads a command back before it runs"
-    for recipe in explained:
-        assert main(shlex.split(recipe.command)[1:]) == 0
-        printed = capsys.readouterr().out
-        assert "[explain] crawling" in printed
-
-
-def test_the_dry_run_recipe_runs_as_written(
+def test_the_dry_run_recipes_run_as_written(
     workspace: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     dry = [recipe for recipe in RECIPES if "--dry-run" in recipe.command]
-    assert dry, "keep a recipe that costs a run without sending anything"
+    assert dry, "keep a recipe that reads a command back and costs it without sending anything"
     for recipe in dry:
         assert main(shlex.split(recipe.command)[1:]) == 0
         printed = capsys.readouterr().out
-        assert "[plan] total:" in printed
+        assert "[explain] crawling" in printed, recipe.command
+        assert "[plan] total:" in printed, recipe.command
 
 
 def test_recipes_read_as_purpose_command_note() -> None:
