@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import sys
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from scholar_crawler.diagnose import (  # noqa: E402
     diagnose_launch,
     diagnose_navigation,
     diagnose_page,
+    diagnose_write,
 )
 
 URL = "https://scholar.google.com/scholar?q=x"
@@ -67,6 +69,24 @@ def test_every_diagnosis_names_the_url_and_offers_a_next_step() -> None:
         assert URL in diagnosis.what, message
         assert diagnosis.next_steps, message
         assert all(step and not step.endswith(".") for step in diagnosis.next_steps), message
+
+
+def test_a_write_that_failed_is_told_apart_from_a_dead_pipe() -> None:
+    records = Path("out/results.jsonl")
+    full = diagnose_write(OSError(errno.ENOSPC, "No space left on device"), records)
+    assert full is not None
+    assert full.failure is Failure.PATH_UNWRITABLE
+    assert "No space left on device" in full.what
+    assert any("--resume" in step for step in full.next_steps)
+
+    # An error naming a file is about that file whatever its errno.
+    named = diagnose_write(FileNotFoundError(2, "No such file", str(records)), records)
+    assert named is not None and str(records) in named.what
+
+    # The browser is reached through a pipe, and a dead one is an OSError too. Blaming the disk
+    # for it would send the reader to check free space they have plenty of.
+    assert diagnose_write(ConnectionResetError(104, "Connection reset by peer"), records) is None
+    assert diagnose_write(BrokenPipeError(32, "Broken pipe"), records) is None
 
 
 def test_a_browser_that_never_opened_is_explained_by_its_local_cause() -> None:

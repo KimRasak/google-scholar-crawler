@@ -11,6 +11,7 @@ message is worth reading without knowing the code.
 
 from __future__ import annotations
 
+import errno
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -247,6 +248,43 @@ def diagnose_unwritable(reason: str, flag: str) -> Diagnosis:
             f"point {flag} at a file this user can write",
             "run scholar-crawler --doctor, which checks every path a run needs",
         ),
+    )
+
+
+WRITE_ERRNOS: frozenset[int] = frozenset(
+    number
+    for number in (
+        getattr(errno, name, None)
+        for name in ("ENOSPC", "EDQUOT", "EACCES", "EPERM", "EROFS", "EIO", "EFBIG", "EISDIR")
+    )
+    if number is not None
+)
+"""Errno values a write to an output file can fail with, whatever the platform names them."""
+
+
+def diagnose_write(error: OSError, path: Path) -> Diagnosis | None:
+    """Explain a write that failed while the run was collecting.
+
+    The records already written stay on disk, and a cursor is recorded only after its page is
+    written, so the way out is to make room and continue rather than to start over.
+
+    :param error: the error the write raised.
+    :param path: the records file this run was filling.
+    :returns: the diagnosis, or None when the error is not about writing a file — a dead pipe to
+        the browser is also an :class:`OSError`, and blaming the disk for it would mislead.
+    """
+    if error.filename is None and error.errno not in WRITE_ERRNOS:
+        return None
+    named = f" ({error.filename})" if error.filename else ""
+    return Diagnosis(
+        failure=Failure.PATH_UNWRITABLE,
+        what=f"writing what was collected failed: {error.strerror or error}{named}",
+        next_steps=(
+            f"check free space and permissions where {path} lives",
+            "rerun with --resume: what was already written is on disk, and the cursor stopped "
+            "before the page that failed",
+        ),
+        detail=str(error),
     )
 
 

@@ -39,7 +39,7 @@ from scholar_crawler.crawler import Pacing, ScholarCrawler  # noqa: E402
 from scholar_crawler.expand import FollowPolicy  # noqa: E402
 from scholar_crawler.models import AuthorRequest, SearchRequest  # noqa: E402
 from scholar_crawler.run import CrawlLimits, Outputs, crawl, crawl_targets  # noqa: E402
-from scholar_crawler.storage import ChallengeLog, StateStore  # noqa: E402
+from scholar_crawler.storage import ChallengeLog, ResultSink, StateStore  # noqa: E402
 from tests.fakescholar import FakeScholar, serving  # noqa: E402
 
 NO_WAIT = Pacing(min_delay=0.0, max_delay=0.0, cooldown_every=0, challenge_cooldown=0.0)
@@ -374,6 +374,69 @@ def test_a_timezone_given_on_the_command_line_wins_over_the_language(
     assert main(["-q", "x", "-p", "1", "--lang", "de", "--dry-run"]) == 0
     derived = capsys.readouterr().out
     assert "Accept-Language de and reports its clock in Europe/Berlin (matching" in derived
+
+
+def test_a_disk_that_fills_mid_crawl_keeps_what_it_had_and_can_be_continued(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A full or revoked disk cannot be arranged by a test, so the failure is injected at the one
+    # place it would appear: the append that stores a record. What matters is what survives.
+    state = tmp_path / "state.json"
+    records = tmp_path / "results.jsonl"
+    common = [
+        "--headless",
+        "--channel",
+        "",
+        "--profile",
+        str(tmp_path / "profile"),
+        "--challenge-log",
+        str(tmp_path / "challenges.jsonl"),
+        "-o",
+        str(records),
+        "--state",
+        str(state),
+        "--min-delay",
+        "0.0",
+        "--max-delay",
+        "0.0",
+        "--cooldown-every",
+        "0",
+    ]
+    working = ResultSink.write
+    written = 0
+
+    def fails_on_the_fifteenth(self: ResultSink, result: object) -> bool:
+        nonlocal written
+        written += 1
+        if written == 15:
+            raise OSError(28, "No space left on device")
+        return working(self, result)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(ResultSink, "write", fails_on_the_fifteenth)
+    with serving(FakeScholar(pages=3)) as host:
+        assert main(["-q", "graph attention", "-p", "3", "--host", host, *common, "--json"]) == 1
+        parsed = json.loads(capsys.readouterr().out)
+
+        assert parsed["error"]["kind"] == "path_unwritable"
+        assert "No space left on device" in parsed["error"]["message"]
+        assert any("--resume" in step for step in parsed["error"]["next_steps"])
+        # The document still accounts for what the run kept, which is the point of keeping it.
+        assert parsed["counts"]["records"] == 14
+        assert parsed["files"]["records"] == str(records)
+        assert len(records.read_text(encoding="utf-8").splitlines()) == 14
+
+        store = StateStore(state)
+        store.load()
+        # The cursor is written only after its page is stored, so it stopped before the bad page.
+        assert store.entries()[0].next_start == 10
+
+        monkeypatch.setattr(ResultSink, "write", working)
+        assert main(["-q", "graph attention", "-p", "3", "--host", host, *common, "--resume"]) == 0
+
+    assert len(records.read_text(encoding="utf-8").splitlines()) == 30, "no record collected twice"
+    store = StateStore(state)
+    store.load()
+    assert store.entries()[0].next_start == 30
 
 
 def test_a_browser_that_cannot_start_stops_the_run_with_its_local_cause(

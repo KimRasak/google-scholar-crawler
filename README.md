@@ -877,6 +877,8 @@ $ scholar-crawler -q "graph attention networks"
 
 **写不进去的路径在花掉任何请求之前就被拦下**：`-o`、`--state`、`--challenge-log`、`--bibtex`、`--dump-html` 会逐个试写（探针写进最近的已存在上级目录再删掉，打错的路径不会在磁盘上留下空壳），任何一个不行就以 `path_unwritable` 停机，`message` 说是哪条路径为什么不行，下一步点名要改的那个参数。`--dry-run` 也做这项检查——它存在的意义就是在花请求之前发现这类问题。两种典型情况：目录没有写权限；以及那个路径其实是个**已存在的目录**（`--bibtex out/refs.bib` 而 `refs.bib` 是目录），后者以前要等抓完才炸。
 
+**抓到一半磁盘写不下去**（满了、配额用尽、权限被改）也是 `path_unwritable`，而且这里最重要的是**没丢东西**：已经落盘的记录都在，断点停在出错那一页之前（每页是先写记录、写成功才记断点），`--resume` 接着抓不会重复也不会漏。文档里 `counts.records` 与 `files` 照常报出这一轮保住了多少、在哪——这类失败以前落进 `runtime_error`，`counts` 是空的，调用方看不出「其实存下来了 14 条」。浏览器是通过管道驱动的，管道断了同样是 `OSError`，那种不会被算成磁盘问题（否则会让人去查根本不缺的磁盘空间）。
+
 顺带把 `--json` 的承诺补严了：**任何**结局都有一份文档，包括这个工具自己出 bug 的时候——那时 `kind` 是 `runtime_error`，`message` 是异常类型与文本，traceback 照旧打到 stderr 给修 bug 的人看。以前这种情况 stdout 是空的，`json.loads` 直接失败。
 
 一个重要的行为修正：以前「页面打开了但一个 Scholar 标记都没有」会被当成「这个查询没有结果」——于是一个门户认证页、一个陌生版式，看起来都像是搜了个没人写过的题目，程序还会继续往下翻页。现在这种页面直接停下来报 `--self-check` 与 dump 路径。真正的零结果页仍然是零结果：Scholar 自己的「did not match any articles」提示就是内容，照常解析成 0 条。
@@ -892,7 +894,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 553 个用例，全部离线
+python3 -m pytest -q     # 555 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -915,7 +917,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 85 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 87 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

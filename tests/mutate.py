@@ -302,6 +302,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "a full disk keeps what it collected",
+        "scholar_crawler/run.py",
+        "    except OSError as error:",
+        "    except _NeverRaised as error:",
+        "tests/test_end_to_end.py",
+    ),
+    Mutation(
+        "a dead pipe is not blamed on the disk",
+        "scholar_crawler/diagnose.py",
+        "    if error.filename is None and error.errno not in WRITE_ERRNOS:",
+        "    if False:",
+        "tests/test_diagnose.py",
+    ),
+    Mutation(
         "an output path is checked before anything is spent",
         "scholar_crawler/cli.py",
         "    blocked = _unwritable_output(args)",

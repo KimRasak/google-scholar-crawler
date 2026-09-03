@@ -13,7 +13,7 @@ from pathlib import Path
 from .browser import Session, browser_session
 from .challenge import ChallengeUnattended
 from .crawler import Pacing, RunStats, ScholarCrawler
-from .diagnose import CrawlFailure, stop_report
+from .diagnose import CrawlFailure, diagnose_write, stop_report
 from .expand import FollowPolicy, next_level
 from .models import AuthorProfile, AuthorRequest, ScholarResult, SearchRequest
 from .parser import bibtex_key
@@ -403,6 +403,19 @@ def crawl(
         outcome = RunOutcome(130, kind="interrupted", message="interrupted by user")
     except CrawlFailure as failure:
         diagnosis = failure.diagnosis
+        print(stop_report(diagnosis), file=sys.stderr)
+        outcome = RunOutcome(
+            1,
+            kind=diagnosis.failure.value,
+            message=diagnosis.what,
+            next_steps=diagnosis.next_steps,
+        )
+    except OSError as error:
+        # Collecting outlives the disk it writes to; the records already appended stay, so this
+        # names the place to fix and leaves the cursor where it can be continued.
+        diagnosis = diagnose_write(error, outputs.sink.path)
+        if diagnosis is None:
+            raise
         print(stop_report(diagnosis), file=sys.stderr)
         outcome = RunOutcome(
             1,

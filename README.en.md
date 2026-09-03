@@ -880,6 +880,8 @@ Told apart: a refused connection, a name that does not resolve, no internet at a
 
 **A path this run cannot write stops it before a single request is spent.** `-o`, `--state`, `--challenge-log`, `--bibtex` and `--dump-html` are each probed — a test file written into the closest existing ancestor and removed again, so a mistyped path leaves nothing behind — and the first one that fails ends the run as `path_unwritable`, with `message` naming the path and the reason and the next step naming the flag to change. `--dry-run` runs the same check, since catching this before requests are spent is what it is for. Two cases show up in practice: a directory without write permission, and a path that is itself an **existing directory** (`--bibtex out/refs.bib` where `refs.bib` is a directory), which used to fail only after the whole crawl.
 
+**A disk that fills mid-crawl** — no space, quota reached, permissions changed under the run — is `path_unwritable` too, and what matters there is that **nothing is lost**: every record already appended is on disk, and the cursor stopped before the page that failed, because a page is written first and only then recorded. `--resume` continues without a gap or a duplicate. The document still reports `counts.records` and `files`, so a caller sees that 14 records were kept and where they are; this used to land in `runtime_error` with empty counts. The browser is driven through a pipe, and a dead pipe is an `OSError` as well — that one is not counted as a disk problem, since it would send the reader to check free space they have plenty of.
+
 That tightens what `--json` promises: **every** outcome has a document, including one where this tool has a defect — `kind` is then `runtime_error`, `message` is the exception type and text, and the traceback still goes to stderr for whoever fixes it. Before, stdout was empty and `json.loads` simply failed.
 
 One behaviour was corrected along the way: a page that loaded with none of Scholar's markers used to be treated as "this query has no results", so a captive-portal login or an unfamiliar layout looked like an unwritten topic — and the run kept paging. Such a page now stops the run and names `--self-check` and the saved copy. A genuine zero-hit listing is still just empty: Scholar's own "did not match any articles" notice is content, parsed as zero records.
@@ -895,7 +897,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 553 tests, fully offline
+python3 -m pytest -q     # 555 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -922,7 +924,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 85 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 87 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
