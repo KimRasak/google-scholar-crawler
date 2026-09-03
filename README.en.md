@@ -617,12 +617,13 @@ $ scholar-crawler --show-state --state out/state.json
 [state]   cites:2960712678066186980 [en] — done after 50 records, 2026-09-02 10:45:51 UTC
 [state]   author:kukA0LcAAAAJ [en] — next offset 100, 2026-09-02 10:45:51 UTC
 
-# crawl a target from the start again (every signature containing the substring is
-# dropped; an empty pattern drops all of them)
+# crawl a target from the start again (either spelling matches; an empty pattern
+# drops all of them)
 $ scholar-crawler --forget "attention" --state out/state.json
+$ scholar-crawler --forget "attention is all you need [en]" --state out/state.json
 ```
 
-Signatures are rendered back into their targets, with the filters that distinguish them — year range, language, sort order, `--review-only` — in brackets, because the same query under different filters is a different cursor. Entries now also carry an update time; state files written by older versions still load and show `unknown time`.
+Signatures are rendered back into their targets, with the filters that distinguish them — year range, language, sort order, `--review-only` — in brackets, because the same query under different filters is a different cursor. `--forget` matches that readable name as well as the underlying signature (`lang=en`), because what you can read is what you will type back; a pattern that matches nothing lists the targets that are stored instead of only saying so. Entries now also carry an update time; state files written by older versions still load and show `unknown time`.
 
 A target cut short by `-n/--max-results` no longer counts as finished: stopping there was our decision and Scholar still had results, so its cursor stays resumable.
 
@@ -776,7 +777,7 @@ It fetches one page of a broad query and reports, field by field, whether titles
 | `--handoff-timeout`, `--max-handoffs`, `--backoff-factor`, `--challenge-cooldown` | how long to wait for a human (0 = forever), takeover budget, slowdown per takeover, wait-out after back-to-back challenges |
 | `--recipes` | print complete commands to copy (no requests) |
 | `--config FILE` | read settings from a TOML file; anything passed as a flag wins over it |
-| `--show-state`, `--forget PATTERN` | review stored progress and recent takeovers; drop cursors by signature substring (empty pattern drops all) |
+| `--show-state`, `--forget PATTERN` | review stored progress and recent takeovers; drop cursors by a substring of the target name or its signature (empty pattern drops all) |
 | `--dry-run` | read the command back, name flags that cancel each other, print the plan and duration estimate, then stop without requesting anything |
 | `--self-check` | run the parser self-check (one request) and report field by field what still parses |
 | `--headless` | no window; **a challenge then aborts the run with instructions** |
@@ -881,7 +882,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 534 tests, fully offline
+python3 -m pytest -q     # 543 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -908,7 +909,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 73 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 75 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
@@ -969,7 +970,7 @@ Google Scholar's terms do not allow automated scraping, and collected metadata r
 
 ```
 scholar_crawler/
-  models.py     data structures for records and requests (search, result, profile, page)
+  models.py     data structures for records and requests (search, result, profile, page); the two spellings of a target: short beside the command line, full when read out of context
   urls.py       query and profile URLs, filters, id/URL parsing
   parser.py     result-page and profile HTML -> structured records
   challenge.py  challenge detection + human takeover wait

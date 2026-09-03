@@ -103,16 +103,17 @@ def report_ignored_progress(
     before spending anything.
 
     :param state: the loaded resume store.
-    :param requests: label and signature of every seed target.
+    :param requests: full name and signature of every seed target, named the way the resume
+        file names it so the name can be taken straight to ``--forget``.
     :param resume: whether ``--resume`` was passed, in which case the offsets are used.
     :returns: one line per target with recorded progress, empty when resuming or starting fresh.
     """
     if resume:
         return []
     return [
-        f"{label!r} already reached offset {offset} in {state.path}; "
+        f"{name!r} already reached offset {offset} in {state.path}; "
         "add --resume to continue there, or --state elsewhere to start over"
-        for label, signature in requests
+        for name, signature in requests
         if (offset := state.next_start(signature)) > 0
     ]
 

@@ -16,14 +16,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
 from .challenge import RESULTS_SELECTOR, Challenge, ChallengeUnattended, HumanHandoff, detect_challenge
 from .diagnose import CrawlFailure, diagnose_challenge_loop, diagnose_navigation, diagnose_page
-from .models import (
-    AuthorPage,
-    AuthorRequest,
-    PageResult,
-    ScholarResult,
-    SearchRequest,
-    describe_signature,
-)
+from .models import AuthorPage, AuthorRequest, PageResult, ScholarResult, SearchRequest
 from .parser import bibtex_link, parse_author_page, parse_bibtex, parse_result_page
 from .storage import ChallengeLog
 from .urls import (
@@ -234,7 +227,7 @@ class ScholarCrawler:
         html = self._load(
             search_url(request, start=start, host=self._host),
             dump_tag=str(start),
-            target=describe_signature(request.signature()),
+            target=request.describe(),
         )
         return parse_result_page(html, query=request.label, start=start)
 
@@ -249,7 +242,7 @@ class ScholarCrawler:
         """
         url = author_url(request, cstart=cstart, host=self._host, page_size=AUTHOR_PAGE_SIZE)
         html = self._load(
-            url, dump_tag=f"author-{cstart}", target=describe_signature(request.signature())
+            url, dump_tag=f"author-{cstart}", target=request.describe()
         )
         return parse_author_page(html, user_id=request.user_id, cstart=cstart)
 
@@ -370,7 +363,7 @@ class ScholarCrawler:
         html = self._load(
             search_url(request, host=self._host),
             dump_tag=f"cluster-{cluster}",
-            target=describe_signature(request.signature()),
+            target=request.describe(),
         )
         if html is None:
             return None

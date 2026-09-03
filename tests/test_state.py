@@ -19,6 +19,7 @@ from scholar_crawler.models import (  # noqa: E402
     ScholarResult,
     SearchRequest,
     describe_signature,
+    parse_signature,
 )
 from scholar_crawler.run import crawl_listing, report_ignored_progress  # noqa: E402
 from scholar_crawler.storage import ResultSink, StateEntry, StateStore  # noqa: E402
@@ -55,6 +56,36 @@ def test_signatures_read_back_as_their_targets() -> None:
 
 def test_an_unrecognised_signature_is_shown_as_is() -> None:
     assert describe_signature("something|else") == "something|else"
+    assert describe_signature("author=x|lang=en") == "author=x|lang=en"  # a field short
+    assert describe_signature("q|a=|b=|c=|d=|e=|f=|g=|h=|i=") == "q|a=|b=|c=|d=|e=|f=|g=|h=|i="
+    assert describe_signature("|cites=|cluster=|lo=|hi=|lang=|date=0|cit=1|pat=1|rev=0") == (
+        "|cites=|cluster=|lo=|hi=|lang=|date=0|cit=1|pat=1|rev=0"  # no entry point to name
+    )
+
+
+REQUESTS = [
+    SearchRequest(query="deep learning"),
+    SearchRequest(query="graph | attention networks", language="en"),  # the join character itself
+    SearchRequest(query="", cites="123", year_low=2020, sort_by_date=True),
+    SearchRequest(cluster="9", language="zh-CN", review_only=True, include_patents=False),
+    SearchRequest(query="x", cites="7", year_low=2010, year_high=2015, include_citations=False),
+    AuthorRequest(user_id="A" * 12, sort_by_year=True),
+    AuthorRequest(user_id="B" * 12, language="de"),
+]
+
+
+@pytest.mark.parametrize("request_", REQUESTS, ids=lambda item: item.label)
+def test_a_stored_signature_still_holds_the_request_that_wrote_it(
+    request_: SearchRequest | AuthorRequest,
+) -> None:
+    # The description of a live target and of a stored one come from one place, which only holds
+    # if a signature can be read back exactly — including a query containing the "|" that joins
+    # the fields, which used to be silently cut at the first one.
+    signature = request_.signature()
+    restored = parse_signature(signature)
+    assert restored == request_
+    assert restored.signature() == signature
+    assert describe_signature(signature) == request_.describe()
 
 
 def test_recorded_entries_carry_a_timestamp(tmp_path: Path) -> None:
@@ -123,7 +154,28 @@ def test_forget_from_the_command_line(tmp_path: Path, capsys: pytest.CaptureFixt
     assert "dropped 1 target(s)" in printed
     assert "crawled from the start again" in printed
     assert main(["--forget", "cites=123456", "--state", path]) == 0
-    assert "no stored target matches" in capsys.readouterr().out
+    missed = capsys.readouterr().out
+    assert "no stored target matches" in missed
+    # A miss is a pattern typed from memory, so the printed alternatives are the answer.
+    assert "stored: attention is all you need [en]" in missed
+
+
+def test_a_target_can_be_forgotten_by_the_name_show_state_printed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # What --show-state prints used to match nothing here: it names targets one way and this
+    # matched the stored signature the other way, so a copied name always missed.
+    _store(tmp_path)
+    path = str(tmp_path / "state.json")
+    assert main(["--show-state", "--state", path]) == 0
+    shown = capsys.readouterr().out
+    assert "attention is all you need [en]" in shown
+
+    assert main(["--forget", "attention is all you need [en]", "--state", path]) == 0
+    printed = capsys.readouterr().out
+    assert "dropped 1 target(s)" in printed
+    assert main(["--show-state", "--state", path]) == 0
+    assert "attention is all you need" not in capsys.readouterr().out
 
 
 def test_state_commands_need_no_crawl_target(tmp_path: Path) -> None:
@@ -201,11 +253,12 @@ def test_a_rerun_without_resume_is_told_what_it_will_redo(tmp_path: Path) -> Non
     store = _store(tmp_path)
     listing = SearchRequest(query="attention is all you need", language="en")
     fresh = SearchRequest(query="never crawled", language="en")
-    targets = [(listing.label, listing.signature()), (fresh.label, fresh.signature())]
+    targets = [(listing.describe(), listing.signature()), (fresh.describe(), fresh.signature())]
 
     lines = report_ignored_progress(store, targets, resume=False)
     assert len(lines) == 1, "only targets with recorded progress are worth a line"
-    assert "'attention is all you need' already reached offset 30" in lines[0]
+    # Named as the resume file names it, so it can be taken straight to --forget.
+    assert "'attention is all you need [en]' already reached offset 30" in lines[0]
     assert "--resume" in lines[0] and str(store.path) in lines[0]
     assert report_ignored_progress(store, targets, resume=True) == []
 
@@ -220,4 +273,4 @@ def test_the_rerun_notice_reaches_the_terminal(
     )
     printed = capsys.readouterr().out
     assert exit_code == 0
-    assert "[state] 'graph neural networks' already reached offset 20" in printed
+    assert "[state] 'graph neural networks [en]' already reached offset 20" in printed

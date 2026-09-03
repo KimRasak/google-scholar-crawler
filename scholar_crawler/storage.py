@@ -217,6 +217,14 @@ class StateEntry:
     exhausted: bool
     updated_at: str
 
+    @property
+    def target(self) -> str:
+        """Name the stored target the way every line about it names it.
+
+        :returns: the target and the filters that distinguish it.
+        """
+        return describe_signature(self.signature)
+
     def describe(self) -> str:
         """Render the entry as one readable line.
 
@@ -228,7 +236,7 @@ class StateEntry:
             else f"next offset {self.next_start}"
         )
         seen = self.updated_at.replace("T", " ").replace("+00:00", " UTC") or "unknown time"
-        return f"{describe_signature(self.signature)} — {status}, {seen}"
+        return f"{self.target} — {status}, {seen}"
 
 
 @dataclass(slots=True)
@@ -287,13 +295,21 @@ class StateStore:
         return sorted(entries, key=lambda entry: entry.updated_at, reverse=True)
 
     def forget(self, pattern: str) -> list[StateEntry]:
-        """Drop the stored progress of every target whose signature contains ``pattern``.
+        """Drop the stored progress of every target the pattern names.
+
+        Both spellings of a target match: the stored signature (``lang=en``) and the way
+        ``--show-state`` prints it (``graph attention [en]``), because what a caller can read
+        is what they will type back.
 
         :param pattern: case-insensitive substring; an empty pattern matches every target.
         :returns: the entries that were removed.
         """
         needle = pattern.casefold()
-        removed = [entry for entry in self.entries() if needle in entry.signature.casefold()]
+        removed = [
+            entry
+            for entry in self.entries()
+            if needle in entry.signature.casefold() or needle in entry.target.casefold()
+        ]
         for entry in removed:
             del self._data[entry.signature]
         if removed:

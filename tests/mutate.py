@@ -302,6 +302,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "a stored target answers to the name it is shown under",
+        "scholar_crawler/storage.py",
+        "            if needle in entry.signature.casefold() or needle in entry.target.casefold()",
+        "            if needle in entry.signature.casefold()",
+        "tests/test_state.py",
+    ),
+    Mutation(
+        "a signature holds a query containing the field separator",
+        "scholar_crawler/models.py",
+        "    parts = signature.rsplit(\"|\", SEARCH_FIELDS)",
+        "    parts = signature.split(\"|\")",
+        "tests/test_state.py",
+    ),
+    Mutation(
         "the bill quotes the rhythm the run will use",
         "scholar_crawler/plan.py",
         '        detail = f"{delay_span(self.pacing.min_delay, self.pacing.max_delay)} between requests"',
@@ -311,7 +325,7 @@ MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "the takeover log names the target, not the offset",
         "scholar_crawler/crawler.py",
-        "            dump_tag=str(start),\n            target=describe_signature(request.signature()),",
+        "            dump_tag=str(start),\n            target=request.describe(),",
         "            dump_tag=str(start),\n            target=str(start),",
         "tests/test_challenge_log.py tests/test_end_to_end.py",
     ),

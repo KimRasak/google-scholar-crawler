@@ -693,7 +693,7 @@ def _ignored_progress(
     """
     state = StateStore(args.state)
     state.load()
-    targets = [(request.label, request.signature()) for request in (*listings, *authors)]
+    targets = [(request.describe(), request.signature()) for request in (*listings, *authors)]
     return report_ignored_progress(state, targets, resume=args.resume)
 
 

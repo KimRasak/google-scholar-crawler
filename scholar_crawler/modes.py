@@ -176,14 +176,21 @@ def forget_state(state_path: Path, pattern: str) -> int:
     """Drop stored progress for the targets matching ``pattern``.
 
     :param state_path: resume-state path.
-    :param pattern: case-insensitive signature substring; an empty pattern drops everything.
+    :param pattern: case-insensitive substring of either spelling of a target; an empty pattern
+        drops everything.
     :returns: process exit code — always 0, including when nothing matched.
     """
     state = StateStore(state_path)
     state.load()
+    kept = state.entries()
     removed = state.forget(pattern)
     if not removed:
         print(f"[state] no stored target matches {pattern!r}", flush=True)
+        # A miss is almost always a pattern typed from memory, so the alternatives are the answer.
+        for entry in kept:
+            print(f"[state]   stored: {entry.target}", flush=True)
+        if not kept:
+            print(f"[state] {state_path} stores no target at all", flush=True)
         return 0
     print(f"[state] dropped {len(removed)} target(s) from {state_path}", flush=True)
     for entry in removed:

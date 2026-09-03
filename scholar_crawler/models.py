@@ -42,6 +42,27 @@ class SearchRequest:
             return self.query
         return f"cites:{self.cites}" if self.cites else f"cluster:{self.cluster}"
 
+    def describe(self) -> str:
+        """Name this target the way output read outside its own run names it.
+
+        :meth:`label` is enough while the command line is on screen next to it. A resume file
+        or a takeover log is read later, where two runs of the same query differ only by their
+        filters, so those are spelled out here.
+
+        :returns: the label followed by the filters that distinguish this request.
+        """
+        years = f"{self.year_low or ''}-{self.year_high or ''}".strip("-")
+        return self.label + _bracket(
+            [
+                self.language or "",
+                years,
+                "by date" if self.sort_by_date else "",
+                "no citations" if not self.include_citations else "",
+                "no patents" if not self.include_patents else "",
+                "reviews only" if self.review_only else "",
+            ]
+        )
+
     def signature(self) -> str:
         """Stable key for resume state: identical requests share one cursor."""
         parts = [
@@ -59,40 +80,64 @@ class SearchRequest:
         return "|".join(parts)
 
 
-def describe_signature(signature: str) -> str:
-    """Render a stored resume signature back into something readable.
+SEARCH_FIELDS = 9
+"""``key=value`` fields a search signature carries after the query, which may contain anything."""
 
-    Signatures are built for stability, not for reading; this turns one back into the
-    target it stands for so stored progress can be reviewed.
+
+def parse_signature(signature: str) -> SearchRequest | AuthorRequest | None:
+    """Rebuild the request a stored signature stands for.
+
+    A signature is written for stability, not for reading, and a query may contain the ``|`` the
+    fields are joined with — so the fixed number of trailing fields is split off from the right
+    and everything before them is the query, whatever it holds.
 
     :param signature: a signature from :meth:`SearchRequest.signature` or
         :meth:`AuthorRequest.signature`.
-    :returns: the target followed by the filters that distinguish it, or the raw
-        signature when it does not follow either layout.
+    :returns: the request it stands for, or None when it follows neither layout.
     """
-    fields = signature.split("|")
-    values = dict(
-        part.split("=", 1) for part in fields if "=" in part and not part.startswith("author=")
-    )
-    if fields[0].startswith("author="):
-        who = fields[0].removeprefix("author=")
-        extras = [values.get("lang") or "", "by year" if values.get("year") == "1" else ""]
-        return f"author:{who}" + _bracket(extras)
-    if len(fields) < 10:
-        return signature
-    target = fields[0] or (
-        f"cites:{values['cites']}" if values.get("cites") else f"cluster:{values.get('cluster', '')}"
-    )
-    years = f"{values.get('lo') or ''}-{values.get('hi') or ''}".strip("-")
-    extras = [
-        values.get("lang") or "",
-        years,
-        "by date" if values.get("date") == "1" else "",
-        "no citations" if values.get("cit") == "0" else "",
-        "no patents" if values.get("pat") == "0" else "",
-        "reviews only" if values.get("rev") == "1" else "",
-    ]
-    return f"{target}{_bracket(extras)}"
+    if signature.startswith("author="):
+        fields = signature.split("|")
+        values = dict(part.split("=", 1) for part in fields if "=" in part)
+        if len(fields) != 3:
+            return None
+        return AuthorRequest(
+            user_id=values["author"],
+            language=values.get("lang") or None,
+            sort_by_year=values.get("year") == "1",
+        )
+    parts = signature.rsplit("|", SEARCH_FIELDS)
+    if len(parts) != SEARCH_FIELDS + 1 or not all("=" in part for part in parts[1:]):
+        return None
+    values = dict(part.split("=", 1) for part in parts[1:])
+    if set(values) != {"cites", "cluster", "lo", "hi", "lang", "date", "cit", "pat", "rev"}:
+        return None
+    try:
+        return SearchRequest(
+            query=parts[0],
+            cites=values["cites"] or None,
+            cluster=values["cluster"] or None,
+            year_low=int(values["lo"]) if values["lo"] else None,
+            year_high=int(values["hi"]) if values["hi"] else None,
+            language=values["lang"] or None,
+            sort_by_date=values["date"] == "1",
+            include_citations=values["cit"] == "1",
+            include_patents=values["pat"] == "1",
+            review_only=values["rev"] == "1",
+        )
+    except ValueError:  # a signature with no entry point, or a year that is not a number
+        return None
+
+
+def describe_signature(signature: str) -> str:
+    """Render a stored resume signature back into something readable.
+
+    :param signature: a signature from :meth:`SearchRequest.signature` or
+        :meth:`AuthorRequest.signature`.
+    :returns: what :meth:`SearchRequest.describe` would say about the request it stands for, or
+        the raw signature when it follows neither layout.
+    """
+    request = parse_signature(signature)
+    return signature if request is None else request.describe()
 
 
 def _bracket(extras: list[str]) -> str:
@@ -188,6 +233,13 @@ class AuthorRequest:
     def label(self) -> str:
         """Short human-readable name for logs and progress output."""
         return f"author:{self.user_id}"
+
+    def describe(self) -> str:
+        """Name this profile the way output read outside its own run names it.
+
+        :returns: the label followed by the filters that distinguish this request.
+        """
+        return self.label + _bracket([self.language or "", "by year" if self.sort_by_year else ""])
 
     def signature(self) -> str:
         """Stable key for resume state: identical requests share one cursor."""

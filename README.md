@@ -614,11 +614,12 @@ $ scholar-crawler --show-state --state out/state.json
 [state]   cites:2960712678066186980 [en] — done after 50 records, 2026-09-02 10:45:51 UTC
 [state]   author:kukA0LcAAAAJ [en] — next offset 100, 2026-09-02 10:45:51 UTC
 
-# 让某个目标从头再抓（签名里含该子串的都会被清掉；空串清空全部）
+# 让某个目标从头再抓（两种写法都认；空串清空全部）
 $ scholar-crawler --forget "attention" --state out/state.json
+$ scholar-crawler --forget "attention is all you need [en]" --state out/state.json
 ```
 
-签名会被还原成可读的目标名，年份区间、语言、排序、`--review-only` 之类的过滤条件以 `[...]` 附在后面——同一个查询配不同过滤条件是不同的断点，这样一眼能分清。每条断点现在还带最后更新时间（旧的 state 文件照样能读，只是显示 `unknown time`）。
+签名会被还原成可读的目标名，年份区间、语言、排序、`--review-only` 之类的过滤条件以 `[...]` 附在后面——同一个查询配不同过滤条件是不同的断点，这样一眼能分清。`--forget` 同时匹配这个可读名和底层签名（`lang=en`），因为你能读到的写法就是你会敲回去的写法；没匹配上时会把现存的目标列出来，而不是只说一句「没匹配」。每条断点现在还带最后更新时间（旧的 state 文件照样能读，只是显示 `unknown time`）。
 
 `-n/--max-results` 截断的目标不再被记成「已抓完」：那是我们自己决定停的，Scholar 那边还有结果，所以它保持可续抓。
 
@@ -773,7 +774,7 @@ $ scholar-crawler --self-check
 | `--handoff-timeout`、`--max-handoffs`、`--backoff-factor`、`--challenge-cooldown` | 等人多久（0 = 无限等）、最多接管几次、每次接管后延迟放大倍数、连续被拦时恢复前的静默等待 |
 | `--recipes` | 打印可直接复制的完整命令（不发请求） |
 | `--config FILE` | 从 TOML 设置文件读参数；命令行给的值优先 |
-| `--show-state`、`--forget PATTERN` | 查看断点进度与最近的接管记录；按签名子串清除断点（空串清空全部） |
+| `--show-state`、`--forget PATTERN` | 查看断点进度与最近的接管记录；按目标名或签名的子串清除断点（空串清空全部） |
 | `--dry-run` | 把这条命令读回成人话、指出互相抵消的参数、并给出抓取计划与用时估算，不发任何请求 |
 | `--self-check` | 跑一次解析自检（一个请求），逐项报告哪些字段还能正常解析 |
 | `--headless` | 无窗口模式；**此时遇到验证会直接终止并提示改用有界面模式** |
@@ -878,7 +879,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 534 个用例，全部离线
+python3 -m pytest -q     # 543 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -901,7 +902,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 73 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 75 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```
@@ -942,7 +943,7 @@ Google Scholar 的服务条款不允许自动化抓取，抓到的数据版权�
 
 ```
 scholar_crawler/
-  models.py     记录与请求的数据结构（检索请求、结果、作者主页、页结果）
+  models.py     记录与请求的数据结构（检索请求、结果、作者主页、页结果）；目标名的两种写法：命令行旁边读的短名、脱离上下文读的全名
   urls.py       查询/主页 URL、过滤参数、id/URL 解析
   parser.py     结果页与作者主页 HTML → 结构化记录
   challenge.py  验证页判定 + 人工接管等待
