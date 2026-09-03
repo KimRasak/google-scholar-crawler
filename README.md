@@ -761,7 +761,7 @@ $ scholar-crawler --self-check
 
 | 参数 | 说明 |
 | --- | --- |
-| `-q/--query`、`--queries-file` | 关键词检索，可重复；文件一行一个 |
+| `-q/--query`、`--queries-file` | 关键词检索，可重复；文件一行一个（文件里一个目标都没有会直接报错，而不是当成没给目标） |
 | `--cluster`、`--clusters-file` | 按 cluster id 列某篇的所有版本；文件一行一个 |
 | `--cites`、`--cluster` | 抓某文的引证文献 / 全部版本；接受数字 id 或结果里的 `cited_by_url`、`versions_url`，可重复 |
 | `--author` | 抓作者主页论文列表；接受 12 位 user id 或主页 URL，可重复；配合 `--sort-by-date` 按年份排序 |
@@ -873,7 +873,9 @@ $ scholar-crawler -q "graph attention networks"
 
 区分开的情况：连接被拒 / DNS 解析不了 / 本机断网 / 代理拒绝 / 连接被中途掐断（自动化流量常见的下场，建议放慢重试）/ 证书被拒（通常是有东西在中间解 TLS，或本机时钟不对）/ 加载超时（`--nav-timeout` 可调）/ 浏览器窗口被提前关掉 / Scholar 返回 429 或 503（这是拒绝服务，不是 bug：停一段时间再 `--resume`）/ 其他 4xx-5xx / 页面能打开但不含任何 Scholar 标记。原始错误只保留第一行，调用日志不再糊满屏幕；猜错了也还能看到它。
 
-**浏览器根本没起来**也在这套翻译里，而且它发生在第一个请求之前：`--channel` 指向一个装不上的浏览器 → `browser_missing`，下一步是 `--doctor`、`--install-browser` 或 `--channel ''`；`--profile` 指向一个写不进去的目录 → `profile_unwritable`，下一步是换一个你有权限的路径。这两种以前会直接抛出 Playwright 的 traceback，`--json` 那边连文档都没有。
+**浏览器根本没起来**也在这套翻译里，而且它发生在第一个请求之前：`--channel` 指向一个装不上的浏览器 → `browser_missing`，下一步是 `--doctor`、`--install-browser` 或 `--channel ''`。
+
+**写不进去的路径在花掉任何请求之前就被拦下**：`-o`、`--state`、`--challenge-log`、`--bibtex`、`--dump-html` 会逐个试写（探针写进最近的已存在上级目录再删掉，打错的路径不会在磁盘上留下空壳），任何一个不行就以 `path_unwritable` 停机，`message` 说是哪条路径为什么不行，下一步点名要改的那个参数。`--dry-run` 也做这项检查——它存在的意义就是在花请求之前发现这类问题。两种典型情况：目录没有写权限；以及那个路径其实是个**已存在的目录**（`--bibtex out/refs.bib` 而 `refs.bib` 是目录），后者以前要等抓完才炸。
 
 顺带把 `--json` 的承诺补严了：**任何**结局都有一份文档，包括这个工具自己出 bug 的时候——那时 `kind` 是 `runtime_error`，`message` 是异常类型与文本，traceback 照旧打到 stderr 给修 bug 的人看。以前这种情况 stdout 是空的，`json.loads` 直接失败。
 
@@ -890,7 +892,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 550 个用例，全部离线
+python3 -m pytest -q     # 553 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -913,7 +915,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 82 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 85 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

@@ -13,6 +13,7 @@ from .browser import BrowserOptions, Session, locale_for, timezone_for
 from .challenge import HumanHandoff
 from .config import ConfigError, resolve_settings
 from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
+from .diagnose import Diagnosis, diagnose_unwritable, stop_report
 from .expand import FollowPolicy
 from .explain import explain
 from .history import advise
@@ -45,6 +46,7 @@ from .storage import (
     ChallengeLog,
     StateStore,
     profiles_beside,
+    unwritable,
 )
 from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
 
@@ -322,17 +324,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _lines_of(path: Path) -> list[str]:
+def _lines_of(path: Path, flag: str) -> list[str]:
     """Read a list file, dropping blank lines and ``#`` comments.
 
     :param path: the file to read.
+    :param flag: the flag that named it, for the error when it holds nothing.
     :returns: the remaining lines, stripped.
+    :raises ValueError: when the file exists but names no target, which is a typo or a stale
+        file rather than a request to crawl nothing.
     """
     kept = []
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if stripped and not stripped.startswith("#"):
             kept.append(stripped)
+    if not kept:
+        raise ValueError(f"{flag} {path} names no target: every line is blank or a # comment")
     return kept
 
 
@@ -342,7 +349,9 @@ def _collect_queries(args: argparse.Namespace) -> list[str]:
     :param args: parsed arguments.
     :returns: queries in the order given, blank lines and ``#`` comments dropped.
     """
-    return list(args.query) + (_lines_of(args.queries_file) if args.queries_file else [])
+    return list(args.query) + (
+        _lines_of(args.queries_file, "--queries-file") if args.queries_file else []
+    )
 
 
 def _collect_clusters(args: argparse.Namespace) -> list[str]:
@@ -351,7 +360,9 @@ def _collect_clusters(args: argparse.Namespace) -> list[str]:
     :param args: parsed arguments.
     :returns: ids or URLs in the order given, blank lines and ``#`` comments dropped.
     """
-    return list(args.cluster) + (_lines_of(args.clusters_file) if args.clusters_file else [])
+    return list(args.cluster) + (
+        _lines_of(args.clusters_file, "--clusters-file") if args.clusters_file else []
+    )
 
 
 def build_targets(args: argparse.Namespace) -> tuple[list[SearchRequest], list[AuthorRequest]]:
@@ -731,6 +742,28 @@ def _ignored_progress(
     return report_ignored_progress(state, targets, resume=args.resume)
 
 
+def _unwritable_output(args: argparse.Namespace) -> Diagnosis | None:
+    """Check every path this run would write, before it spends a request on finding out.
+
+    :param args: parsed arguments.
+    :returns: the diagnosis for the first path that cannot be written, or None.
+    """
+    checked: list[tuple[str, Path, str]] = [
+        ("--out", args.out, "file"),
+        ("--state", args.state, "file"),
+        ("--challenge-log", args.challenge_log, "file"),
+    ]
+    if args.bibtex is not None:
+        checked.append(("--bibtex", args.bibtex, "file"))
+    if args.dump_html is not None:
+        checked.append(("--dump-html", args.dump_html, "dir"))
+    for flag, path, kind in checked:
+        reason = unwritable(path, kind=kind)
+        if reason:
+            return diagnose_unwritable(reason, flag)
+    return None
+
+
 def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> _Ran:
     """Run whichever mode the arguments describe.
 
@@ -766,6 +799,15 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
                 print(line, file=sys.stderr)
         return _Ran(1, reason=str(error))
 
+    blocked = _unwritable_output(args)
+    if blocked is not None:
+        print(stop_report(blocked), file=sys.stderr)
+        return _Ran(
+            1,
+            outcome=RunOutcome(
+                1, kind=blocked.failure.value, message=blocked.what, next_steps=blocked.next_steps
+            ),
+        )
     for line in _ignored_progress(args, listings, authors):
         print(f"[state] {line}", flush=True)
     if args.dry_run:

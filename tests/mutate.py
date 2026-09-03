@@ -302,6 +302,27 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "an output path is checked before anything is spent",
+        "scholar_crawler/cli.py",
+        "    blocked = _unwritable_output(args)",
+        "    blocked = None",
+        "tests/test_cli.py",
+    ),
+    Mutation(
+        "a directory is not a file to write into",
+        "scholar_crawler/storage.py",
+        '    if kind == "file" and target.is_dir():',
+        "    if False:",
+        "tests/test_storage.py tests/test_cli.py",
+    ),
+    Mutation(
+        "a list file that names nothing is a mistake",
+        "scholar_crawler/cli.py",
+        "    if not kept:",
+        "    if False:",
+        "tests/test_cli.py",
+    ),
+    Mutation(
         "a launch that fails is diagnosed, not raised",
         "scholar_crawler/browser.py",
         "        except PlaywrightError as error:",

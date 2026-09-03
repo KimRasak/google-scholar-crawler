@@ -3,13 +3,23 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scholar_crawler.parser import parse_result_page  # noqa: E402
-from scholar_crawler.storage import ResultSink, StateStore, profiles_beside  # noqa: E402
+from scholar_crawler.storage import (  # noqa: E402
+    PROBE_NAME,
+    ResultSink,
+    StateStore,
+    nearest_existing,
+    profiles_beside,
+    unwritable,
+)
 from tests.fixtures import RESULT_PAGE_HTML  # noqa: E402
 
 
@@ -71,3 +81,31 @@ def test_the_profile_file_is_named_after_the_records_file() -> None:
     assert profiles_beside(Path("out/gnn.jsonl")) == Path("out/gnn.profiles.jsonl")
     assert profiles_beside(Path("gnn")) == Path("gnn.profiles.jsonl")
     assert profiles_beside(Path("out/a.jsonl")) != profiles_beside(Path("out/b.jsonl"))
+
+
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root writes anywhere")
+def test_a_path_is_checked_without_creating_anything(tmp_path: Path) -> None:
+    fine = tmp_path / "records.jsonl"
+    assert unwritable(fine) == ""
+    assert not fine.exists(), "checking is not creating"
+
+    # A run creates missing parents itself, so a path below one is writable in advance.
+    deep = tmp_path / "a" / "b" / "records.jsonl"
+    assert unwritable(deep) == ""
+    assert nearest_existing(deep.parent) == tmp_path
+    assert not deep.parent.exists()
+
+    as_directory = tmp_path / "refs.bib"
+    as_directory.mkdir()
+    assert "is a directory" in unwritable(as_directory)
+    assert unwritable(as_directory, kind="dir") == "", "as a directory it is fine"
+
+    closed = tmp_path / "closed"
+    closed.mkdir()
+    closed.chmod(0o500)
+    try:
+        reason = unwritable(closed / "records.jsonl")
+    finally:
+        closed.chmod(0o700)
+    assert "cannot be written to" in reason and str(closed) in reason
+    assert not (closed / PROBE_NAME).exists(), "the probe cleans up after itself"

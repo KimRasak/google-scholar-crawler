@@ -89,7 +89,7 @@ def test_a_browser_that_never_opened_is_explained_by_its_local_cause() -> None:
     unwritable = diagnose_launch(
         PermissionError(13, "Permission denied"), channel=None, profile=profile
     )
-    assert unwritable.failure is Failure.PROFILE_UNWRITABLE
+    assert unwritable.failure is Failure.PATH_UNWRITABLE
     assert str(profile) in unwritable.what
     assert any("--profile" in step for step in unwritable.next_steps)
 

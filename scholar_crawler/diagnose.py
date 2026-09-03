@@ -28,7 +28,7 @@ class Failure(str, Enum):
     TIMEOUT = "timeout"
     BROWSER_CLOSED = "browser_closed"
     BROWSER_MISSING = "browser_missing"
-    PROFILE_UNWRITABLE = "profile_unwritable"
+    PATH_UNWRITABLE = "path_unwritable"
     HTTP_ERROR = "http_error"
     RATE_LIMITED = "rate_limited"
     UNKNOWN_LAYOUT = "unknown_layout"
@@ -215,11 +215,39 @@ _LAUNCH_SIGNALS: tuple[tuple[str, Failure], ...] = (
     ("Unsupported chromium channel", Failure.BROWSER_MISSING),
     ("is not found", Failure.BROWSER_MISSING),
     ("Executable doesn't exist", Failure.BROWSER_MISSING),
-    ("Permission denied", Failure.PROFILE_UNWRITABLE),
-    ("Read-only file system", Failure.PROFILE_UNWRITABLE),
-    ("No space left", Failure.PROFILE_UNWRITABLE),
+    ("Permission denied", Failure.PATH_UNWRITABLE),
+    ("Read-only file system", Failure.PATH_UNWRITABLE),
+    ("No space left", Failure.PATH_UNWRITABLE),
 )
 """Fragments of a launch that never produced a window, most specific first."""
+
+
+def stop_report(diagnosis: Diagnosis) -> str:
+    """Render a diagnosis as the block a stopped run prints.
+
+    :param diagnosis: what stopped the run.
+    :returns: every line prefixed with ``[stop]``, opening with a blank line so the block is
+        not read as part of the progress above it.
+    """
+    what, *rest = diagnosis.render()
+    return "\n".join([f"\n[stop] {what}", *(f"[stop] {line}" for line in rest)])
+
+
+def diagnose_unwritable(reason: str, flag: str) -> Diagnosis:
+    """Explain an output path this run cannot write, before it spends anything.
+
+    :param reason: what :func:`~scholar_crawler.storage.unwritable` found.
+    :param flag: the flag carrying that path, which is what the reader has to change.
+    :returns: the diagnosis for this failure.
+    """
+    return Diagnosis(
+        failure=Failure.PATH_UNWRITABLE,
+        what=f"{reason}, so nothing was crawled",
+        next_steps=(
+            f"point {flag} at a file this user can write",
+            "run scholar-crawler --doctor, which checks every path a run needs",
+        ),
+    )
 
 
 def diagnose_launch(error: Exception, *, channel: str | None, profile: Path) -> Diagnosis:
@@ -245,7 +273,7 @@ def diagnose_launch(error: Exception, *, channel: str | None, profile: Path) -> 
                 "run scholar-crawler --install-browser if --doctor asks for it",
             ),
         ),
-        Failure.PROFILE_UNWRITABLE: (
+        Failure.PATH_UNWRITABLE: (
             f"the profile directory {profile} cannot be written, so no browser could start",
             (
                 f"check the permissions on {profile} and its parents",

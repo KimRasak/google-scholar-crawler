@@ -28,6 +28,62 @@ DEFAULT_STATE_PATH = Path("out/state.json")
 DEFAULT_CHALLENGE_LOG_PATH = Path("out/challenges.jsonl")
 """Where takeovers land when ``--challenge-log`` names nothing."""
 
+PROBE_NAME = ".scholar-write-test"
+"""File written and removed to prove a directory accepts writes."""
+
+
+def absolute(path: Path) -> Path:
+    """Resolve a path against the working directory without touching the filesystem.
+
+    :param path: any path a flag carried.
+    :returns: the absolute form, so messages name the place that was actually checked.
+    """
+    return path if path.is_absolute() else Path.cwd() / path
+
+
+def nearest_existing(directory: Path) -> Path:
+    """Find the closest ancestor that exists, so writability can be tested without creating it.
+
+    :param directory: the directory a run would use.
+    :returns: ``directory`` itself when it exists, otherwise its closest existing ancestor.
+    """
+    target = absolute(directory)
+    for candidate in (target, *target.parents):
+        try:
+            if candidate.is_dir():
+                return candidate
+        except OSError:  # an ancestor this user may not even look at; keep walking up
+            continue
+    return Path(target.anchor or ".")
+
+
+def unwritable(path: Path, *, kind: str = "file") -> str:
+    """Say why this run could not write ``path``.
+
+    Checking beats finding out: a run that discovers its output path halfway through has already
+    spent the requests it cannot repeat cheaply. The probe writes into the closest existing
+    ancestor, so a mistyped path leaves no directories behind.
+
+    :param path: the file a run would write, or the directory itself.
+    :param kind: ``file`` when ``path`` is a file, ``dir`` when it is the directory.
+    :returns: the reason, or an empty string when the path can be written.
+    """
+    target = absolute(path)
+    if kind == "file" and target.is_dir():
+        return f"{path} is a directory, and this run needs to write a file there"
+    directory = target if kind == "dir" else target.parent
+    existing = nearest_existing(directory)
+    probe = existing / PROBE_NAME
+    try:
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+    except OSError as error:
+        reason = error.strerror or error
+        probed = "" if existing == directory else f" (nearest existing: {existing})"
+        return f"{directory} cannot be written to: {reason}{probed}"
+    return ""
+
+
 CSV_COLUMNS = (
     "position",
     "title",

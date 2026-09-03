@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import sys
 from pathlib import Path
 
@@ -23,6 +25,64 @@ def test_queries_file_and_flags_are_combined(tmp_path: Path) -> None:
     requests, authors = build_targets(_args(["-q", "flag one", "--queries-file", str(listing)]))  # type: ignore[arg-type]
     assert [request.query for request in requests] == ["flag one", "from file", "spaced"]
     assert authors == []
+
+
+def test_a_list_file_that_names_nothing_says_so_instead_of_asking_for_a_target(
+    tmp_path: Path,
+) -> None:
+    # "provide at least one --query …" was the message for a file that was provided, which sent
+    # the reader looking at their command line instead of at the file.
+    empty = tmp_path / "clusters.txt"
+    empty.write_text("\n\n   \n# only a comment\n", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"--clusters-file .* names no target"):
+        build_targets(_args(["--clusters-file", str(empty)]))  # type: ignore[arg-type]
+
+    queries = tmp_path / "queries.txt"
+    queries.write_text("# nothing but this\n", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"--queries-file .* names no target"):
+        build_targets(_args(["--queries-file", str(queries)]))  # type: ignore[arg-type]
+
+
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root writes anywhere")
+def test_a_path_the_run_cannot_write_stops_it_before_the_first_request(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # --dry-run exists to catch this kind of mistake before requests are spent, so it checks the
+    # same paths a real run would open.
+    closed = tmp_path / "closed"
+    closed.mkdir()
+    closed.chmod(0o500)
+    shared = [
+        "-q",
+        "x",
+        "-p",
+        "1",
+        "--state",
+        str(tmp_path / "state.json"),
+        "--challenge-log",
+        str(tmp_path / "challenges.jsonl"),
+        "--dry-run",
+        "--json",
+    ]
+    try:
+        assert main(["-o", str(closed / "results.jsonl"), *shared]) == 1
+        first = json.loads(capsys.readouterr().out)
+
+        as_directory = tmp_path / "refs.bib"
+        as_directory.mkdir()
+        assert main(["-o", str(tmp_path / "results.jsonl"), "--bibtex", str(as_directory), *shared]) == 1
+        second = json.loads(capsys.readouterr().out)
+    finally:
+        closed.chmod(0o700)
+
+    assert first["error"]["kind"] == "path_unwritable"
+    assert str(closed) in first["error"]["message"]
+    assert first["error"]["next_steps"][0] == "point --out at a file this user can write"
+    assert "plan" not in first, "a run that cannot write is not costed"
+
+    assert second["error"]["kind"] == "path_unwritable"
+    assert "is a directory" in second["error"]["message"]
+    assert second["error"]["next_steps"][0] == "point --bibtex at a file this user can write"
 
 
 def test_filters_apply_to_every_request() -> None:

@@ -436,7 +436,7 @@ def test_a_profile_that_cannot_be_written_stops_the_run_before_the_browser(
     assert exit_code == 1
     assert "Traceback" not in printed.err
     parsed = json.loads(printed.out)
-    assert parsed["error"]["kind"] == "profile_unwritable"
+    assert parsed["error"]["kind"] == "path_unwritable"
     assert str(closed) in parsed["error"]["next_steps"][0]
 
 

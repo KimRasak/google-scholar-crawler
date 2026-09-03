@@ -13,7 +13,7 @@ from pathlib import Path
 from .browser import Session, browser_session
 from .challenge import ChallengeUnattended
 from .crawler import Pacing, RunStats, ScholarCrawler
-from .diagnose import CrawlFailure
+from .diagnose import CrawlFailure, stop_report
 from .expand import FollowPolicy, next_level
 from .models import AuthorProfile, AuthorRequest, ScholarResult, SearchRequest
 from .parser import bibtex_key
@@ -403,9 +403,7 @@ def crawl(
         outcome = RunOutcome(130, kind="interrupted", message="interrupted by user")
     except CrawlFailure as failure:
         diagnosis = failure.diagnosis
-        for index, line in enumerate(diagnosis.render()):
-            prefix = "\n[stop]" if index == 0 else "[stop]"
-            print(f"{prefix} {line}", file=sys.stderr)
+        print(stop_report(diagnosis), file=sys.stderr)
         outcome = RunOutcome(
             1,
             kind=diagnosis.failure.value,

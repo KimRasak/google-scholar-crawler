@@ -765,7 +765,7 @@ It fetches one page of a broad query and reports, field by field, whether titles
 
 | Option | Meaning |
 | --- | --- |
-| `-q/--query`, `--queries-file` | keyword search, repeatable; file holds one query per line |
+| `-q/--query`, `--queries-file` | keyword search, repeatable; file holds one query per line (a file naming no target is an error, not a run without targets) |
 | `--cites`, `--cluster` | crawl citing works / all versions of one work; accepts a numeric id or a `cited_by_url`/`versions_url`, repeatable |
 | `--author` | crawl an author's publication list; accepts a 12-character user id or a profile URL, repeatable; `--sort-by-date` orders by year |
 | `-p/--pages`, `-n/--max-results` | pages per entry point / hard result cap (last page truncated exactly). Search pages hold 10 results, profile pages 100 publications |
@@ -876,7 +876,9 @@ It also stops wasting time: a refused connection, an unresolvable name, a reject
 
 Told apart: a refused connection, a name that does not resolve, no internet at all, a proxy that refuses, a connection closed mid-request (how networks usually drop automated traffic — slow down and retry), a rejected certificate (something is intercepting HTTPS, or this machine's clock is wrong), a load that timed out (`--nav-timeout` raises the limit), a browser window closed early, HTTP 429 or 503 from Scholar (a refusal to serve, not a bug: wait, then `--resume`), any other 4xx/5xx, and a page that loaded while carrying none of Scholar's markers. Only the error's first line is kept, so the call log no longer fills the screen — and it is still there when the diagnosis guesses wrong.
 
-**A browser that never started** is translated the same way, before the first request: a `--channel` naming a browser that cannot be launched is `browser_missing`, whose next steps are `--doctor`, `--install-browser` or `--channel ''`; a `--profile` pointing somewhere unwritable is `profile_unwritable`, whose next step is a path you own. Both used to raise Playwright's traceback, and under `--json` there was no document at all.
+**A browser that never started** is translated the same way, before the first request: a `--channel` naming a browser that cannot be launched is `browser_missing`, whose next steps are `--doctor`, `--install-browser` or `--channel ''`.
+
+**A path this run cannot write stops it before a single request is spent.** `-o`, `--state`, `--challenge-log`, `--bibtex` and `--dump-html` are each probed — a test file written into the closest existing ancestor and removed again, so a mistyped path leaves nothing behind — and the first one that fails ends the run as `path_unwritable`, with `message` naming the path and the reason and the next step naming the flag to change. `--dry-run` runs the same check, since catching this before requests are spent is what it is for. Two cases show up in practice: a directory without write permission, and a path that is itself an **existing directory** (`--bibtex out/refs.bib` where `refs.bib` is a directory), which used to fail only after the whole crawl.
 
 That tightens what `--json` promises: **every** outcome has a document, including one where this tool has a defect — `kind` is then `runtime_error`, `message` is the exception type and text, and the traceback still goes to stderr for whoever fixes it. Before, stdout was empty and `json.loads` simply failed.
 
@@ -893,7 +895,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 550 tests, fully offline
+python3 -m pytest -q     # 553 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -920,7 +922,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 82 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 85 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

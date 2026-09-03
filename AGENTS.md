@@ -103,7 +103,7 @@ On failure the document carries `"error": {"kind", "message", "next_steps"}`. Br
 | `http_error` | Scholar answered with an error status; the message carries it |
 | `browser_closed` | the window was closed mid-run; rerun with `--resume` |
 | `browser_missing` | no browser for `--channel`; run `--doctor`, then `--install-browser` or `--channel ''` |
-| `profile_unwritable` | `--profile` cannot be written; point it somewhere you own |
+| `path_unwritable` | a path this run must write is closed to it; `message` names which, `--doctor` checks them all |
 | `usage`, `bad_inputs`, `no_records`, `missing_since`, `unreadable_input` | fix the command; `message` carries the reason |
 | `unsupported_mode` | that flag prints a report, so run it without `--json` |
 | `interrupted` | Ctrl+C; whatever was collected is already on disk |

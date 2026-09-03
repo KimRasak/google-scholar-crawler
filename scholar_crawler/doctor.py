@@ -21,6 +21,7 @@ from pathlib import Path
 
 from .config import tomllib
 from .machine import version
+from .storage import absolute, nearest_existing, unwritable
 
 MINIMUM_PYTHON = (3, 10)
 """The floor declared in pyproject.toml."""
@@ -287,31 +288,6 @@ def check_browser(channel: str | None) -> Finding:
     )
 
 
-def _absolute(path: Path) -> Path:
-    """Make a path absolute without resolving symlinks.
-
-    :param path: the path as the user wrote it.
-    :returns: the absolute form.
-    """
-    return path if path.is_absolute() else Path.cwd() / path
-
-
-def _nearest_existing(directory: Path) -> Path:
-    """Find the closest ancestor that exists, so writability can be tested without creating it.
-
-    :param directory: the directory a run would use.
-    :returns: ``directory`` itself when it exists, otherwise its closest existing ancestor.
-    """
-    target = _absolute(directory)
-    for candidate in (target, *target.parents):
-        try:
-            if candidate.is_dir():
-                return candidate
-        except OSError:  # an ancestor this user may not even look at; keep walking up
-            continue
-    return Path(target.anchor or ".")
-
-
 def check_writable(name: str, path: Path, *, kind: str) -> Finding:
     """Check that a directory can be written to, or created when it does not exist yet.
 
@@ -324,21 +300,16 @@ def check_writable(name: str, path: Path, *, kind: str) -> Finding:
     :returns: the finding.
     """
     directory = path if kind == "dir" else path.parent
-    existing = _nearest_existing(directory)
-    probe = existing / ".scholar-write-test"
-    try:
-        probe.write_text("", encoding="utf-8")
-        probe.unlink()
-    except OSError as error:
-        reason = error.strerror or error
-        probed = "" if existing == _absolute(directory) else f" (nearest existing: {existing})"
+    reason = unwritable(directory, kind="dir")
+    if reason:
         return Finding(
             name,
             Status.FAIL,
-            f"{directory} cannot be written to: {reason}{probed}",
+            reason,
             "point the flag at a writable directory, or fix the permissions",
         )
-    if existing != _absolute(directory):
+    existing = nearest_existing(directory)
+    if existing != absolute(directory):
         return Finding(name, Status.OK, f"{directory} does not exist yet; {existing} is writable")
     return Finding(name, Status.OK, f"{directory} is writable")
 
