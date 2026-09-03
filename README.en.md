@@ -499,9 +499,9 @@ $ scholar-digest out/clean.jsonl --audit
   audit of 10 records: nothing implausible found
 ```
 
-Two severities: `error` means the value is wrong (an implausible year, a year that appears nowhere in the byline it was read from, a venue that is a volume/issue/page range, a venue that still contains a year, a citation count with no citing-works link, a negative count, a missing title), and `warn` means missing or lossy (no venue/year/authors, a truncated author list, **a venue Scholar elided**, a bare hostname as the venue, a `[PDF]` tag left on the title, no card id). Each finding reports the count, the share and two real examples — not a score, but enough to judge whether the batch is usable.
+Two severities: `error` means the value is wrong (an implausible year, a year that appears nowhere in the byline it was read from, a venue that is a volume/issue/page range, a venue that still contains a year, a citation count with no citing-works link, a negative count, a missing title), and `warn` means missing or lossy (no venue/year/authors, a truncated author list, **a venue Scholar elided**, a bare hostname as the venue, a `[PDF]` tag left on the title, no card id). Records from an author profile are not counted as missing a card id: Scholar's profile rows carry no `data-cid` by construction, an export resolves them through the profile id they do carry at one extra page load, and calling that a defect made a whole author collection look 100% broken while pointing at a fix that does not exist. Each finding reports the count, the share and two real examples — not a score, but enough to judge whether the batch is usable.
 
-That 60% is a real measurement: a Scholar result page elides long venue names from both ends (`… on neural networks …`), the full name is simply not on the page, and an exported BibTeX copies the elided form into `journal`. It is not a parsing bug and cannot be repaired locally, so the audit's job is to count it and point at it — fix those entries by hand from this list, or pass `--bibtex` to take the full entry from Scholar's Cite popup at two extra page loads each.
+That 60% is a real measurement: a Scholar result page elides long venue names from both ends (`… on neural networks …`), the full name is simply not on the page, and an exported BibTeX copies the elided form into `journal`. Summaries and grouped listings **keep that ellipsis** (`IEEE Transactions on Knowledge and Data …`): dropping it would name a journal that does not exist, since the real one is `… and Data Engineering`. It is not a parsing bug and cannot be repaired locally, so the audit's job is to count it and point at it — fix those entries by hand from this list, or pass `--bibtex` to take the full entry from Scholar's Cite popup at two extra page loads each.
 
 Its first run found a real defect: the profile parser kept the year inside the venue (`Advances in neural information processing systems 27, 2014`) while the result-page parser stripped it. Grouping happened to be immune (`normalize_venue` cuts the volume tail), but the stored field disagreed between the two sources and the exported BibTeX repeated the year inside `journal`. Both parsing paths now share one stripping function.
 
@@ -857,7 +857,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 505 tests, fully offline
+python3 -m pytest -q     # 508 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -865,7 +865,7 @@ Every test is offline (no network). CI runs the same two commands on 3.10 and 3.
 
 Grouped by what they cover; read `tests/` for the detail:
 
-- **Parsing**: every field of result cards and author profiles, plus four real-page fixtures (`tests/pages/`) so parsing is both correct and still true to Scholar's markup
+- **Parsing**: every field of result cards and author profiles, plus four real-page fixtures (`tests/pages/`) so parsing is both correct and still true to Scholar's markup; the nine records those two real pages yield are then fed to `--audit`, the overview and `--network`, because a report whose job is to judge real data has to hold up on real data first (no errors at all, and warnings only for what Scholar itself did)
 - **Crawl loop**: paging, author batching, pacing and cooldowns, the quiet wait after back-to-back blocks, HTML dumps, run summaries
 - **Human takeover**: challenge detection on real headless Chromium, waiting and timeouts, a closed window, a headless refusal, the takeover log and cross-run slowdown
 - **End to end**: a real browser against a local fake Scholar (`tests/fakescholar.py`) — page budget, no loss across a takeover, `--resume`, author profiles, collected records surviving a headless refusal, and one run described entirely by a settings file
@@ -884,7 +884,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 58 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 60 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

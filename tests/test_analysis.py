@@ -76,6 +76,13 @@ def test_venue_spellings_collapse_to_one_group_label() -> None:
         "Advances in neural information processing systems"
     )
     assert normalize_venue("Future Internet") == "Future Internet"
+    # Scholar's own cut survives grouping: the journal it names does not exist.
+    assert normalize_venue("IEEE Transactions on Knowledge and Data …") == (
+        "IEEE Transactions on Knowledge and Data …"
+    )
+    assert normalize_venue("Proceedings of the IEEE ...") == "Proceedings of the IEEE …"
+    assert normalize_venue("… on neural networks …") == "… on neural networks …"
+    assert normalize_venue("   ") == ""  # nothing was cut and nothing is left
     assert normalize_venue("2021") == "2021"  # nothing left to trim, so the value survives
 
 

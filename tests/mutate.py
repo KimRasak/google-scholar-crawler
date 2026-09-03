@@ -302,6 +302,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "a venue Scholar cut keeps its mark",
+        "scholar_crawler/analysis.py",
+        '    return " ".join(([ELLIPSIS] if head else []) + [trimmed] + ([ELLIPSIS] if tail else []))',
+        "    return trimmed",
+        "tests/test_real_pages.py tests/test_analysis.py",
+    ),
+    Mutation(
+        "a profile row is not audited for a card id it never has",
+        "scholar_crawler/audit.py",
+        '    if (record.get("extra") or {}).get("citation_id"):',
+        "    if False:",
+        "tests/test_real_pages.py",
+    ),
+    Mutation(
         "a pure mode prints exactly what the docs show",
         "scholar_crawler/plan.py",
         'lines.append(f"total: up to {self.total_loads} page loads for {self.total_records} records")',

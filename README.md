@@ -496,9 +496,9 @@ $ scholar-digest out/clean.jsonl --audit
   audit of 10 records: nothing implausible found
 ```
 
-分两档：`error` 是值本身错了（年份不在合理区间、年份在原始灰字里根本没出现过、venue 是卷期页码、venue 里还留着年份、有被引数却没有被引链接、计数为负、标题缺失），`warn` 是缺失或有损（缺 venue/year/作者、作者被截断、**venue 被 Scholar 省略**、venue 是裸域名、标题带 `[PDF]` 标签、没有 card id）。每项给出条数、占比、以及两个真实例子——不是给个总分，而是让你自己判断这批数据能不能用。
+分两档：`error` 是值本身错了（年份不在合理区间、年份在原始灰字里根本没出现过、venue 是卷期页码、venue 里还留着年份、有被引数却没有被引链接、计数为负、标题缺失），`warn` 是缺失或有损（缺 venue/year/作者、作者被截断、**venue 被 Scholar 省略**、venue 是裸域名、标题带 `[PDF]` 标签、没有 card id）。作者主页抓来的记录不算「没有 card id」——Scholar 的主页行本来就不带 `data-cid`，导出时用记录里的 profile id 多花一次页面加载即可解决，把它记成缺陷会让一份作者集合看起来 100% 有问题、而且指向一个并不存在的修法。每项给出条数、占比、以及两个真实例子——不是给个总分，而是让你自己判断这批数据能不能用。
 
-上面那份 60% 是真实数字：Scholar 的结果页会把长刊名两头都省掉（`… on neural networks …`），检索页上拿不到完整刊名，导出的 BibTeX 里 `journal` 就会照抄这个省略形式。这不是解析 bug，也没法在本地补全，所以 `--audit` 的责任是把它数清楚、指给你——要正规引用就照着这份清单去手工补，或者用 `--bibtex` 从 Scholar 的 Cite 弹窗拿完整条目（每条多两次页面加载）。
+上面那份 60% 是真实数字：Scholar 的结果页会把长刊名两头都省掉（`… on neural networks …`），检索页上拿不到完整刊名，导出的 BibTeX 里 `journal` 就会照抄这个省略形式。被省略的刊名在统计与分组里**保留那个省略号**（`IEEE Transactions on Knowledge and Data …`）：去掉它就等于报出一个并不存在的期刊名——真实的那个是 `… and Data Engineering`。这不是解析 bug，也没法在本地补全，所以 `--audit` 的责任是把它数清楚、指给你——要正规引用就照着这份清单去手工补，或者用 `--bibtex` 从 Scholar 的 Cite 弹窗拿完整条目（每条多两次页面加载）。
 
 这个功能第一次跑就抓到一个真实缺陷：作者主页解析出的 venue 保留了年份（`Advances in neural information processing systems 27, 2014`），而检索页解析是剥掉年份的。分组统计侥幸没受影响（`normalize_venue` 会切掉卷期尾巴），但 JSONL/CSV 里两种来源的字段不一致，导出的 BibTeX 里 `journal` 也重复带上了年份。现在两个解析路径共用同一个剥离函数。
 
@@ -854,13 +854,13 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 505 个用例，全部离线
+python3 -m pytest -q     # 508 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
 测试全部离线（不发任何网络请求）。CI 在 3.10 与 3.13 上跑同样两条；另外在一个全新的 venv 里从这个 git URL 装一遍再跑，验证的是「新装用户拿到的依赖版本」——最近一次是 playwright 1.62.0、bs4 4.15.0、lxml 6.1.3，比开发机上的都新，整套用例全过。按覆盖面分组，细节直接读 `tests/`：
 
-- **解析**：结果卡片与作者主页的每个字段，加上四份真实页面夹具（`tests/pages/`），保证解析既对又贴合 Scholar 的真实结构
+- **解析**：结果卡片与作者主页的每个字段，加上四份真实页面夹具（`tests/pages/`），保证解析既对又贴合 Scholar 的真实结构；那两份真实页面解析出的 9 条记录还要喂给 `--audit`、概览和 `--network`——报告的责任是评判真实数据，所以它们必须先在真实数据上站得住（0 个 error，警告只针对 Scholar 自己做的事）
 - **抓取循环**：翻页、作者分批、节奏与冷却、连续被拦后的静默等待、HTML dump、运行摘要
 - **人工接管**：真实 headless Chromium 上的验证判定、等待与超时、窗口被关、headless 拒绝、接管记录与跨运行减速
 - **全链路**：真实浏览器打本地假 Scholar（`tests/fakescholar.py`）——翻页上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、headless 拒绝时已抓数据仍在盘上、一次完全由设置文件描述的运行
@@ -877,7 +877,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 58 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 60 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

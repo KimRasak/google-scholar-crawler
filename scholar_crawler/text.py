@@ -10,6 +10,9 @@ from __future__ import annotations
 ELLIPSIS = "…"
 """Appended to text that did not fit, so a cut is never mistaken for the value."""
 
+TRUNCATION = (ELLIPSIS, "...")
+"""How Scholar marks its own elisions: an author list or venue arrives already cut."""
+
 
 def clip(text: str, width: int) -> str:
     """Shorten text to a column width, marking it when it was cut.

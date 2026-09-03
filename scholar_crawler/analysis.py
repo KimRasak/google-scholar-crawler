@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from statistics import median
 from typing import Any
 
-from .text import clip
+from .text import ELLIPSIS, TRUNCATION, clip
 
 Record = dict[str, Any]
 
@@ -129,14 +129,25 @@ def normalize_venue(venue: str) -> str:
     Two spellings would otherwise split one venue: every arXiv preprint carries its own
     identifier, and profile rows append volume, issue, pages and year to the journal name.
 
+    A venue Scholar itself elided keeps its ellipsis. "IEEE Transactions on Knowledge and Data"
+    is a journal that does not exist; the real one is "… and Data Engineering", and a grouped
+    listing that drops the mark presents Scholar's cut as the venue's name. The arXiv label is
+    this tool's own complete name for the venue, so it carries no mark.
+
     :param venue: the venue as parsed.
-    :returns: the venue used for grouping.
+    :returns: the venue used for grouping, marked when Scholar had already cut it.
     """
-    cleaned = venue.strip().strip("…").strip(" ,.")
+    stripped = venue.strip()
+    head, tail = stripped.startswith(TRUNCATION), stripped.endswith(TRUNCATION)
+    for mark in TRUNCATION:
+        stripped = stripped.removeprefix(mark).removesuffix(mark)
+    cleaned = stripped.strip(" ,.")
     if ARXIV_VENUE.match(cleaned):
         return "arXiv preprint"
-    trimmed = VOLUME_TAIL.sub("", cleaned).strip(" ,.")
-    return trimmed or cleaned
+    trimmed = VOLUME_TAIL.sub("", cleaned).strip(" ,.") or cleaned
+    if not trimmed:
+        return ELLIPSIS if head or tail else ""
+    return " ".join(([ELLIPSIS] if head else []) + [trimmed] + ([ELLIPSIS] if tail else []))
 
 
 def group_label(record: Record, key: str) -> str | None:

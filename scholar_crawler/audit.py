@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from .text import clip
+from .text import TRUNCATION, clip
 
 Record = dict[str, Any]
 
@@ -36,10 +36,6 @@ HOSTNAME = re.compile(r"^[\w.-]+\.(com|org|edu|net|gov|io|cn|uk|de)$", re.IGNORE
 
 YEAR_IN_TEXT = re.compile(r"\b(1[89]\d{2}|20\d{2})\b")
 """Years as they appear inside free text."""
-
-TRUNCATION = ("…", "...")
-"""Scholar itself elides long author lists; the record is lossy, not wrong."""
-
 
 def _year(record: Record) -> int | None:
     """Read the stored year as an int.
@@ -117,6 +113,11 @@ def _negative_count(record: Record) -> bool:
 
 
 def _missing_cluster_id(record: Record) -> bool:
+    # Every profile row lacks Scholar's data-cid and carries a citation_id instead, which the
+    # crawler resolves into a card id with one extra page load. Reporting that as a defect made
+    # an author collection look 100% broken, and the fix it implies does not exist.
+    if (record.get("extra") or {}).get("citation_id"):
+        return False
     return not _text(record, "cluster_id") and not record.get("citation_only")
 
 
@@ -219,7 +220,7 @@ CHECKS: tuple[Check, ...] = (
     Check(
         "cluster_id_missing",
         "warn",
-        "no card id, so BibTeX export and citation expansion cannot address this record",
+        "no card id and no profile id, so nothing can address this record on Scholar",
         _missing_cluster_id,
     ),
 )
