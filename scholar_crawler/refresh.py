@@ -163,8 +163,13 @@ def render_staleness(
         return [f"none of the {len(records)} records carries a collection timestamp"]
     stale = rank_stale(records, days=days, now=moment)
     missing = len(records) - len(ages)
+    span = (
+        f"all collected {max(ages):.0f} days ago"
+        if max(ages) - min(ages) < 1
+        else f"collected between {max(ages):.0f} and {min(ages):.0f} days ago"
+    )
     lines = [
-        f"{len(records)} records collected between {max(ages):.0f} and {min(ages):.0f} days ago"
+        f"{len(records)} records, {span}"
         + (f"; {missing} carry no timestamp" if missing else ""),
         f"{len(stale)} older than {days:g} days"
         + (f" ({len(stale) / len(records) * 100:.0f}% of the set)" if stale else ""),
@@ -176,6 +181,10 @@ def render_staleness(
         f"{len(refreshable)} of those can be re-listed by id, one page load each; "
         f"{len(stale) - len(refreshable)} would need their query re-run"
     )
+    if stale[0].age_days - stale[-1].age_days < 1:
+        # One crawl stamps every record with the same moment, which is the normal state of a new
+        # collection. Age then separates nothing, and the order below is citation count alone.
+        lines.append("all the same age, so this order is by citation count, not by what moved")
     lines.extend(item.describe() for item in stale[:top])
     return lines
 

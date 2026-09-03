@@ -450,7 +450,7 @@ scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl --m
 
 ```sh
 $ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh-limit 5
-  20 records collected between 475 and 0 days ago
+  20 records, collected between 475 and 0 days ago
   17 older than 60 days (85% of the set)
   17 of those can be re-listed by id, one page load each; 0 would need their query re-run
     375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network…
@@ -459,6 +459,8 @@ $ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh
 ```
 
 排序不是单纯按年龄：被引 3 次的论文放一年数字也不会动，被引四万次的放两个月就差了几百。所以权重是「年龄 × log(被引数)」——把数字真的变了的排在前面。这只是给人排个序，不假装能预测新的被引数。
+
+刚抓完一轮时，所有记录的 `fetched_at` 是同一刻，年龄区分不了任何东西，这时排序退化成「被引数从高到低」。报告会自己说出这件事（`all the same age, so this order is by citation count, not by what moved`），免得那句「把变了的排在前面」被当成年龄参与了排序。
 
 `--refresh-list` 写出的文件就是 `scholar-crawler --clusters-file` 读的格式，一进一出闭环：
 
@@ -854,13 +856,13 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 508 个用例，全部离线
+python3 -m pytest -q     # 511 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
 测试全部离线（不发任何网络请求）。CI 在 3.10 与 3.13 上跑同样两条；另外在一个全新的 venv 里从这个 git URL 装一遍再跑，验证的是「新装用户拿到的依赖版本」——最近一次是 playwright 1.62.0、bs4 4.15.0、lxml 6.1.3，比开发机上的都新，整套用例全过。按覆盖面分组，细节直接读 `tests/`：
 
-- **解析**：结果卡片与作者主页的每个字段，加上四份真实页面夹具（`tests/pages/`），保证解析既对又贴合 Scholar 的真实结构；那两份真实页面解析出的 9 条记录还要喂给 `--audit`、概览和 `--network`——报告的责任是评判真实数据，所以它们必须先在真实数据上站得住（0 个 error，警告只针对 Scholar 自己做的事）
+- **解析**：结果卡片与作者主页的每个字段，加上四份真实页面夹具（`tests/pages/`），保证解析既对又贴合 Scholar 的真实结构；那两份真实页面解析出的 9 条记录还要喂给 `--audit`、概览、`--network` 与 `--stale`——报告的责任是评判真实数据，所以它们必须先在真实数据上站得住（0 个 error，警告只针对 Scholar 自己做的事）。`--refresh-list` 写出的文件还要真的被 `scholar-crawler --clusters-file … --dry-run` 读回去，把「一进一出闭环」这句话跑成测试
 - **抓取循环**：翻页、作者分批、节奏与冷却、连续被拦后的静默等待、HTML dump、运行摘要
 - **人工接管**：真实 headless Chromium 上的验证判定、等待与超时、窗口被关、headless 拒绝、接管记录与跨运行减速
 - **全链路**：真实浏览器打本地假 Scholar（`tests/fakescholar.py`）——翻页上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、headless 拒绝时已抓数据仍在盘上、一次完全由设置文件描述的运行
@@ -877,7 +879,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 60 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 62 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

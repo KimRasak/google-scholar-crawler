@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,7 @@ from bs4 import BeautifulSoup  # noqa: E402
 from scholar_crawler.analysis import render_summary, summarize  # noqa: E402
 from scholar_crawler.audit import audit_records, render_audit  # noqa: E402
 from scholar_crawler.challenge import RESULTS_SELECTOR  # noqa: E402
+from scholar_crawler.cli import main as crawler_main  # noqa: E402
 from scholar_crawler.graph import build_graph, render_network  # noqa: E402
 from scholar_crawler.parser import (  # noqa: E402
     bibtex_key,
@@ -29,6 +31,7 @@ from scholar_crawler.parser import (  # noqa: E402
     parse_bibtex,
     parse_result_page,
 )
+from scholar_crawler.refresh import rank_stale, render_refresh_list, render_staleness  # noqa: E402
 from scholar_crawler.selfcheck import check_page, report  # noqa: E402
 from tests.fixtures import EMPTY_PAGE_HTML  # noqa: E402
 from tests.sanitize import sanitize  # noqa: E402
@@ -166,6 +169,45 @@ def test_the_network_of_real_records_says_why_it_has_no_edges(
 
     assert "no citation edges in 9 records" in printed
     assert "--cites" in printed
+
+
+def test_the_staleness_report_of_real_records_admits_one_crawl_ranks_by_citations(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    records = _real_records()
+    later = datetime.now(timezone.utc) + timedelta(days=120)
+    for line in render_staleness(records, days=60, now=later, top=3):
+        print(line)
+    printed = capsys.readouterr().out
+
+    # One page load stamps one moment, so a real single-crawl collection is uniformly aged.
+    assert "9 records, all collected 120 days ago" in printed
+    assert "9 older than 60 days (100% of the set)" in printed
+    assert "9 of those can be re-listed by id" in printed
+    assert "this order is by citation count, not by what moved" in printed
+
+
+def test_the_refresh_file_from_real_records_is_a_command_the_crawler_accepts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The file names the command that consumes it, and nothing proved the handshake held. It
+    # runs here end to end, offline: digest writes the ids, --dry-run reads them back and prices
+    # the crawl they describe.
+    later = datetime.now(timezone.utc) + timedelta(days=120)
+    ranked = rank_stale(_real_records(), days=60, now=later)
+    written = tmp_path / "refresh.txt"
+    written.write_text("\n".join(render_refresh_list(ranked, limit=3)) + "\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert crawler_main(["--clusters-file", "refresh.txt", "-p", "1", "--dry-run"]) == 0
+    printed = capsys.readouterr().out
+
+    expected = [item.target for item in ranked[:3]]
+    assert len(set(expected)) == 3
+    for cluster_id in expected:
+        assert f"[explain]   target: cluster:{cluster_id}" in printed
+        assert f"cluster={cluster_id}" in printed
+    assert "[plan] total: up to 3 page loads for 30 records" in printed
 
 
 def test_the_fixtures_carry_no_session_material() -> None:

@@ -104,11 +104,26 @@ def test_the_report_states_the_span_the_share_and_what_can_be_re_listed() -> Non
         _record(days_old=None, cluster_id="undated"),
     ]
     lines = render_staleness(records, days=30, now=NOW)
-    assert "4 records collected between 200 and 1 days ago; 1 carry no timestamp" in lines[0]
+    assert "4 records, collected between 200 and 1 days ago; 1 carry no timestamp" in lines[0]
     assert "2 older than 30 days" in lines[1]
     assert "1 of those can be re-listed by id, one page load each; 1 would need their query" in lines[2]
     assert any("--cluster 9876543210" in line for line in lines)
     assert any("re-run its query" in line for line in lines)
+
+
+def test_one_crawl_stamps_one_age_and_the_report_stops_claiming_a_span() -> None:
+    # The normal state of a new collection: every record carries the same fetched_at, so the
+    # ranking below is citation count and the report must not imply age played a part.
+    records = [
+        _record(days_old=100, citations=500, cluster_id="a", versions_url="?cluster=111"),
+        _record(days_old=100, citations=5, cluster_id="b", versions_url="?cluster=222"),
+    ]
+    lines = render_staleness(records, days=30, now=NOW)
+
+    assert lines[0] == "2 records, all collected 100 days ago"
+    assert "between" not in lines[0]
+    assert lines[3] == "all the same age, so this order is by citation count, not by what moved"
+    assert "111" in lines[4] and "222" in lines[5]
 
 
 def test_a_fully_current_collection_says_so_without_a_list() -> None:

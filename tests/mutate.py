@@ -302,6 +302,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "one crawl does not get reported as a span of ages",
+        "scholar_crawler/refresh.py",
+        '        if max(ages) - min(ages) < 1',
+        "        if False",
+        "tests/test_refresh.py tests/test_real_pages.py",
+    ),
+    Mutation(
+        "the refresh file stays the format the crawler reads",
+        "scholar_crawler/refresh.py",
+        '        lines.append(cluster_id)',
+        '        lines.append(f"# {cluster_id}")',
+        "tests/test_real_pages.py tests/test_refresh.py",
+    ),
+    Mutation(
         "a venue Scholar cut keeps its mark",
         "scholar_crawler/analysis.py",
         '    return " ".join(([ELLIPSIS] if head else []) + [trimmed] + ([ELLIPSIS] if tail else []))',

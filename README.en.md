@@ -453,7 +453,7 @@ Every record carries `fetched_at`, the UTC moment it was collected, so how old a
 
 ```sh
 $ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh-limit 5
-  20 records collected between 475 and 0 days ago
+  20 records, collected between 475 and 0 days ago
   17 older than 60 days (85% of the set)
   17 of those can be re-listed by id, one page load each; 0 would need their query re-run
     375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network…
@@ -462,6 +462,8 @@ $ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh
 ```
 
 The order is not age alone: a paper with three citations gains none in a year, while one with forty thousand drifts by hundreds in two months. The weight is age × log(citations), which puts the records whose numbers actually moved first. It orders a list for a human; it does not claim to predict the new count.
+
+Right after one crawl every record carries the same `fetched_at`, age separates nothing, and the order degenerates into citation count descending. The report says so itself (`all the same age, so this order is by citation count, not by what moved`), so "whose numbers moved" is never read as age having had a say.
 
 The file `--refresh-list` writes is the format `scholar-crawler --clusters-file` reads, so the loop closes:
 
@@ -857,7 +859,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 508 tests, fully offline
+python3 -m pytest -q     # 511 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -865,7 +867,7 @@ Every test is offline (no network). CI runs the same two commands on 3.10 and 3.
 
 Grouped by what they cover; read `tests/` for the detail:
 
-- **Parsing**: every field of result cards and author profiles, plus four real-page fixtures (`tests/pages/`) so parsing is both correct and still true to Scholar's markup; the nine records those two real pages yield are then fed to `--audit`, the overview and `--network`, because a report whose job is to judge real data has to hold up on real data first (no errors at all, and warnings only for what Scholar itself did)
+- **Parsing**: every field of result cards and author profiles, plus four real-page fixtures (`tests/pages/`) so parsing is both correct and still true to Scholar's markup; the nine records those two real pages yield are then fed to `--audit`, the overview, `--network` and `--stale`, because a report whose job is to judge real data has to hold up on real data first (no errors at all, and warnings only for what Scholar itself did). The file `--refresh-list` writes is then read back by `scholar-crawler --clusters-file … --dry-run`, so the loop the file's own comment promises is a test rather than a claim
 - **Crawl loop**: paging, author batching, pacing and cooldowns, the quiet wait after back-to-back blocks, HTML dumps, run summaries
 - **Human takeover**: challenge detection on real headless Chromium, waiting and timeouts, a closed window, a headless refusal, the takeover log and cross-run slowdown
 - **End to end**: a real browser against a local fake Scholar (`tests/fakescholar.py`) — page budget, no loss across a takeover, `--resume`, author profiles, collected records surviving a headless refusal, and one run described entirely by a settings file
@@ -884,7 +886,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 60 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 62 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
