@@ -539,7 +539,7 @@ The rules are deliberately conservative, and they **only ever widen the delays**
 - Two or more blocks: x1.3; five or more: x1.6.
 - A block that arrived with no successful page in between: +0.2 (solving the first one did not restore trust).
 - Blocks typically arriving within the first 30 requests: +0.2 (the rhythm is the problem, not the volume).
-- Capped at x2.0. Rehearsals (`outcome=rehearsed`) are not evidence.
+- The terms sum to at most x2.0. That is the sum, not a separate clamp; a test enumerates every combination to keep the sentence true. Rehearsals (`outcome=rehearsed`) are not evidence.
 
 Delays you passed yourself are never overridden: the history is printed and the run states that it keeps your values. `--no-learn-from-history` turns the behavior off entirely. `--dry-run` estimates with the learned rhythm, so you can see how much slower this run will be before starting it.
 
@@ -813,7 +813,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 444 tests, fully offline
+python3 -m pytest -q     # 447 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -836,21 +836,30 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 29 entries, about 3 minutes; every file is restored after
+python3 -m tests.mutate          # 35 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
 
 It rewrites source files and restores them, so do not run it over uncommitted work. Anything
-no test noticed is listed at the end, and the exit code is 1.
+no test noticed is listed at the end, and the exit code is 1. Every write drops the matching
+`__pycache__`: swapping `0.2` for `0.6` keeps the file size, the restore usually lands in the
+same second, and Python then treats the old `.pyc` as current — so the next run reads the wrong
+bytecode and a sound test looks broken, or a broken one looks sound.
 
-The table is what two rounds of hand-run auditing found, which is also how three real holes
-turned up: the `--min-citations` threshold was inclusive by accident, nothing bounded the
-length of the staleness list, and "a crash never loses collected data" rested on a `flush()`
-no test read back. Two rules came out of the same exercise: a mutation must match exactly
-once in its file — otherwise it lands in a docstring and reports a hole that does not exist —
-and the break must be confirmed to take effect. `check_table()` enforces the first one, and a
-test runs it in CI, since the audit itself edits sources and cannot live in the suite.
+Several rounds of auditing built this table, and eight real holes came out of it: the
+`--min-citations` threshold was inclusive by accident, nothing bounded the length of the
+staleness list, "a crash never loses collected data" rested on a `flush()` no test read back,
+`argparse.SUPPRESS` satisfied "every flag is explained", nothing checked that the results
+selector still matches a Scholar page, `as_sdt=0` is a substring of `as_sdt=0,5` so the patent
+switch could invert unnoticed, the terminal bell's own line was never executed, and only the
+count threshold behind an audit alarm was doing any work.
+
+Two rules came out of the same exercise and now live in the tool: a mutation must match
+exactly once in its file — otherwise it lands in a docstring and reports a hole that does not
+exist — and the break must actually reach the file, so `audit()` raises when the text does not
+match instead of quietly running a green suite. `check_table()` enforces the first, and a test
+runs it in CI, since the audit edits sources and cannot live in the suite.
 
 ### Real-structure regression fixtures
 

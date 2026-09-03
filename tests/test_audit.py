@@ -194,6 +194,18 @@ def test_a_field_failing_across_a_run_raises_an_alarm() -> None:
     assert "--self-check" in lines[-1]
 
 
+def test_a_rare_failure_stays_below_the_alarm_share() -> None:
+    # Three bad records is enough to pass the count threshold, so only the share keeps a run
+    # from crying wolf over a handful of odd cards in a large batch.
+    tally = AuditTally()
+    for _ in range(3):
+        tally.observe(_record(venue="521 (7553), 436-444"))
+    for _ in range(37):
+        tally.observe(_record())
+    assert tally.alarms() == [], "3 of 40 is 7.5%, below the share an alarm needs"
+    assert [finding.check.name for finding in tally.alarms(share=0.05)] == ["venue_looks_like_pages"]
+
+
 def test_warnings_never_raise_an_alarm() -> None:
     # Missing fields are Scholar's doing, not a parser failure; a run must not cry wolf.
     tally = AuditTally()

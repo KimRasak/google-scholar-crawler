@@ -46,6 +46,10 @@ def page() -> Iterator[Page]:
         browser.close()
 
 
+REAL_BELL = challenge_module._bell
+"""The real bell, kept before the autouse fixture below replaces it."""
+
+
 @pytest.fixture(autouse=True)
 def _mute_bell(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(challenge_module, "_bell", lambda: None)
@@ -159,6 +163,14 @@ def test_a_challenge_that_turns_into_another_kind_is_reported_and_recorded(
     assert "the page is now a sign_in: account sign-in wall" in printed
     assert takeover.saw == ("captcha", "sign_in")
     assert takeover.describe() == f"cleared after {takeover.waited:.0f}s (saw captcha -> sign_in)"
+
+
+def test_the_bell_is_a_bell(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    # Every other test mutes _bell to keep the suite quiet, which left the one line that
+    # actually reaches the operator unchecked; REAL_BELL is captured before that muting.
+    monkeypatch.setattr(challenge_module.shutil, "which", lambda _name: None)
+    REAL_BELL()
+    assert capsys.readouterr().err == "\a"
 
 
 def test_the_run_rings_again_before_it_gives_up(

@@ -77,6 +77,10 @@ def read_history(entries: list[ChallengeRecord]) -> History:
     )
 
 
+MAX_FACTOR = 2.0
+"""Widest starting rhythm history can ask for: 1.6 for repetition, +0.2 back-to-back, +0.2 early."""
+
+
 def suggest_factor(history: History) -> float:
     """Choose how much to widen the starting delays given this history.
 
@@ -85,7 +89,8 @@ def suggest_factor(history: History) -> float:
     those mean the rhythm itself was refused rather than the run being long.
 
     :param history: summary of previous blocks.
-    :returns: a factor of at least 1.0, capped at 2.0.
+    :returns: a factor between 1.0 and :data:`MAX_FACTOR`, which the terms reach exactly when
+        every one of them applies.
     """
     if history.blocks < 2:
         return 1.0
@@ -94,7 +99,7 @@ def suggest_factor(history: History) -> float:
         factor += 0.2
     if history.typical_request is not None and history.typical_request <= CROWDED:
         factor += 0.2
-    return min(factor, 2.0)
+    return factor
 
 
 @dataclass(slots=True, frozen=True)

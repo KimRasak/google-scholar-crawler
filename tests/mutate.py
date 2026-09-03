@@ -23,6 +23,8 @@ do not run it against a tree with uncommitted work you cannot recover.
 
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -271,6 +273,41 @@ MUTATIONS: tuple[Mutation, ...] = (
         '"warning",\n        "Scholar elided the venue',
         OFFLINE,
     ),
+    Mutation(
+        "patents ride on as_sdt, citations on as_vis",
+        "scholar_crawler/urls.py",
+        'params["as_sdt"] = "0,5" if request.include_patents else "0"',
+        'params["as_sdt"] = "0,5"',
+        "tests/test_parser.py",
+    ),
+    Mutation(
+        "the learned rhythm stays within its ceiling",
+        "scholar_crawler/history.py",
+        "    if history.back_to_back:\n        factor += 0.2",
+        "    if history.back_to_back:\n        factor += 0.6",
+        "tests/test_history.py",
+    ),
+    Mutation(
+        "the takeover bell is a bell",
+        "scholar_crawler/challenge.py",
+        'sys.stderr.write("\\a")',
+        "pass",
+        "tests/test_challenge.py",
+    ),
+    Mutation(
+        "state marks a target exhausted",
+        "scholar_crawler/storage.py",
+        '"exhausted": exhausted,',
+        '"exhausted": False,',
+        "tests/test_state.py tests/test_end_to_end.py",
+    ),
+    Mutation(
+        "an alarm needs a share as well as a count",
+        "scholar_crawler/audit.py",
+        "ALARM_SHARE = 0.2",
+        "ALARM_SHARE = 0.0",
+        "tests/test_audit.py",
+    ),
 )
 
 
@@ -294,6 +331,21 @@ def check_table() -> list[str]:
     return complaints
 
 
+def _write(path: Path, text: str) -> None:
+    """Replace a source file and drop the bytecode compiled from the old text.
+
+    Python reuses a ``.pyc`` whose recorded source mtime and size still match, and a mutation
+    that swaps one character for another keeps the size while the restore lands in the same
+    second. Without this the next run reads stale bytecode: an unguarded invariant that is
+    guarded, or the reverse.
+
+    :param path: the source file to overwrite.
+    :param text: its new content.
+    """
+    path.write_text(text, encoding="utf-8")
+    shutil.rmtree(path.parent / "__pycache__", ignore_errors=True)
+
+
 def _run(tests: str) -> tuple[bool, str]:
     """Run pytest over the given selectors.
 
@@ -306,6 +358,7 @@ def _run(tests: str) -> tuple[bool, str]:
         capture_output=True,
         text=True,
         check=False,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
     )
     lines = done.stdout.strip().splitlines()
     return done.returncode == 0, lines[-1] if lines else "no output"
@@ -321,11 +374,17 @@ def audit(mutations: tuple[Mutation, ...]) -> list[Mutation]:
     for mutation in mutations:
         path = ROOT / mutation.path
         source = path.read_text(encoding="utf-8")
-        path.write_text(source.replace(mutation.original, mutation.broken, 1), encoding="utf-8")
+        broken = source.replace(mutation.original, mutation.broken, 1)
+        if broken == source:
+            raise ValueError(
+                f"{mutation.label}: the text is not in {mutation.path}, so nothing was broken; "
+                "an unapplied mutation reads as an unguarded invariant"
+            )
+        _write(path, broken)
         try:
             passed, summary = _run(mutation.tests)
         finally:
-            path.write_text(source, encoding="utf-8")
+            _write(path, source)
         if passed:
             unguarded.append(mutation)
         verdict = "UNGUARDED" if passed else "caught"

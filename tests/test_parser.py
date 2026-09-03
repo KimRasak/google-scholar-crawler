@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -88,16 +89,29 @@ def test_search_url_encodes_filters() -> None:
     )
     url = search_url(request, start=20)
     assert url.startswith("https://scholar.google.com/scholar?")
-    for fragment in ("q=graph+neural+network", "hl=zh-CN", "start=20", "as_ylo=2020", "as_yhi=2024",
-                     "scisbd=1", "as_rr=1", "as_vis=1", "as_sdt=0"):
-        assert fragment in url
+    # Parameters are compared parsed, not as substrings: "as_sdt=0" also occurs inside
+    # "as_sdt=0,5", which is the opposite setting.
+    assert parse_qs(urlsplit(url).query) == {
+        "q": ["graph neural network"],
+        "hl": ["zh-CN"],
+        "start": ["20"],
+        "as_ylo": ["2020"],
+        "as_yhi": ["2024"],
+        "scisbd": ["1"],
+        "as_rr": ["1"],
+        "as_vis": ["1"],
+        "as_sdt": ["0"],
+    }
 
 
 def test_search_url_omits_start_and_defaults_to_english() -> None:
     url = search_url(SearchRequest(query="llm agents"))
-    assert "start=" not in url
-    assert "hl=en" in url
-    assert "as_sdt=0%2C5" in url
+    assert parse_qs(urlsplit(url).query) == {
+        "q": ["llm agents"],
+        "hl": ["en"],
+        "as_vis": ["0"],
+        "as_sdt": ["0,5"],  # Scholar's own default: patents and citations included
+    }
 
 
 def test_signature_distinguishes_filters() -> None:

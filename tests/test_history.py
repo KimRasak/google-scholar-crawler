@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from itertools import product
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scholar_crawler.cli import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, main  # noqa: E402
-from scholar_crawler.history import advise, read_history, suggest_factor  # noqa: E402
+from scholar_crawler.history import (  # noqa: E402
+    MAX_FACTOR,
+    History,
+    advise,
+    read_history,
+    suggest_factor,
+)
 from scholar_crawler.storage import ChallengeLog, ChallengeRecord  # noqa: E402
 
 
@@ -80,7 +87,21 @@ def test_repeated_blocks_widen_the_rhythm() -> None:
     assert suggest_factor(read_history(streak)) == pytest.approx(1.7)
 
     persistent = [_block(5, consecutive=2) for _ in range(6)]
-    assert suggest_factor(read_history(persistent)) == 2.0  # capped
+    assert suggest_factor(read_history(persistent)) == MAX_FACTOR
+
+
+def test_the_widest_advice_is_the_sum_of_its_reasons() -> None:
+    # MAX_FACTOR is a statement about the terms, not a clamp: every combination of them must
+    # land on or below it, or the ceiling documented in the README would be fiction.
+    for blocks, back_to_back, typical in product((0, 1, 2, 4, 5, 40), (0, 1, 9), (1, 30, 31, 900)):
+        history = History(
+            blocks=blocks,
+            back_to_back=back_to_back,
+            typical_request=typical,
+            last_at="2026-09-03T00:00:00+00:00",
+            kinds={},
+        )
+        assert 1.0 <= suggest_factor(history) <= MAX_FACTOR
 
 
 def test_advice_never_speeds_a_run_up() -> None:
