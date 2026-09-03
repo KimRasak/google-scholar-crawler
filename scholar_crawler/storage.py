@@ -19,6 +19,15 @@ from .models import AuthorProfile, ScholarResult, describe_signature
 from .parser import bibtex_key
 from .urls import redact_url
 
+DEFAULT_RECORDS_PATH = Path("out/results.jsonl")
+"""Where records land when ``--out`` names nothing."""
+
+DEFAULT_STATE_PATH = Path("out/state.json")
+"""Where resume progress lands when ``--state`` names nothing."""
+
+DEFAULT_CHALLENGE_LOG_PATH = Path("out/challenges.jsonl")
+"""Where takeovers land when ``--challenge-log`` names nothing."""
+
 CSV_COLUMNS = (
     "position",
     "title",

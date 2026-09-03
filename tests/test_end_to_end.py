@@ -9,6 +9,7 @@ every test run without contacting Google.
 from __future__ import annotations
 
 import json
+import shlex
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -372,6 +373,50 @@ def test_a_timezone_given_on_the_command_line_wins_over_the_language(
     assert main(["-q", "x", "-p", "1", "--lang", "de", "--dry-run"]) == 0
     derived = capsys.readouterr().out
     assert "Accept-Language de and reports its clock in Europe/Berlin (matching" in derived
+
+
+def test_the_command_show_state_hands_back_really_resumes_the_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A cursor is only worth keeping if its target can be reproduced. --show-state prints the
+    # command that continues it; this pastes that command back and checks Scholar is asked for
+    # the offset the cursor recorded, filters and all.
+    state = tmp_path / "state.json"
+    common = [
+        "--headless",
+        "--channel",
+        "",
+        "--profile",
+        str(tmp_path / "profile"),
+        "--challenge-log",
+        str(tmp_path / "challenges.jsonl"),
+        "-o",
+        str(tmp_path / "results.jsonl"),
+        "--state",
+        str(state),
+    ]
+    site = FakeScholar(pages=3)
+    with serving(site) as host:
+        first = ["-q", "graph attention", "-p", "1", "--year-from", "2020", "--review-only"]
+        assert main([*first, "--host", host, *common]) == 0
+        capsys.readouterr()
+
+        assert main(["--show-state", "--state", str(state)]) == 0
+        printed = capsys.readouterr().out.splitlines()
+        handed = [line.split("$ ", 1)[1] for line in printed if "$ scholar-crawler" in line]
+        assert len(handed) == 1, printed
+        argv = shlex.split(handed[0].removeprefix("scholar-crawler "))
+        assert "--resume" in argv and "--year-from" in argv and "--review-only" in argv
+
+        site.requests.clear()
+        assert main([*argv, "-p", "1", "--host", host, *common]) == 0
+
+    asked = [url for url in site.requests if "start=10" in url]
+    assert asked, site.requests  # the cursor was 10, and the pasted command went there
+    assert all("as_rr=1" in url for url in site.requests), "the filters came back too"
+    state_store = StateStore(state)
+    state_store.load()
+    assert state_store.entries()[0].next_start == 20
 
 
 def test_a_drill_teaches_nothing_but_a_real_block_slows_the_next_run(

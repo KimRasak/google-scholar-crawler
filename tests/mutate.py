@@ -302,6 +302,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "a finished target is not offered a way to continue",
+        "scholar_crawler/modes.py",
+        "            if request is not None and not entry.exhausted:",
+        "            if request is not None:",
+        "tests/test_state.py",
+    ),
+    Mutation(
+        "the handed command keeps the filters of its target",
+        "scholar_crawler/recipes.py",
+        "        if request.review_only:\n            parts.append(\"--review-only\")",
+        "        if False:\n            parts.append(\"--review-only\")",
+        "tests/test_state.py tests/test_end_to_end.py",
+    ),
+    Mutation(
         "a stored target answers to the name it is shown under",
         "scholar_crawler/storage.py",
         "            if needle in entry.signature.casefold() or needle in entry.target.casefold()",

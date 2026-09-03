@@ -36,7 +36,14 @@ from .modes import (
 from .plan import RunPlan, plan_run
 from .recipes import getting_started, render
 from .run import CrawlLimits, Outputs, RunOutcome, crawl, report_ignored_progress
-from .storage import ChallengeLog, StateStore, profiles_beside
+from .storage import (
+    DEFAULT_CHALLENGE_LOG_PATH,
+    DEFAULT_RECORDS_PATH,
+    DEFAULT_STATE_PATH,
+    ChallengeLog,
+    StateStore,
+    profiles_beside,
+)
 from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
 
 
@@ -204,12 +211,14 @@ def build_parser() -> argparse.ArgumentParser:
     output = parser.add_argument_group(
         "output", "where the run writes; records are appended page by page, so nothing is lost"
     )
-    output.add_argument("-o", "--out", type=Path, default=Path("out/results.jsonl"), help="JSONL output path")
-    output.add_argument("--state", type=Path, default=Path("out/state.json"), help="resume-state path")
+    output.add_argument(
+        "-o", "--out", type=Path, default=DEFAULT_RECORDS_PATH, help="JSONL output path"
+    )
+    output.add_argument("--state", type=Path, default=DEFAULT_STATE_PATH, help="resume-state path")
     output.add_argument(
         "--challenge-log",
         type=Path,
-        default=Path("out/challenges.jsonl"),
+        default=DEFAULT_CHALLENGE_LOG_PATH,
         help="append every human takeover here (session material redacted); "
         "read it back with --show-state",
     )

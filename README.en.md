@@ -614,8 +614,10 @@ After many short sessions the state file no longer tells you much: its keys are 
 $ scholar-crawler --show-state --state out/state.json
 [state] 3 targets in out/state.json (1 finished)
 [state]   attention is all you need [en] — next offset 30, 2026-09-02 10:45:51 UTC
+[state]     $ scholar-crawler -q 'attention is all you need' --resume
 [state]   cites:2960712678066186980 [en] — done after 50 records, 2026-09-02 10:45:51 UTC
 [state]   author:kukA0LcAAAAJ [en] — next offset 100, 2026-09-02 10:45:51 UTC
+[state]     $ scholar-crawler --author kukA0LcAAAAJ --resume
 
 # crawl a target from the start again (either spelling matches; an empty pattern
 # drops all of them)
@@ -624,6 +626,8 @@ $ scholar-crawler --forget "attention is all you need [en]" --state out/state.js
 ```
 
 Signatures are rendered back into their targets, with the filters that distinguish them — year range, language, sort order, `--review-only` — in brackets, because the same query under different filters is a different cursor. `--forget` matches that readable name as well as the underlying signature (`lang=en`), because what you can read is what you will type back; a pattern that matches nothing lists the targets that are stored instead of only saying so. Entries now also carry an update time; state files written by older versions still load and show `unknown time`.
+
+Each unfinished target is followed by the command that continues it, ready to paste. A cursor is only worth keeping to whoever can reproduce its target, and days later that means turning `[en, 2020, reviews only]` back into `--lang en --year-from 2020 --review-only` — the step easiest to get wrong. The command spells out only what is not a default (no `--lang en`, no default state path) and leaves the page count alone, so add `-p` to go further. A finished target has nothing to continue and gets no command.
 
 A target cut short by `-n/--max-results` no longer counts as finished: stopping there was our decision and Scholar still had results, so its cursor stays resumable.
 
@@ -882,7 +886,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 543 tests, fully offline
+python3 -m pytest -q     # 545 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -909,7 +913,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 75 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 77 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
@@ -986,7 +990,7 @@ scholar_crawler/
   selfcheck.py  parser self-check: per-field health report
   rehearsal.py  takeover rehearsal: local challenge page, full-path drill
   history.py    takeover log -> starting-rhythm advice
-  recipes.py    complete commands to copy
+  recipes.py    complete commands to copy: the fixed starting examples, and the resume command derived from a cursor
   collection.py a folder as one collection: input discovery, diff against the last merge
   digest.py     offline digest: merge, filter, command line
   analysis.py   offline analysis: overview counts and grouping

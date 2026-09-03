@@ -611,8 +611,10 @@ $ scholar-crawler -q "graph attention networks" -p 5
 $ scholar-crawler --show-state --state out/state.json
 [state] 3 targets in out/state.json (1 finished)
 [state]   attention is all you need [en] — next offset 30, 2026-09-02 10:45:51 UTC
+[state]     $ scholar-crawler -q 'attention is all you need' --resume
 [state]   cites:2960712678066186980 [en] — done after 50 records, 2026-09-02 10:45:51 UTC
 [state]   author:kukA0LcAAAAJ [en] — next offset 100, 2026-09-02 10:45:51 UTC
+[state]     $ scholar-crawler --author kukA0LcAAAAJ --resume
 
 # 让某个目标从头再抓（两种写法都认；空串清空全部）
 $ scholar-crawler --forget "attention" --state out/state.json
@@ -620,6 +622,8 @@ $ scholar-crawler --forget "attention is all you need [en]" --state out/state.js
 ```
 
 签名会被还原成可读的目标名，年份区间、语言、排序、`--review-only` 之类的过滤条件以 `[...]` 附在后面——同一个查询配不同过滤条件是不同的断点，这样一眼能分清。`--forget` 同时匹配这个可读名和底层签名（`lang=en`），因为你能读到的写法就是你会敲回去的写法；没匹配上时会把现存的目标列出来，而不是只说一句「没匹配」。每条断点现在还带最后更新时间（旧的 state 文件照样能读，只是显示 `unknown time`）。
+
+没抓完的目标下面还会跟一条可以直接粘贴的续抓命令：断点只对「还能把这个目标复现出来」的人有用，而隔几天回来，凭 `[en, 2020, reviews only]` 反推出 `--lang en --year-from 2020 --review-only` 正是最容易记错的一步。命令里只写非默认项（`--lang en`、默认 state 路径都省掉），页数用默认值，要多抓就自己加 `-p`。已经抓完的目标没有可续的东西，所以不给命令。
 
 `-n/--max-results` 截断的目标不再被记成「已抓完」：那是我们自己决定停的，Scholar 那边还有结果，所以它保持可续抓。
 
@@ -879,7 +883,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 543 个用例，全部离线
+python3 -m pytest -q     # 545 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -902,7 +906,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 75 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 77 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```
@@ -959,7 +963,7 @@ scholar_crawler/
   selfcheck.py  解析自检：逐字段体检与报告
   rehearsal.py  接管演练：本地验证页与全链路空演
   history.py    接管记录 → 起始节奏建议
-  recipes.py    可直接复制的完整命令
+  recipes.py    可直接复制的完整命令：写死的入门例子，以及按断点算出来的续抓命令
   collection.py 把目录当作一个文献库：输入发现、与上次合并的差异
   digest.py     离线汇总：合并去重、过滤、命令行
   analysis.py   离线分析：概览统计与分组

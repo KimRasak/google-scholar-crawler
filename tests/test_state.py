@@ -178,6 +178,25 @@ def test_a_target_can_be_forgotten_by_the_name_show_state_printed(
     assert "attention is all you need" not in capsys.readouterr().out
 
 
+def test_show_state_hands_back_the_command_that_continues_each_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = _store(tmp_path)
+    store.record(SearchRequest(query="graph | attention", language="de", year_low=2020).signature(), 10)
+    assert main(["--show-state", "--state", str(tmp_path / "state.json")]) == 0
+    printed = capsys.readouterr().out
+
+    # The query keeps the character the signature is joined with, and quoting survives it.
+    assert "$ scholar-crawler -q 'graph | attention' --year-from 2020 --lang de --resume" in printed
+    assert "$ scholar-crawler --author AAAAAAAAAAAA --resume" in printed
+    # A finished target has nothing to continue, so it gets a line and no command.
+    assert "cites:123456 [en] — done after 50 records" in printed
+    assert "--cites 123456" not in printed
+    # The default language and the default state path are not worth spelling out.
+    assert "--lang en" not in printed
+    assert "--state" in printed  # this state file is not the default one
+
+
 def test_state_commands_need_no_crawl_target(tmp_path: Path) -> None:
     # Neither path builds targets or opens a browser, so no query is required.
     assert main(["--show-state", "--state", str(tmp_path / "state.json")]) == 0

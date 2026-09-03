@@ -3,11 +3,22 @@
 The crawler has more than thirty flags, most of which exist to be left alone. What a new
 user needs is not the flag list but a handful of complete commands that work as written, so
 ``--recipes`` prints these and a run started with no arguments points at them.
+
+This module also spells the flags for a target the tool already knows about, so ``--show-state``
+can hand back the command that continues it instead of a name to translate by hand.
 """
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
+from pathlib import Path
+
+from .models import AuthorRequest, SearchRequest
+from .storage import DEFAULT_STATE_PATH
+
+DEFAULT_LANGUAGE = "en"
+"""Interface language a command need not spell out, matching ``--lang``'s own default."""
 
 
 @dataclass(slots=True, frozen=True)
@@ -138,3 +149,49 @@ def getting_started(count: int = 3) -> list[str]:
     :returns: printable lines.
     """
     return render(RECIPES[:count])
+
+
+def resume_command(
+    request: SearchRequest | AuthorRequest, state: Path = DEFAULT_STATE_PATH
+) -> str:
+    """Spell the command that continues a target the state file already holds.
+
+    A cursor is only useful to someone who can reproduce the target it belongs to. Days later
+    that means retyping the filters from a name like ``x [en, 2020-, reviews only]``, which is
+    the translation this does instead.
+
+    :param request: the target, as :func:`~scholar_crawler.models.parse_signature` rebuilt it.
+    :param state: the state file holding its cursor, named when it is not the default.
+    :returns: a complete command line, ready to paste.
+    """
+    parts = ["scholar-crawler"]
+    if isinstance(request, AuthorRequest):
+        parts += ["--author", request.user_id]
+        # One flag covers both: a profile sorted by year is what --sort-by-date asks for there.
+        if request.sort_by_year:
+            parts.append("--sort-by-date")
+    else:
+        if request.query:
+            parts += ["-q", request.query]
+        if request.cites:
+            parts += ["--cites", request.cites]
+        if request.cluster:
+            parts += ["--cluster", request.cluster]
+        if request.year_low is not None:
+            parts += ["--year-from", str(request.year_low)]
+        if request.year_high is not None:
+            parts += ["--year-to", str(request.year_high)]
+        if request.sort_by_date:
+            parts.append("--sort-by-date")
+        if not request.include_citations:
+            parts.append("--no-citations")
+        if not request.include_patents:
+            parts.append("--no-patents")
+        if request.review_only:
+            parts.append("--review-only")
+    if request.language and request.language != DEFAULT_LANGUAGE:
+        parts += ["--lang", request.language]
+    parts.append("--resume")
+    if state != DEFAULT_STATE_PATH:
+        parts += ["--state", str(state)]
+    return shlex.join(parts)

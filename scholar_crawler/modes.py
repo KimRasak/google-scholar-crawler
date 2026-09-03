@@ -19,7 +19,8 @@ from .browser import Session, browser_session
 from .challenge import ChallengeUnattended
 from .crawler import ScholarCrawler
 from .doctor import Status, check_browser, diagnose_environment, render_environment
-from .models import SearchRequest
+from .models import SearchRequest, parse_signature
+from .recipes import resume_command
 from .rehearsal import rehearse
 from .selfcheck import check_page, report
 from .storage import ChallengeLog, StateStore
@@ -149,6 +150,11 @@ def show_state(state_path: Path, challenge_log: Path) -> int:
         print(f"[state] {len(entries)} targets in {state_path} ({done} finished)", flush=True)
         for entry in entries:
             print(f"[state]   {entry.describe()}", flush=True)
+            request = parse_signature(entry.signature)
+            if request is not None and not entry.exhausted:
+                # A cursor is only useful to whoever can reproduce its target; days later that
+                # means retyping the filters, so the command comes back ready to paste.
+                print(f"[state]     $ {resume_command(request, state_path)}", flush=True)
     else:
         print(f"[state] nothing stored in {state_path}", flush=True)
     show_takeovers(challenge_log)
