@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .text import TRUNCATION
+from .venues import split_venue
+
 Record = dict[str, Any]
 
 TRANSLITERATIONS = str.maketrans({"ł": "l", "ø": "o", "đ": "d", "ß": "ss", "æ": "ae", "œ": "oe", "ð": "d"})
@@ -51,16 +54,34 @@ DANGLING_ARXIV = re.compile(r"\s+arxiv$", re.IGNORECASE)
 
 
 def venue_field(record: Record) -> str:
-    """Read the venue as it should appear in a bibliography.
+    """Read the venue name as it should appear in a bibliography.
 
-    Volume, issue and page numbers are kept — they are real bibliographic data — while
-    Scholar's truncation marker and the identifier stub it leaves behind are dropped.
+    Volume, issue and pages leave the name and become their own fields, because a style that
+    prints ``journal`` prints all of it: "nature 521 (7553), 436-444" is not a journal. A name
+    Scholar elided keeps an ASCII ``...`` — the printed bibliography then shows the gap the
+    audit counted, instead of naming a journal that does not exist.
 
     :param record: a stored record.
-    :returns: the venue, or an empty string when the record carries none.
+    :returns: the venue name, or an empty string when the record carries none.
     """
-    cleaned = (record.get("venue") or "").strip().strip("…").strip(" ,.")
-    return DANGLING_ARXIV.sub("", cleaned).strip()
+    parsed = split_venue(record.get("venue") or "")
+    name = DANGLING_ARXIV.sub("", parsed.name).strip()
+    if not name or name != parsed.name:
+        # What Scholar elided from "arXiv preprint arXiv:1710.10903" is the identifier, not the
+        # name of the venue, so the name that is left is complete and carries no mark.
+        return name
+    return f"{name} ..." if parsed.cut else name
+
+
+def volume_fields(record: Record) -> list[tuple[str, str]]:
+    """Read the numeric tail of a venue as BibTeX fields.
+
+    :param record: a stored record.
+    :returns: ``volume``, ``number`` and ``pages`` pairs, only for the parts Scholar showed.
+    """
+    parsed = split_venue(record.get("venue") or "")
+    named = (("volume", parsed.volume), ("number", parsed.number), ("pages", parsed.pages))
+    return [(name, value) for name, value in named if value]
 
 
 def ascii_slug(text: str) -> str:
@@ -95,12 +116,26 @@ def authors_field(record: Record) -> tuple[str, bool]:
     :returns: the ``author`` value, and whether Scholar had truncated the list.
     """
     raw = (record.get("authors") or (record.get("byline") or "").split(" - ")[0] or "").strip()
-    truncated = raw.endswith("…") or raw.endswith("...")
-    names = [name.strip().strip("…").strip() for name in raw.split(",")]
+    truncated = raw.endswith(TRUNCATION)
+    # A profile row ends its list with a bare ", ..." element, so a name is only what is left of
+    # a comma-separated piece once Scholar's mark is taken off it.
+    names = [_without_mark(name) for name in raw.split(",")]
     names = [name for name in names if name]
     if truncated:
         names.append("others")
     return " and ".join(names), truncated
+
+
+def _without_mark(name: str) -> str:
+    """Take Scholar's elision mark off one comma-separated author.
+
+    :param name: one piece of the author list.
+    :returns: the name, empty when the piece was only a mark.
+    """
+    stripped = name.strip()
+    for mark in TRUNCATION:
+        stripped = stripped.removeprefix(mark).removesuffix(mark)
+    return stripped.strip()
 
 
 def entry_type(record: Record) -> str:
@@ -165,6 +200,7 @@ def synthesize_entry(record: Record, key: str) -> str:
     venue = venue_field(record)
     if venue:
         fields.append(("booktitle" if kind == "inproceedings" else "journal", _escape(venue)))
+    fields.extend((name, _escape(value)) for name, value in volume_fields(record))
     if record.get("year"):
         fields.append(("year", str(record["year"])))
     if record.get("link"):

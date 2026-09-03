@@ -18,6 +18,7 @@ from scholar_crawler.bibsynth import (  # noqa: E402
     surname,
     synthesize_entry,
     venue_field,
+    volume_fields,
     write_bibtex,
 )
 from scholar_crawler.digest import main  # noqa: E402
@@ -68,12 +69,28 @@ def test_a_truncated_author_list_is_marked_with_others() -> None:
     assert (value, truncated) == ("Z Liu", False)
 
 
-def test_the_venue_keeps_volumes_but_drops_truncation_marks() -> None:
+def test_the_venue_is_a_name_and_its_numbers_become_their_own_fields() -> None:
+    # A style that prints `journal` prints all of it, and "nature 521 (7553), 436-444" is not a
+    # journal, so the numeric tail leaves the name.
     assert venue_field(_record()) == "arXiv preprint"
-    assert venue_field(_record(venue="nature 521 (7553), 436-444, 2015")) == (
-        "nature 521 (7553), 436-444, 2015"
-    )
+    assert venue_field(_record(venue="nature 521 (7553), 436-444, 2015")) == "nature"
+    assert volume_fields(_record(venue="nature 521 (7553), 436-444, 2015")) == [
+        ("volume", "521"),
+        ("number", "7553"),
+        ("pages", "436-444"),
+    ]
+    assert volume_fields(_record()) == []
     assert venue_field(_record(venue=None)) == ""
+
+
+def test_a_name_scholar_cut_says_so_in_the_bibliography() -> None:
+    # The audit counts these; the printed bibliography has to show the gap rather than name a
+    # journal that does not exist ("IEEE Transactions on Knowledge and Data" is not one).
+    assert venue_field(_record(venue="IEEE Transactions on Knowledge and Data …")) == (
+        "IEEE Transactions on Knowledge and Data ..."
+    )
+    # The mark says the name is incomplete: an elided arXiv identifier is not part of the name.
+    assert venue_field(_record(venue="arXiv preprint arXiv …")) == "arXiv preprint"
 
 
 def test_entry_types_follow_the_venue() -> None:

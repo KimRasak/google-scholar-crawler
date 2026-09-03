@@ -22,6 +22,7 @@ from bs4 import BeautifulSoup  # noqa: E402
 
 from scholar_crawler.analysis import render_summary, summarize  # noqa: E402
 from scholar_crawler.audit import audit_records, render_audit  # noqa: E402
+from scholar_crawler.bibsynth import write_bibtex  # noqa: E402
 from scholar_crawler.challenge import RESULTS_SELECTOR  # noqa: E402
 from scholar_crawler.cli import main as crawler_main  # noqa: E402
 from scholar_crawler.collection import compare, render_delta  # noqa: E402
@@ -34,7 +35,9 @@ from scholar_crawler.parser import (  # noqa: E402
     parse_result_page,
 )
 from scholar_crawler.refresh import rank_stale, render_refresh_list, render_staleness  # noqa: E402
+from scholar_crawler.report import build_report  # noqa: E402
 from scholar_crawler.selfcheck import check_page, report  # noqa: E402
+from scholar_crawler.venues import split_venue  # noqa: E402
 from tests.fixtures import EMPTY_PAGE_HTML  # noqa: E402
 from tests.sanitize import sanitize  # noqa: E402
 
@@ -238,6 +241,56 @@ def test_a_watch_over_real_records_reports_a_first_citation_and_a_recluster(
     assert "1 work appears as both new and gone under one title" in printed
     assert str(dropped["title"]) in printed
     assert "its file was removed or a filter now excludes it" in printed
+
+
+def test_a_bibliography_of_real_records_carries_names_and_no_leftover_marks(tmp_path: Path) -> None:
+    # The .bib is the artifact that leaves this tool for someone's paper, so it is built from the
+    # real bylines Scholar serves — including the profile row that ends its author list with a
+    # bare ", ..." and the journal that arrives with its volume, issue and pages attached.
+    records = _real_records()
+    written = write_bibtex(records, tmp_path / "refs.bib")
+    text = (tmp_path / "refs.bib").read_text(encoding="utf-8")
+
+    assert written.written == len(records)
+    assert written.truncated_authors == 3
+    for line in text.splitlines():
+        if line.strip().startswith("author = "):
+            assert "..." not in line and "…" not in line, f"an elision became an author: {line}"
+            assert "and others" in line or "…" not in line
+        if line.strip().startswith(("journal = ", "booktitle = ")):
+            value = line.split("{", 1)[1].rsplit("}", 1)[0]
+            assert split_venue(value).volume is None, f"a volume stayed in the name: {line}"
+
+    # nature 521 (7553), 436-444, 2015 read apart into the fields a style prints separately.
+    assert "  journal = {nature}," in text
+    assert "  volume = {521}," in text
+    assert "  number = {7553}," in text
+    assert "  pages = {436-444}," in text
+    assert text.count("@") == len(records)
+
+
+def test_a_report_over_real_records_stays_a_well_formed_markdown_document() -> None:
+    # Every row of a Markdown table must have the same number of columns, and real venues and
+    # titles are where a stray pipe or an elision mark would break one.
+    document = build_report(_real_records(), title="Graph attention networks", top=4)
+    table: list[str] = []
+    tables = 0
+    for line in [*document.splitlines(), ""]:
+        if line.startswith("|"):
+            table.append(line)
+            continue
+        if table:
+            widths = {row.count("|") for row in table}
+            assert len(widths) == 1, f"ragged table: {sorted(widths)}\n" + "\n".join(table)
+            assert len(table) >= 3, "a table needs a header, a separator and a row"
+            tables += 1
+            table = []
+
+    assert tables == 5, "the report's five tables"
+    assert document.startswith("# Graph attention networks\n")
+    # The venue Scholar cut keeps its mark here too, so the table never names a journal that
+    # does not exist.
+    assert "| IEEE Transactions on Knowledge and Data … |" in document
 
 
 def test_the_fixtures_carry_no_session_material() -> None:

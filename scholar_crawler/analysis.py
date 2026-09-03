@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 from statistics import median
 from typing import Any
 
-from .text import ELLIPSIS, TRUNCATION, clip
+from .text import ELLIPSIS, clip
+from .venues import split_venue
 
 Record = dict[str, Any]
 
@@ -108,9 +109,6 @@ GROUP_KEYS = ("author", "venue", "year", "level")
 ARXIV_VENUE = re.compile(r"^arxiv preprint\b", re.IGNORECASE)
 """Scholar spells arXiv venues out with the identifier, which would split every preprint."""
 
-VOLUME_TAIL = re.compile(r"\s+\d+\s*(\([^)]*\))?\s*(,.*)?$")
-"""Profile rows append volume, issue, pages and year to the journal name."""
-
 
 def first_author(record: Record) -> str | None:
     """Read the first author of a record.
@@ -137,17 +135,14 @@ def normalize_venue(venue: str) -> str:
     :param venue: the venue as parsed.
     :returns: the venue used for grouping, marked when Scholar had already cut it.
     """
-    stripped = venue.strip()
-    head, tail = stripped.startswith(TRUNCATION), stripped.endswith(TRUNCATION)
-    for mark in TRUNCATION:
-        stripped = stripped.removeprefix(mark).removesuffix(mark)
-    cleaned = stripped.strip(" ,.")
-    if ARXIV_VENUE.match(cleaned):
+    parsed = split_venue(venue)
+    if ARXIV_VENUE.match(parsed.name):
         return "arXiv preprint"
-    trimmed = VOLUME_TAIL.sub("", cleaned).strip(" ,.") or cleaned
-    if not trimmed:
-        return ELLIPSIS if head or tail else ""
-    return " ".join(([ELLIPSIS] if head else []) + [trimmed] + ([ELLIPSIS] if tail else []))
+    if not parsed.name:
+        return ELLIPSIS if parsed.cut else ""
+    head = [ELLIPSIS] if parsed.cut_head else []
+    tail = [ELLIPSIS] if parsed.cut_tail else []
+    return " ".join(head + [parsed.name] + tail)
 
 
 def group_label(record: Record, key: str) -> str | None:

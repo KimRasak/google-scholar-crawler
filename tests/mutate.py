@@ -302,6 +302,34 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "a bare year is not a volume",
+        "scholar_crawler/venues.py",
+        '    r"\\s+(?P<volume>\\d+)"',
+        '    r"\\s*(?P<volume>\\d+)"',
+        "tests/test_venues.py tests/test_analysis.py",
+    ),
+    Mutation(
+        "an elision does not become an author",
+        "scholar_crawler/bibsynth.py",
+        "    names = [_without_mark(name) for name in raw.split(\",\")]",
+        '    names = [name.strip().strip("…").strip() for name in raw.split(",")]',
+        "tests/test_real_pages.py",
+    ),
+    Mutation(
+        "a journal name is not its volume and pages",
+        "scholar_crawler/bibsynth.py",
+        "    fields.extend((name, _escape(value)) for name, value in volume_fields(record))",
+        "    fields.extend([])",
+        "tests/test_bibsynth.py tests/test_real_pages.py",
+    ),
+    Mutation(
+        "a cut venue name says so in the bibliography",
+        "scholar_crawler/bibsynth.py",
+        '    return f"{name} ..." if parsed.cut else name',
+        "    return name",
+        "tests/test_bibsynth.py",
+    ),
+    Mutation(
         "a first citation is a movement, not silence",
         "scholar_crawler/collection.py",
         "        if now is None or was == now:",
@@ -332,8 +360,8 @@ MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "a venue Scholar cut keeps its mark",
         "scholar_crawler/analysis.py",
-        '    return " ".join(([ELLIPSIS] if head else []) + [trimmed] + ([ELLIPSIS] if tail else []))',
-        "    return trimmed",
+        '    return " ".join(head + [parsed.name] + tail)',
+        "    return parsed.name",
         "tests/test_real_pages.py tests/test_analysis.py",
     ),
     Mutation(

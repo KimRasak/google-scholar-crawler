@@ -336,6 +336,21 @@ These are reconstructions, not Scholar's own export, and the difference is worth
 
 So: author names keep Scholar's initials, a list Scholar truncated gains `and others`, and the arXiv identifier may be missing — in exchange for zero requests, plus the original link and the citation count. Export during the crawl when you need exact entries; build offline when you want a usable bibliography without waiting hours again.
 
+Scholar appends volume, issue and pages to the journal name (`nature 521 (7553), 436-444, 2015`), and a style that prints `journal` prints all of it — "nature 521 (7553), 436-444" is not a journal. Those parts get their own fields:
+
+```bibtex
+@article{lecun2015deep,
+  title = {{Deep learning}},
+  author = {Y LeCun and Y Bengio and G Hinton},
+  journal = {nature},
+  volume = {521},
+  number = {7553},
+  pages = {436-444},
+  year = {2015},
+```
+
+When Scholar elided the journal name itself, the `.bib` keeps an ASCII `...` (`journal = {IEEE Transactions on Knowledge and Data ...}`). Dropping the mark looks tidier, but it names a journal that does not exist, and this file ends up in someone's bibliography — the mark makes the gap visible in print, and `--audit` counted it long before. The one exception is `arXiv preprint arXiv …`: what was elided is the identifier, not the name, so the `arXiv preprint` that remains is complete and carries no mark.
+
 Details: a record exported during the crawl reuses its key, so both files name the same work identically; `Veličković` transliterates to `velickovic` (`ł`, `ø`, `ß`, `æ` are handled too); colliding keys gain `a`, `b`, …; a venue mentioning Proceedings, Conference or Workshop becomes `@inproceedings` with `booktitle`, and a record without a venue becomes `@misc`; titles are double-braced so a style cannot flatten their capitalization; `&`, `%`, `$`, `#` and `_` are escaped, and so are `^` and `~` — the first stops a LaTeX run outside math mode, the second quietly becomes a non-breaking space. Records without a title are skipped and counted.
 
 ### A readable overview: `--report`
@@ -862,7 +877,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 513 tests, fully offline
+python3 -m pytest -q     # 527 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -870,7 +885,7 @@ Every test is offline (no network). CI runs the same two commands on 3.10 and 3.
 
 Grouped by what they cover; read `tests/` for the detail:
 
-- **Parsing**: every field of result cards and author profiles, plus four real-page fixtures (`tests/pages/`) so parsing is both correct and still true to Scholar's markup; the nine records those two real pages yield are then fed to `--audit`, the overview, `--network`, `--stale` and `--since`, because a report whose job is to judge real data has to hold up on real data first (no errors at all, and warnings only for what Scholar itself did). The file `--refresh-list` writes is then read back by `scholar-crawler --clusters-file … --dry-run`, so the loop the file's own comment promises is a test rather than a claim
+- **Parsing**: every field of result cards and author profiles, plus four real-page fixtures (`tests/pages/`) so parsing is both correct and still true to Scholar's markup; the nine records those two real pages yield are then fed to `--audit`, the overview, `--network`, `--stale`, `--since`, `--report` and `--bibtex`, because a report whose job is to judge real data has to hold up on real data first (no errors at all, and warnings only for what Scholar itself did). The file `--refresh-list` writes is then read back by `scholar-crawler --clusters-file … --dry-run`, so the loop the file's own comment promises is a test rather than a claim
 - **Crawl loop**: paging, author batching, pacing and cooldowns, the quiet wait after back-to-back blocks, HTML dumps, run summaries
 - **Human takeover**: challenge detection on real headless Chromium, waiting and timeouts, a closed window, a headless refusal, the takeover log and cross-run slowdown
 - **End to end**: a real browser against a local fake Scholar (`tests/fakescholar.py`) — page budget, no loss across a takeover, `--resume`, author profiles, collected records surviving a headless refusal, and one run described entirely by a settings file
@@ -889,7 +904,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 64 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 68 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
@@ -970,6 +985,7 @@ scholar_crawler/
   collection.py a folder as one collection: input discovery, diff against the last merge
   digest.py     offline digest: merge, filter, command line
   analysis.py   offline analysis: overview counts and grouping
+  venues.py     the venue in the grey line: volume/issue/pages split off, Scholar's cut kept
   refresh.py    offline staleness: which records to collect again
   graph.py      offline citation graph: edges from collected records, who is cited most
   report.py     offline overview: the readable Markdown report

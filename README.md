@@ -336,6 +336,21 @@ scholar-digest out/all.jsonl --min-citations 500 --bibtex out/refs.bib
 
 也就是说：作者名只有 Scholar 显示的缩写、被它截断的作者列表补 `and others`、arXiv 编号可能缺失；换来的是零请求，外加原始链接与被引数。要精确条目就在抓取时导；要一份能直接用的书目、又不想再等几小时，就离线生成。
 
+Scholar 把卷、期、页码直接拼在期刊名后面（`nature 521 (7553), 436-444, 2015`），而排版样式会把 `journal` 整个印出来——「nature 521 (7553), 436-444」不是一个期刊名。所以这几段会拆到自己的字段里去：
+
+```bibtex
+@article{lecun2015deep,
+  title = {{Deep learning}},
+  author = {Y LeCun and Y Bengio and G Hinton},
+  journal = {nature},
+  volume = {521},
+  number = {7553},
+  pages = {436-444},
+  year = {2015},
+```
+
+期刊名被 Scholar 截断时，`.bib` 里会保留一个 ASCII 的 `...`（`journal = {IEEE Transactions on Knowledge and Data ...}`）。把它抹掉更好看，但那等于凭空造出一个不存在的期刊名，而这份文件最终是要印进别人论文的参考文献里的——留着记号，印出来就能看见那个缺口，`--audit` 也早就数过它。唯一的例外是 `arXiv preprint arXiv …`：被截掉的是编号而不是期刊名，剩下的 `arXiv preprint` 本身是完整的，所以不加记号。
+
 其他细节：已经在抓取时导出过的记录会沿用同一个 key（两份文件指同一篇论文时名字一致）；`Veličković` 这类会正确转写成 `velickovic`（`ł`、`ø`、`ß`、`æ` 也都处理）；key 撞车时追加 `a`、`b`；venue 里出现 Proceedings/Conference/Workshop 的记为 `@inproceedings` 并用 `booktitle`，没有 venue 的记为 `@misc`；题名用双花括号包住，避免某些样式把大小写压平；`&`、`%`、`$`、`#`、`_` 会转义，`^` 与 `~` 也会——前者在正文模式下直接让 LaTeX 报错，后者会悄悄变成一个不换行空格。没有题名的记录会被跳过并计数。
 
 ### 出一份可读的综述：`--report`
@@ -859,13 +874,13 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 513 个用例，全部离线
+python3 -m pytest -q     # 527 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
 测试全部离线（不发任何网络请求）。CI 在 3.10 与 3.13 上跑同样两条；另外在一个全新的 venv 里从这个 git URL 装一遍再跑，验证的是「新装用户拿到的依赖版本」——最近一次是 playwright 1.62.0、bs4 4.15.0、lxml 6.1.3，比开发机上的都新，整套用例全过。按覆盖面分组，细节直接读 `tests/`：
 
-- **解析**：结果卡片与作者主页的每个字段，加上四份真实页面夹具（`tests/pages/`），保证解析既对又贴合 Scholar 的真实结构；那两份真实页面解析出的 9 条记录还要喂给 `--audit`、概览、`--network`、`--stale` 与 `--since`——报告的责任是评判真实数据，所以它们必须先在真实数据上站得住（0 个 error，警告只针对 Scholar 自己做的事）。`--refresh-list` 写出的文件还要真的被 `scholar-crawler --clusters-file … --dry-run` 读回去，把「一进一出闭环」这句话跑成测试
+- **解析**：结果卡片与作者主页的每个字段，加上四份真实页面夹具（`tests/pages/`），保证解析既对又贴合 Scholar 的真实结构；那两份真实页面解析出的 9 条记录还要喂给 `--audit`、概览、`--network`、`--stale`、`--since`、`--report` 与 `--bibtex`——报告和产物的责任是描述真实数据，所以它们必须先在真实数据上站得住（0 个 error，警告只针对 Scholar 自己做的事）。`--refresh-list` 写出的文件还要真的被 `scholar-crawler --clusters-file … --dry-run` 读回去，把「一进一出闭环」这句话跑成测试
 - **抓取循环**：翻页、作者分批、节奏与冷却、连续被拦后的静默等待、HTML dump、运行摘要
 - **人工接管**：真实 headless Chromium 上的验证判定、等待与超时、窗口被关、headless 拒绝、接管记录与跨运行减速
 - **全链路**：真实浏览器打本地假 Scholar（`tests/fakescholar.py`）——翻页上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、headless 拒绝时已抓数据仍在盘上、一次完全由设置文件描述的运行
@@ -882,7 +897,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 64 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 68 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```
@@ -943,6 +958,7 @@ scholar_crawler/
   collection.py 把目录当作一个文献库：输入发现、与上次合并的差异
   digest.py     离线汇总：合并去重、过滤、命令行
   analysis.py   离线分析：概览统计与分组
+  venues.py     一行灰字里的期刊名：卷期页码拆开、Scholar 的省略号记下来
   refresh.py    离线判旧：该重抓哪些记录
   graph.py      离线引文网络：从已抓数据还原边、报告谁被引最多
   report.py     离线综述：可读的 Markdown 报告
