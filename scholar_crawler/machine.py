@@ -11,13 +11,14 @@ The document is the tool's promised output for programs, so its top-level keys s
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
 from importlib import metadata
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from .diagnose import Failure
 
@@ -71,6 +72,60 @@ def human_lines_to_stderr(enabled: bool) -> Iterator[None]:
         return
     with redirect_stdout(sys.stderr):
         yield
+
+
+class RefusedArguments(Exception):
+    """An argument vector argparse rejected, carrying the message it would have printed.
+
+    :param message: argparse's own complaint, without the usage block.
+    :param usage: the usage block argparse prints before the complaint.
+    """
+
+    def __init__(self, message: str, usage: str) -> None:
+        """Keep argparse's complaint and usage block for whichever form the caller wants."""
+        super().__init__(message)
+        self.usage = usage
+
+
+class DocumentedParser(argparse.ArgumentParser):
+    """Parser that raises on a bad argument vector instead of exiting.
+
+    ``--json`` promises exactly one JSON document on stdout, and argparse's own refusal broke
+    that promise: it printed usage to stderr and exited 2 with an empty stdout, so a caller that
+    only reads the document saw nothing to read. Raising lets each command answer in the form its
+    caller asked for.
+    """
+
+    def error(self, message: str) -> NoReturn:
+        """Refuse the argument vector without touching the process.
+
+        :param message: argparse's complaint.
+        :raises RefusedArguments: always.
+        """
+        raise RefusedArguments(message, self.format_usage().rstrip())
+
+
+def refusal(tool: str, error: RefusedArguments, *, as_json: bool) -> int:
+    """Report an argument vector the parser refused, in the form the caller asked for.
+
+    :param tool: the command's name, as it appears in a document.
+    :param error: what the parser refused and why.
+    :param as_json: whether ``--json`` was on the argument vector.
+    :returns: the exit code to return: 1 with a document, argparse's own 2 without one.
+    """
+    if not as_json:
+        print(error.usage, file=sys.stderr)
+        print(f"{tool}: error: {error}", file=sys.stderr)
+        return 2
+    emit(
+        document(
+            tool=tool,
+            exit_code=1,
+            counts={},
+            error=failure("usage", str(error), (f"{tool} --help lists every flag",)),
+        )
+    )
+    return 1
 
 
 def emit(document: dict[str, Any]) -> None:

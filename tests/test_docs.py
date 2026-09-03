@@ -6,16 +6,22 @@ checked, and the mirror is required to carry the same sections.
 
 from __future__ import annotations
 
+import json
 import re
 import shlex
 import sys
 import unicodedata
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scholar_crawler.cli import build_parser as crawler_parser  # noqa: E402
+from scholar_crawler.collection import compare  # noqa: E402
+from scholar_crawler.digest import _sections  # noqa: E402
 from scholar_crawler.digest import build_parser as digest_parser  # noqa: E402
+from scholar_crawler.digest import main as digest_main  # noqa: E402
 from scholar_crawler.models import ScholarResult  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -156,6 +162,28 @@ def test_the_agent_guide_lists_exactly_the_keys_a_record_carries() -> None:
         ).to_dict()
     )
     assert documented == carried, f"AGENTS.md is out of step: {documented ^ carried}"
+
+
+def test_the_agent_guide_lists_exactly_the_digest_sections(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An agent reads only this file, so a section key it does not list is invisible, and one it
+    # lists but the code stopped writing is a promise the caller cannot keep.
+    text = AGENTS.read_text(encoding="utf-8")
+    listed = text.split("The digest document adds", 1)[1].split("## Exit codes", 1)[0]
+    overview_doc, rest = listed.split('and with `--since` a `"delta"`', 1)
+    delta_doc, counts_doc = rest.split('Its `"counts"` are', 1)
+
+    record = {"cluster_id": "1", "title": "t", "cited_by_count": 3, "year": 2020}
+    sections = _sections([record], compare([], [record]), top=1)
+    assert set(re.findall(r"`([a-z_]+)`", overview_doc)) == set(sections["overview"])
+    assert set(re.findall(r"`([a-z_]+)`", delta_doc)) == set(sections["delta"])
+
+    source = tmp_path / "records.jsonl"
+    source.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    assert digest_main([str(source), "--json", "--quiet", "-o", str(tmp_path / "m.jsonl")]) == 0
+    document = json.loads(capsys.readouterr().out)
+    assert set(re.findall(r"`([a-z_]+)`", counts_doc)) == set(document["counts"])
 
 
 def test_the_mutation_table_still_fits_the_source() -> None:

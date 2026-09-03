@@ -132,9 +132,9 @@ $ scholar-crawler --doctor
 [doctor]   profile: expect one takeover on the first run; the cleared cookies are then reused
 ```
 
-It checks the Python version against 3.10, that all three dependencies import and are no older than the floors declared in `pyproject.toml`, that TOML settings files can be read (stdlib `tomllib` from 3.11, `tomli` on 3.10), that Playwright's own Chromium was actually downloaded, that the browser `--channel` names can be found, whether the profile already holds cookies from earlier runs, and whether the output and state directories can be written. Every failure names the command that fixes it (`pip install -e .`, `playwright install chromium`, `--channel ''`, …), and any `x` exits 1.
+It checks the Python version against 3.10, that the installed version still matches the sources being run, that all three dependencies import and are no older than the floors declared in `pyproject.toml`, that TOML settings files can be read (stdlib `tomllib` from 3.11, `tomli` on 3.10), that **the browser this run would actually launch** is there, whether the profile already holds cookies from earlier runs, and whether the output and state directories can be written. Every failure names the command that fixes it (`pip install -e .`, `scholar-crawler --install-browser`, `--channel ''`, …), and any `x` exits 1.
 
-Two deliberate choices: a missing Chrome is only a warning, because the bundled Chromium runs fine, and the check creates no directories — a mistyped path should not leave empty shells on disk, so it probes the closest existing ancestor and says plainly that the directory does not exist yet while its parent is writable.
+Three deliberate choices: the browser is one check because a run launches one browser — with the default `--channel chrome`, a system Chrome is enough and an undownloaded Chromium costs nothing, while a channel that is not installed is a failure because that exact command cannot start; a version mismatch is only a warning but names the reinstall, because otherwise the `version` in every `--json` document stays the one pip recorded at install time; and the check creates no directories — a mistyped path should not leave empty shells on disk, so it probes the closest existing ancestor and says plainly that the directory does not exist yet while its parent is writable.
 
 Once the machine is sound, `--self-check` goes on to test the network.
 
@@ -815,7 +815,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 452 tests, fully offline
+python3 -m pytest -q     # 458 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -838,7 +838,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 39 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 41 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
@@ -881,7 +881,7 @@ python3 -m tests.sanitize out/dump/<result-page>.html tests/pages/results.html 6
 
 Unit tests feed HTML strings to the parser and `--self-check` needs the real network; neither covers the path that matters most: a **real browser** navigating real URLs, tripping a challenge, resuming after a takeover and writing the files correctly. `tests/fakescholar.py` serves a fake Scholar on loopback with `http.server`, answering only `/scholar` and `/citations`, and can be told to answer a given offset with a challenge page the first time it is asked. The stand-in human in the tests clears it the way a person does — reload the page, the challenge is gone, the crawl continues.
 
-Behaviour that used to be verified once against the real Scholar now runs on every CI job: paging to the page budget and not one page further, all 20 records on disk, a cursor at 40, challenge → takeover → the same offset refetched → nothing lost, `resolved` in the takeover log with a redacted URL, `--resume` continuing from 20 to 40, an author profile and its header stored, clean data raising no audit alarm, and — when headless refuses the takeover — the 10 records already collected still on disk, exit code 1, and the cursor left at 10.
+Behaviour that used to be verified once against the real Scholar now runs on every CI job: paging to the page budget and not one page further, all 20 records on disk, a cursor at 40, challenge → takeover → the same offset refetched → nothing lost, `resolved` in the takeover log with a redacted URL, `--resume` continuing from 20 to 40, an author profile and its header stored, clean data raising no audit alarm, when headless refuses the takeover, the 10 records already collected still on disk, exit code 1, and the cursor left at 10; and Ctrl+C between two pages giving exit code 130 with kind `interrupted`, the 10 records kept, and the cursor at 10.
 
 ## Compliance
 

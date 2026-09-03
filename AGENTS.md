@@ -74,9 +74,11 @@ scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl --j
 scholar-digest --collection out --report out/report.md --bibtex out/refs.bib
 ```
 
-The digest document adds `"overview"` (records, citations, years, venues, most_cited) and, with
-`--since`, `"delta"` (added, gone, moved, citations_gained) — the answer to "what changed since
-last time" without re-crawling.
+The digest document adds `"overview"` with exactly `records`, `citations`, `with_bibtex`,
+`citation_only`, `unknown_year`, `years`, `venues`, `most_cited`; and with `--since` a `"delta"`
+with exactly `before`, `after`, `added`, `gone`, `unchanged`, `citations_gained`, `moved` — the
+answer to "what changed since last time" without re-crawling. Its `"counts"` are `records`,
+`read`, `files`, `duplicates`, `filtered_out`, `unreadable_lines`.
 
 ## Exit codes and errors
 
@@ -93,7 +95,7 @@ On failure the document carries `"error": {"kind", "message", "next_steps"}`. Br
 | `timeout`, `reset` | transient; the run already retried, so retry later at a slower pace |
 | `http_error` | Scholar answered with an error status; the message carries it |
 | `browser_closed` | the window was closed mid-run; rerun with `--resume` |
-| `usage`, `bad_inputs`, `no_records`, `missing_since`, `unreadable_input` | fix the command; the reason is on stderr |
+| `usage`, `bad_inputs`, `no_records`, `missing_since`, `unreadable_input` | fix the command; `message` carries the reason |
 | `unsupported_mode` | that flag prints a report, so run it without `--json` |
 | `interrupted` | Ctrl+C; whatever was collected is already on disk |
 | `runtime_error`, `unknown` | unexpected; read `message`, and `--dump-html` keeps the page that caused it |

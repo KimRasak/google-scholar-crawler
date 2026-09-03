@@ -311,6 +311,44 @@ def test_an_unattended_challenge_stops_the_run_without_losing_what_it_had(
     assert state.next_start(QUERY.signature()) == 10  # resuming retries the challenged page
 
 
+def test_ctrl_c_between_pages_keeps_the_first_page_and_exits_130(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # AGENTS.md promises exit 130 with kind "interrupted" and that whatever was collected is
+    # already on disk. A person presses Ctrl+C while the run is waiting between pages.
+    waits = 0
+
+    def _interrupt_after_the_first_page(_seconds: float) -> None:
+        # The first sleep is the dwell on page one; the second is the pause before page two,
+        # which is where a person watching the window presses Ctrl+C.
+        nonlocal waits
+        waits += 1
+        if waits > 1:
+            raise KeyboardInterrupt
+
+    site = FakeScholar(pages=3)
+    with serving(site) as host:
+        monkeypatch.setattr(crawler_module.time, "sleep", _interrupt_after_the_first_page)
+        outputs = _outputs(tmp_path)
+        outcome = crawl(
+            _session(tmp_path, host),
+            Pacing(min_delay=0.1, max_delay=0.1, cooldown_every=0),
+            CrawlLimits(pages=3),
+            [QUERY],
+            [],
+            FollowPolicy(),
+            TEMPLATE,
+            outputs,
+        )
+
+    assert (outcome.exit_code, outcome.kind) == (130, "interrupted")
+    assert len(_records(tmp_path / "results.jsonl")) == 10, "the first page was already appended"
+    assert "[stop] interrupted by user" in capsys.readouterr().out
+    state = StateStore(tmp_path / "state.json")
+    state.load()
+    assert state.next_start(QUERY.signature()) == 10, "--resume continues from the cursor"
+
+
 def _session(tmp_path: Path, host: str) -> Session:
     return Session(
         options=BrowserOptions(user_data_dir=tmp_path / "profile", headless=True, channel=None),

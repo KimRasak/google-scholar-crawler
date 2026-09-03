@@ -14,7 +14,16 @@ from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
 from .expand import FollowPolicy
 from .explain import explain
 from .history import advise
-from .machine import document, emit, failure, human_lines_to_stderr, version
+from .machine import (
+    DocumentedParser,
+    RefusedArguments,
+    document,
+    emit,
+    failure,
+    human_lines_to_stderr,
+    refusal,
+    version,
+)
 from .models import AuthorRequest, SearchRequest
 from .modes import (
     check_environment,
@@ -38,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     """
     # argparse's generated usage lists all forty-odd flags and fills the screen before the
     # first line of help. These three lines are the shapes a run actually takes.
-    parser = argparse.ArgumentParser(
+    parser = DocumentedParser(
         prog="scholar-crawler",
         usage=(
             "scholar-crawler -q QUERY [-p PAGES] [-o FILE] [options]\n"
@@ -548,12 +557,14 @@ class _Ran:
     :param outcome: how a crawl ended, or None when no crawl ran.
     :param outputs: the files a crawl wrote, or None when no crawl ran.
     :param plan: the estimate a ``--dry-run`` produced, or None when a crawl ran.
+    :param reason: why the command was refused, for a caller that reads only the document.
     """
 
     exit_code: int
     outcome: RunOutcome | None = None
     outputs: Outputs | None = None
     plan: RunPlan | None = None
+    reason: str | None = None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -563,7 +574,10 @@ def main(argv: list[str] | None = None) -> int:
     :returns: process exit code — 0 on success, 1 on usage or crawl failure, 130 on Ctrl+C.
     """
     given = argv if argv is not None else sys.argv[1:]
-    args = build_parser().parse_args(argv)
+    try:
+        args = build_parser().parse_args(argv)
+    except RefusedArguments as refused_arguments:
+        return refusal("scholar-crawler", refused_arguments, as_json="--json" in given)
     refused = _mode_that_json_cannot_describe(args) if args.json else ""
     if refused:
         print(
@@ -640,7 +654,11 @@ def _document(ran: _Ran) -> dict[str, object]:
     if ran.outcome is not None and not ran.outcome.ok:
         error = failure(ran.outcome.kind, ran.outcome.message, ran.outcome.next_steps)
     elif ran.exit_code != 0:
-        error = failure("usage", "the command did not describe a run; the reason is on stderr")
+        error = failure(
+            "usage",
+            ran.reason or "the command did not describe a run",
+            ("scholar-crawler --recipes prints commands that work",),
+        )
     return document(
         tool="scholar-crawler",
         exit_code=ran.exit_code,
@@ -695,7 +713,7 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
         sources = resolve_settings(args, build_parser(), argv)
     except ConfigError as error:
         print(f"error: {error}", file=sys.stderr)
-        return _Ran(1)
+        return _Ran(1, reason=str(error))
     summary = sources.summary()
     if summary is not None and not args.explain:
         print(f"[config] {summary}", flush=True)
@@ -716,7 +734,7 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
             print("\nStart from one of these, or see --recipes:\n", file=sys.stderr)
             for line in getting_started():
                 print(line, file=sys.stderr)
-        return _Ran(1)
+        return _Ran(1, reason=str(error))
 
     if args.explain:
         for line in explain(args, listings, authors, follow, pacing, sources):

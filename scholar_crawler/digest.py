@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,16 @@ from .audit import audit_records, render_audit
 from .bibsynth import write_bibtex
 from .collection import SUFFIX, Delta, collection_files, compare, render_delta
 from .graph import build_graph, render_network
-from .machine import document, emit, failure, human_lines_to_stderr, version
+from .machine import (
+    DocumentedParser,
+    RefusedArguments,
+    document,
+    emit,
+    failure,
+    human_lines_to_stderr,
+    refusal,
+    version,
+)
 from .models import record_key
 from .refresh import (
     DEFAULT_REFRESH_LIMIT,
@@ -221,7 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     :returns: the configured parser.
     """
-    parser = argparse.ArgumentParser(
+    parser = DocumentedParser(
         prog="scholar-digest",
         usage=(
             "scholar-digest FILE... [--report FILE] [--bibtex FILE] [-o FILE] [options]\n"
@@ -389,7 +399,11 @@ def main(argv: list[str] | None = None) -> int:
     :returns: process exit code — 0 on success, 1 when an input is unusable or the flags
         would produce no output at all.
     """
-    args = build_parser().parse_args(argv)
+    given = argv if argv is not None else sys.argv[1:]
+    try:
+        args = build_parser().parse_args(argv)
+    except RefusedArguments as refused_arguments:
+        return refusal("scholar-digest", refused_arguments, as_json="--json" in given)
     if args.version:
         print(f"scholar-digest {version()}", flush=True)
         return 0
@@ -423,7 +437,11 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     except OSError as error:
         return _fail("unreadable_input", str(error))
     if not records:
-        return _fail("no_records", "no records found in the given files")
+        return _fail(
+            "no_records",
+            "no records found in the given files"
+            + (f"; {malformed} line(s) could not be read as JSON objects" if malformed else ""),
+        )
 
     merged, duplicates = merge_records(records)
     earlier: list[Record] | None = None

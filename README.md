@@ -132,9 +132,9 @@ $ scholar-crawler --doctor
 [doctor]   profile: expect one takeover on the first run; the cleared cookies are then reused
 ```
 
-检查项：Python 版本是否达到 3.10、三个依赖是否装上且版本不低于 `pyproject.toml` 声明的下限、能不能读 TOML 设置文件（3.11 起是标准库的 `tomllib`，3.10 需要 `tomli`）、Playwright 自带的 Chromium 是否真的下载了、`--channel` 指定的浏览器是否找得到、profile 里有没有以前攒下的 cookie、输出与断点文件的目录是否可写。每项失败都给出具体的修复命令（`pip install -e .`、`playwright install chromium`、`--channel ''`……），有 `x` 就退出码 1。
+检查项：Python 版本是否达到 3.10、装上的版本号与源码里的版本号是否还一致、三个依赖是否装上且版本不低于 `pyproject.toml` 声明的下限、能不能读 TOML 设置文件（3.11 起是标准库的 `tomllib`，3.10 需要 `tomli`）、**这次运行真正要启动的那个浏览器**在不在、profile 里有没有以前攒下的 cookie、输出与断点文件的目录是否可写。每项失败都给出具体的修复命令（`pip install -e .`、`scholar-crawler --install-browser`、`--channel ''`……），有 `x` 就退出码 1。
 
-两个刻意的设计：找不到 Chrome 只算警告（自带 Chromium 照样能跑），而体检本身不会创建任何目录——路径打错了不该在磁盘上留下空壳，所以它探测的是最近的已存在上级目录，并如实写明「目录还不存在，但上级可写」。
+三个刻意的设计：浏览器只查一条，因为一次运行只启动一个——默认 `--channel chrome` 时系统 Chrome 在就够了（自带 Chromium 没下也不算问题），反过来指定的 channel 没装则直接判失败，因为这条命令确实起不来；装上的版本号与源码不一致只是警告，但会提示重装，否则 `--json` 里那个 `version` 会一直是安装那一刻的旧号；体检本身不会创建任何目录——路径打错了不该在磁盘上留下空壳，所以它探测的是最近的已存在上级目录，并如实写明「目录还不存在，但上级可写」。
 
 环境没问题之后再用 `--self-check` 去碰网络。
 
@@ -812,7 +812,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 452 个用例，全部离线
+python3 -m pytest -q     # 458 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -833,7 +833,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 39 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 41 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```
@@ -862,7 +862,7 @@ python3 -m tests.sanitize out/dump/<结果页>.html tests/pages/results.html 6
 
 单元测试把 HTML 字符串喂给解析器，`--self-check` 需要真网络，两者都没覆盖最要紧的那条路：**真实浏览器**导航真实 URL、撞上验证页、接管后恢复、把文件写对。`tests/fakescholar.py` 用 `http.server` 在本地回环起一个假 Scholar，只答 `/scholar` 和 `/citations` 两条路径，可以指定某个 offset「第一次被请求时返回验证页」；测试里的替身「人」处理方式和真人一样——把页面重新加载一次，验证消失，抓取继续。
 
-于是这些以前只能在真 Scholar 上验证一次的行为，现在每次 CI 都跑：翻页到页数上限（不多请求一页）、20 条记录都在盘上、断点写到 40、遇验证 → 接管 → 同一 offset 重取 → 一条不丢、接管记录里 `resolved` 与 URL 脱敏、`--resume` 从 20 接着抓到 40、作者主页与档案落盘、干净数据不触发体检报警，以及 headless 下拒绝接管时**已抓到的 10 条仍在盘上**、退出码为 1、断点停在 10；还有一条完全由设置文件描述的运行——查询、页数、host、profile、输出路径全从 TOML 读出，命令行只有 `--config`——抓到同样的 10 条。
+于是这些以前只能在真 Scholar 上验证一次的行为，现在每次 CI 都跑：翻页到页数上限（不多请求一页）、20 条记录都在盘上、断点写到 40、遇验证 → 接管 → 同一 offset 重取 → 一条不丢、接管记录里 `resolved` 与 URL 脱敏、`--resume` 从 20 接着抓到 40、作者主页与档案落盘、干净数据不触发体检报警，以及 headless 下拒绝接管时**已抓到的 10 条仍在盘上**、退出码为 1、断点停在 10；Ctrl+C 打在两页之间时退出码 130、`interrupted`、已抓到的 10 条仍在盘上、断点停在 10；还有一条完全由设置文件描述的运行——查询、页数、host、profile、输出路径全从 TOML 读出，命令行只有 `--config`——抓到同样的 10 条。
 
 ## 合规
 

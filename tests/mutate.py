@@ -240,8 +240,8 @@ MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "the failure vocabulary matches AGENTS.md",
         "scholar_crawler/machine.py",
-        '"usage"',
-        '"usage_x"',
+        '    "usage",\n)',
+        '    "usage_x",\n)',
         "tests/test_machine.py",
     ),
     Mutation(
@@ -300,6 +300,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         '"exhausted": exhausted,',
         '"exhausted": False,',
         "tests/test_state.py tests/test_end_to_end.py",
+    ),
+    Mutation(
+        "a bad argument vector still answers with a document",
+        "scholar_crawler/machine.py",
+        "    if not as_json:",
+        "    if as_json or not as_json:",
+        "tests/test_machine.py",
+    ),
+    Mutation(
+        "a refusal carries its reason into the document",
+        "scholar_crawler/cli.py",
+        '            ran.reason or "the command did not describe a run",',
+        '            "the command did not describe a run",',
+        "tests/test_machine.py",
     ),
     Mutation(
         "a stale editable install is reported",

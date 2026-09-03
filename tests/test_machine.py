@@ -256,3 +256,46 @@ def test_a_failed_browser_install_says_how_to_see_why(
     monkeypatch.setattr(subprocess, "run", _fail)
     assert install_browser() == 1
     assert "playwright install exited 3" in capsys.readouterr().err
+
+
+def test_a_flag_that_does_not_exist_still_answers_with_one_document(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # argparse's own refusal printed usage to stderr and exited 2 with an empty stdout, which
+    # broke the only promise --json makes: json.loads(stdout) works.
+    assert main(["--nosuchflag", "--json"]) == 1
+    captured = capsys.readouterr()
+    parsed = json.loads(captured.out)
+    assert parsed["error"]["kind"] == "usage"
+    assert "--nosuchflag" in parsed["error"]["message"]
+    assert parsed["error"]["next_steps"] == ["scholar-crawler --help lists every flag"]
+    assert captured.err == "", "the document said it; stderr would say it twice"
+
+
+def test_the_digest_answers_a_bad_flag_the_same_way(capsys: pytest.CaptureFixture[str]) -> None:
+    assert digest.main(["--nosuchflag", "--json"]) == 1
+    parsed = json.loads(capsys.readouterr().out)
+    assert (parsed["tool"], parsed["error"]["kind"]) == ("scholar-digest", "usage")
+
+
+def test_without_json_a_bad_flag_keeps_argparse_behaviour(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A person reading the terminal gets the usage block and argparse's own exit code.
+    assert main(["--nosuchflag"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "usage: scholar-crawler" in captured.err
+    assert "error: unrecognized arguments: --nosuchflag" in captured.err
+
+
+def test_a_refused_command_explains_itself_inside_the_document(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Without a target the reason used to live only on stderr, so a caller reading the document
+    # alone knew that something was wrong but not what.
+    assert main(["--json"]) == 1
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["error"]["kind"] == "usage"
+    assert "provide at least one --query" in parsed["error"]["message"]
+    assert parsed["error"]["next_steps"] == ["scholar-crawler --recipes prints commands that work"]
