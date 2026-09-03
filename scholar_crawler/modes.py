@@ -40,7 +40,12 @@ def install_browser() -> int:
 
     :returns: process exit code — 0 when a browser is available afterwards, 1 when not.
     """
-    print("[install] downloading Chromium for Playwright (about 150 MB, once)", flush=True)
+    # Measured on a fresh install: 274 MB comes down (Chromium, its headless shell, ffmpeg) and
+    # 550 MB stays on disk. Understating it invites a cancelled download halfway through.
+    print(
+        "[install] downloading Chromium for Playwright: about 280 MB, 550 MB on disk, once",
+        flush=True,
+    )
     completed = subprocess.run(  # noqa: S603 - fixed command, no user input
         [sys.executable, "-m", "playwright", "install", "chromium"],
         check=False,

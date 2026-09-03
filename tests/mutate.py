@@ -302,6 +302,13 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "a note is not listed among the problems to fix",
+        "scholar_crawler/doctor.py",
+        '        heading = "also worth knowing, but nothing to fix:"',
+        '        heading = f"{counted} must be fixed before a crawl can run:"',
+        "tests/test_doctor.py",
+    ),
+    Mutation(
         "one mode reads the command back and costs it",
         "scholar_crawler/cli.py",
         "        for line in explain(args, listings, authors, follow, pacing, sources):",

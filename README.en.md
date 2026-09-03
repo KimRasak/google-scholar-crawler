@@ -12,8 +12,8 @@ The code never tries to solve, bypass or hide a verification challenge. Verifica
 **1. Install** (two commands; details under [Install](#install))
 
 ```sh
-pipx install git+https://github.com/KimRasak/google-scholar-crawler   # or pip install
-scholar-crawler --install-browser                                     # only if Chrome is missing
+pip install git+https://github.com/KimRasak/google-scholar-crawler   # pipx install works too
+scholar-crawler --install-browser                                    # only if Chrome is missing
 ```
 
 **2. Collect once** (one request, about five seconds, in a real Chrome window)
@@ -100,9 +100,9 @@ Detection uses the URL (`/sorry/`, `consent.google.`, `accounts.google.com`), DO
 
 ## Install
 
-`pipx install git+https://github.com/KimRasak/google-scholar-crawler` then `scholar-crawler --install-browser` is the whole install (see [Three steps](#three-steps)). The second command runs Playwright's download through the current interpreter, so the browser lands in the right place whether the tool sits in a pipx environment, a venv, or the system Python. It is the one step a new user cannot guess, which is why it is a command rather than a paragraph.
+`pip install git+https://github.com/KimRasak/google-scholar-crawler` then `scholar-crawler --install-browser` is the whole install (see [Three steps](#three-steps)). The first line uses `pip` because `pip` is always there: `pipx install <the same URL>` puts the tool in its own environment and is the tidier choice, but pipx itself has to be installed first, which makes it the alternative rather than the first step. The second command runs Playwright's download through the current interpreter, so the browser lands in the right place whether the tool sits in a pipx environment, a venv, or the system Python. It is the one step a new user cannot guess, which is why it is a command rather than a paragraph.
 
-On a machine that already has Chrome you can skip it: the default `--channel chrome` drives the system browser, and the 150 MB Chromium is never opened. `--doctor` checks only the browser this run would launch, so it passes on such a machine.
+On a machine that already has Chrome you can skip it: the default `--channel chrome` drives the system browser, and the 550 MB Chromium is never downloaded or opened. `--doctor` checks only the browser this run would launch, so it passes on such a machine.
 
 To change the code, install from a checkout:
 
@@ -131,6 +131,20 @@ $ scholar-crawler --doctor
 [doctor] nothing is broken; these are worth knowing:
 [doctor]   profile: expect one takeover on the first run; the cleared cookies are then reused
 ```
+
+A machine that is not ready yet looks like this, which is the screen a new install is most likely to see (`--channel ''` means this run wants the bundled Chromium, and it has not been downloaded):
+
+```sh
+$ scholar-crawler --doctor --channel ''
+[doctor] x browser                bundled Chromium not downloaded (expected at .../chromium-1234/...)
+[doctor] ! profile                .scholar-profile holds no cookies yet, so the first challenge will need a human
+[doctor] 1 problem must be fixed before a crawl can run:
+[doctor]   browser: scholar-crawler --install-browser
+[doctor] also worth knowing, but nothing to fix:
+[doctor]   profile: expect one takeover on the first run; the cleared cookies are then reused
+```
+
+What must be fixed and what is merely worth knowing are separate blocks: a `!` printed under "must be fixed" reads as a second problem, and the first screen a new install sees should not make itself sound worse than it is. Running the command it names (`--install-browser`, 280 MB down and 550 MB on disk) turns the same `--doctor` into exit 0.
 
 It checks the Python version against 3.10, that the installed version still matches the sources being run, that all three dependencies import and are no older than the floors declared in `pyproject.toml`, that TOML settings files can be read (stdlib `tomllib` from 3.11, `tomli` on 3.10), that **the browser this run would actually launch** is there, whether the profile already holds cookies from earlier runs, and whether the output and state directories can be written. Every failure names the command that fixes it (`pip install -e .`, `scholar-crawler --install-browser`, `--channel ''`, …), and any `x` exits 1.
 
@@ -823,11 +837,13 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 467 tests, fully offline
+python3 -m pytest -q     # 468 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
-Every test is offline (no network). Grouped by what they cover; read `tests/` for the detail:
+Every test is offline (no network). CI runs the same two commands on 3.10 and 3.13; separately, a clean venv installs the tool from this git URL and runs them against whatever dependency versions a new install resolves to — most recently playwright 1.62.0, bs4 4.15.0 and lxml 6.1.3, all newer than the development machine's, with all 468 passing.
+
+Grouped by what they cover; read `tests/` for the detail:
 
 - **Parsing**: every field of result cards and author profiles, plus four real-page fixtures (`tests/pages/`) so parsing is both correct and still true to Scholar's markup
 - **Crawl loop**: paging, author batching, pacing and cooldowns, the quiet wait after back-to-back blocks, HTML dumps, run summaries
@@ -846,7 +862,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 51 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 52 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

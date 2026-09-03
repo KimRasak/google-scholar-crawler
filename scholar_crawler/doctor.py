@@ -258,7 +258,7 @@ def check_browser(channel: str | None) -> Finding:
 
     A run launches the requested channel, so a missing bundled Chromium costs nothing while
     Chrome is installed — and downloading it would not fix a missing channel either. Reporting
-    the two as separate requirements told a caller to spend 150 MB on a working setup, and made
+    the two as separate requirements told a caller to spend 550 MB on a working setup, and made
     ``--doctor`` exit 1 on a machine where a crawl runs.
 
     :param channel: the channel a run would use, or None for the bundled Chromium.
@@ -435,11 +435,16 @@ def render_environment(findings: list[Finding]) -> list[str]:
     if failures:
         counted = "1 problem" if len(failures) == 1 else f"{len(failures)} problems"
         lines.append(f"{counted} must be fixed before a crawl can run:")
+        lines.extend(f"  {finding.name}: {finding.fix}" for finding in failures if finding.fix)
+        # A note listed under "must be fixed" reads as a second problem, and the first thing a
+        # new install sees should not overstate what is wrong with it.
+        heading = "also worth knowing, but nothing to fix:"
     elif warnings:
-        lines.append("nothing is broken; these are worth knowing:")
+        heading = "nothing is broken; these are worth knowing:"
     else:
-        lines.append("this machine is ready; run --self-check next to test Scholar itself")
-    for finding in (*failures, *warnings):
-        if finding.fix:
-            lines.append(f"  {finding.name}: {finding.fix}")
+        return [*lines, "this machine is ready; run --self-check next to test Scholar itself"]
+    advice = [f"  {finding.name}: {finding.fix}" for finding in warnings if finding.fix]
+    if advice:
+        lines.append(heading)
+        lines.extend(advice)
     return lines

@@ -12,8 +12,8 @@
 **一、装**（两条命令；细节见[安装](#安装)）
 
 ```sh
-pipx install git+https://github.com/KimRasak/google-scholar-crawler   # 或 pip install
-scholar-crawler --install-browser                                     # 没装 Chrome 才需要
+pip install git+https://github.com/KimRasak/google-scholar-crawler   # pipx install 同样可以
+scholar-crawler --install-browser                                    # 没装 Chrome 才需要
 ```
 
 **二、抓一次**（一次请求，约 5 秒，会弹出一个真实的 Chrome 窗口）
@@ -100,9 +100,9 @@ scholar-digest out/rag.jsonl --report out/report.md   # 写成一份可读的 Ma
 
 ## 安装
 
-`pipx install git+https://github.com/KimRasak/google-scholar-crawler` 之后 `scholar-crawler --install-browser`，两条就够（见[三步跑起来](#三步跑起来)）。第二条用当前解释器去执行 Playwright 的下载，所以无论装在 pipx 的独立环境、venv 还是全局，浏览器都落在对的地方——这一步是新装用户唯一猜不到的动作，所以它是一个命令而不是一段说明。
+`pip install git+https://github.com/KimRasak/google-scholar-crawler` 之后 `scholar-crawler --install-browser`，两条就够（见[三步跑起来](#三步跑起来)）。第一条写成 `pip` 是因为它一定在：`pipx install <同一个 URL>` 会把工具装进独立环境、更干净，但 pipx 本身也得先装，所以它是可选项而不是第一步。第二条用当前解释器去执行 Playwright 的下载，所以无论装在 pipx 的独立环境、venv 还是全局，浏览器都落在对的地方——这一步是新装用户唯一猜不到的动作，所以它是一个命令而不是一段说明。
 
-本机已装 Chrome 的话这条可以省掉：默认 `--channel chrome` 驱动的就是系统 Chrome，那 150 MB 的 Chromium 一次也不会被打开。`--doctor` 只检查这次运行真正要启动的那个浏览器，所以在这种机器上它会直接放行。
+本机已装 Chrome 的话这条可以省掉：默认 `--channel chrome` 驱动的就是系统 Chrome，那 550 MB 的 Chromium 一次也不会被下载或打开。`--doctor` 只检查这次运行真正要启动的那个浏览器，所以在这种机器上它会直接放行。
 
 想改代码就从源码装：
 
@@ -131,6 +131,20 @@ $ scholar-crawler --doctor
 [doctor] nothing is broken; these are worth knowing:
 [doctor]   profile: expect one takeover on the first run; the cleared cookies are then reused
 ```
+
+没装好的样子长这样——这也是新装用户最可能看到的一屏（`--channel ''` 表示这次运行要用自带的 Chromium，而它还没下载）：
+
+```sh
+$ scholar-crawler --doctor --channel ''
+[doctor] x browser                bundled Chromium not downloaded (expected at .../chromium-1234/...)
+[doctor] ! profile                .scholar-profile holds no cookies yet, so the first challenge will need a human
+[doctor] 1 problem must be fixed before a crawl can run:
+[doctor]   browser: scholar-crawler --install-browser
+[doctor] also worth knowing, but nothing to fix:
+[doctor]   profile: expect one takeover on the first run; the cleared cookies are then reused
+```
+
+要修的和只需知道的分成两段：一条 `!` 出现在「必须修」下面，会被读成第二个问题，而一个新装环境看到的第一屏不该把自己说得比实际更糟。照它给的那条命令跑完 `--install-browser`（下 280 MB，占盘 550 MB），同一条 `--doctor` 就会变成退出码 0。
 
 检查项：Python 版本是否达到 3.10、装上的版本号与源码里的版本号是否还一致、三个依赖是否装上且版本不低于 `pyproject.toml` 声明的下限、能不能读 TOML 设置文件（3.11 起是标准库的 `tomllib`，3.10 需要 `tomli`）、**这次运行真正要启动的那个浏览器**在不在、profile 里有没有以前攒下的 cookie、输出与断点文件的目录是否可写。每项失败都给出具体的修复命令（`pip install -e .`、`scholar-crawler --install-browser`、`--channel ''`……），有 `x` 就退出码 1。
 
@@ -820,11 +834,11 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 467 个用例，全部离线
+python3 -m pytest -q     # 468 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
-测试全部离线（不发任何网络请求）。按覆盖面分组，细节直接读 `tests/`：
+测试全部离线（不发任何网络请求）。CI 在 3.10 与 3.13 上跑同样两条；另外在一个全新的 venv 里从这个 git URL 装一遍再跑，验证的是「新装用户拿到的依赖版本」——最近一次是 playwright 1.62.0、bs4 4.15.0、lxml 6.1.3，比开发机上的都新，468 条全过。按覆盖面分组，细节直接读 `tests/`：
 
 - **解析**：结果卡片与作者主页的每个字段，加上四份真实页面夹具（`tests/pages/`），保证解析既对又贴合 Scholar 的真实结构
 - **抓取循环**：翻页、作者分批、节奏与冷却、连续被拦后的静默等待、HTML dump、运行摘要
@@ -841,7 +855,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 51 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 52 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

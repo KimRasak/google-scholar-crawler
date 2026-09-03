@@ -21,6 +21,7 @@ PYPROJECT_VERSION = next(
 from scholar_crawler.cli import main  # noqa: E402
 from scholar_crawler.doctor import (  # noqa: E402
     REQUIREMENTS,
+    Finding,
     Requirement,
     Status,
     check_browser,
@@ -184,6 +185,25 @@ def test_the_report_puts_fixes_last_and_ends_on_what_to_do_next(tmp_path: Path) 
     assert ready[-1] == "this machine is ready; run --self-check next to test Scholar itself"
 
 
+def test_a_note_is_not_listed_under_the_problems_to_fix(tmp_path: Path) -> None:
+    # The first thing a new install sees must not overstate what is wrong with it: a fresh
+    # profile is a note, and printing it under "1 problem must be fixed" reads as a second one.
+    broken = Finding(
+        "browser", Status.FAIL, "bundled Chromium not downloaded", "scholar-crawler --install-browser"
+    )
+    note = Finding("profile", Status.WARN, "holds no cookies yet", "expect one takeover")
+    lines = render_environment([broken, note])
+
+    problems = lines.index("1 problem must be fixed before a crawl can run:")
+    notes = lines.index("also worth knowing, but nothing to fix:")
+    assert problems < notes
+    assert lines[problems + 1 : notes] == ["  browser: scholar-crawler --install-browser"]
+    assert lines[notes + 1 :] == ["  profile: expect one takeover"]
+
+    # A problem with nothing else to say ends on the fix, with no empty heading after it.
+    assert render_environment([broken])[-1] == "  browser: scholar-crawler --install-browser"
+
+
 def test_the_browser_probe_keeps_only_the_path_the_child_printed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -218,7 +238,7 @@ def test_a_browser_that_was_never_downloaded_says_how_to_get_it(
 def test_a_missing_download_is_not_a_problem_when_the_channel_is_installed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A run launches Chrome, so the 150 MB download it never opens must not fail --doctor;
+    # A run launches Chrome, so the 550 MB download it never opens must not fail --doctor;
     # a crawl was verified to work in exactly this state.
     def _absent(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 0, stdout=f"{tmp_path / 'nope'}\n", stderr="")

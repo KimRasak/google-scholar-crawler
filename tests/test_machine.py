@@ -244,6 +244,8 @@ def test_the_browser_install_runs_playwright_in_this_interpreter(
     assert calls[0] == [sys.executable, "-m", "playwright", "install", "chromium"]
     printed = capsys.readouterr().out
     assert "downloading Chromium" in printed
+    # The size is what a caller decides on before starting a download they cannot resume.
+    assert "about 280 MB, 550 MB on disk" in printed
     assert "run --doctor" in printed
 
 

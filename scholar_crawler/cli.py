@@ -117,8 +117,8 @@ def build_parser() -> argparse.ArgumentParser:
     query.add_argument(
         "--install-browser",
         action="store_true",
-        help="download the browser Playwright drives (Chromium, about 150 MB) into this "
-        "installation and stop; run it once after installing",
+        help="download the browser Playwright drives (Chromium, about 280 MB, 550 MB on disk) "
+        "into this installation and stop; run it once after installing",
     )
     query.add_argument(
         "--doctor",
