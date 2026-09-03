@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import record_key
+from .text import clip
 
 Record = dict[str, Any]
 
@@ -87,7 +88,7 @@ class Moved:
         :returns: the change, the new total and the title.
         """
         sign = "+" if self.change > 0 else ""
-        return f"  {sign}{self.change:>6}  now {self.after:>8,}  {self.label[:60]}"
+        return f"  {sign}{self.change:>6}  now {self.after:>8,}  {clip(self.label, 60)}"
 
 
 @dataclass(slots=True)
@@ -183,7 +184,7 @@ def render_delta(delta: Delta, *, top: int = 5, since: Path | None = None) -> li
         if not works:
             continue
         lines.append(title)
-        lines.extend(f"  {label[:70]}" for label in works[:top])
+        lines.extend(f"  {clip(label, 70)}" for label in works[:top])
         if len(works) > top:
             lines.append(f"  ... and {len(works) - top} more")
     if delta.gone:

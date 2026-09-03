@@ -92,12 +92,10 @@ The short version: `scholar-crawler --recipes` hands you working commands; come 
 
 ## How it works
 
-1. Launches headed Chrome with a **persistent profile** (`--profile`, default `.scholar-profile`). Cookies earned by solving a challenge survive restarts, so takeovers get rarer over time.
+1. Launches headed Chrome with a **persistent profile** (`--profile`, default `.scholar-profile`).
 2. Waits a random 4–11 seconds before every request, with a 90-second cooldown every 10 requests. The counter spans the whole run — across queries, across authors, including BibTeX loads — instead of resetting per query. A scroll and short dwell after load keep the rhythm off a machine grid.
-3. Classifies every page after navigation:
-   - challenge → terminal bell, printed URL, window raised to the front, page re-inspected every 2 seconds; once you clear it the crawl resumes and page delays are multiplied by `--backoff-factor` (default ×1.6), so a challenged run automatically slows down;
-   - otherwise → parse the result page.
-4. Appends results to JSONL and flushes per page, and records the next unfetched offset per query in a state file. Ctrl+C, a crash or a handoff timeout never loses collected data; `--resume` continues from the cursor.
+3. Classifies every page after navigation: a challenge hands the window to a person ([what a block looks like](#what-a-block-looks-like)), anything else is parsed as a result page.
+4. Appends results to JSONL and flushes per page, recording the next unfetched offset per query in a state file, which is where `--resume` continues from.
 
 Detection uses the URL (`/sorry/`, `consent.google.`, `accounts.google.com`), DOM selectors (`#gs_captcha_ccl`, `#gs_captcha_f`, `form#captcha-form`, reCAPTCHA iframes) and body text when no results are present. Citation and version counts are read from link hrefs, so parsing is independent of the interface language.
 
@@ -386,8 +384,8 @@ $ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh
   20 records collected between 475 and 0 days ago
   17 older than 60 days (85% of the set)
   17 of those can be re-listed by id, one page load each; 0 would need their query re-run
-    375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network...
-    475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks...
+    375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network…
+    475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks…
 [out] 5 id(s) to re-list -> out/refresh.txt (of 17 records older than 60 days)
 ```
 
@@ -446,7 +444,7 @@ The thresholds exist so the run does not cry wolf: a single odd record (Scholar 
 ```
 $ scholar-digest out/all.jsonl --group-by venue --groups 4
   by venue                                 count  citations  median  years      most cited
-    Advances in neural information processin     1     119743  119743  2014       Generative adversarial nets
+    Advances in neural information processi…    1     119743  119743  2014       Generative adversarial nets
     nature                                       1     118913  118913  2015       Deep learning
     arXiv preprint                               2      44564   22282  2017-2021  Graph attention networks
     The world wide web                           1       4408    4408  2019       Heterogeneous graph attention network
@@ -788,7 +786,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 429 tests, fully offline
+python3 -m pytest -q     # 437 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -833,13 +831,14 @@ scholar_crawler/
   digest.py     offline digest: merge, filter, command line
   analysis.py   offline analysis: overview counts and grouping
   refresh.py    offline staleness: which records to collect again
-  graph.py      offline citation graph: edges, report, GraphML/DOT export
+  graph.py      offline citation graph: edges from collected records, who is cited most
   report.py     offline overview: the readable Markdown report
   audit.py      offline audit: implausible and missing fields
   bibsynth.py   offline bibliography: BibTeX from stored fields
   storage.py    JSONL writer, author profile records, the .bib file, resume state
   config.py     TOML settings files: reading, validation, precedence, provenance
   machine.py    the JSON document for programs: fixed keys, failure vocabulary, stdout discipline
+  text.py       fitting text to a terminal column, marking every cut
   cli.py        command-line entry point: flag definitions and mode dispatch
   __main__.py   makes python3 -m scholar_crawler equivalent to scholar-crawler
 tests/          offline tests, including headless-Chromium detection tests

@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from .text import clip
+
 Record = dict[str, Any]
 
 EARLIEST_YEAR = 1800
@@ -258,7 +260,7 @@ def _example(record: Record, check: Check) -> str:
     value = record.get(field)
     shown = str(value) if value not in (None, "") else "<empty>"
     title = _text(record, "title") or "<untitled>"
-    return f"{shown[:60]} | {title[:52]}"
+    return f"{clip(shown, 60)} | {clip(title, 52)}"
 
 
 def _ordered(findings: list[Finding]) -> list[Finding]:

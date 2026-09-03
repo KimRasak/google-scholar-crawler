@@ -92,12 +92,10 @@ scholar-digest out/rag.jsonl --report out/report.md   # 写成一份可读的 Ma
 
 ## 工作方式
 
-1. 用**持久化浏览器 profile** 启动有界面的 Chrome（`--profile`，默认 `.scholar-profile`）。人工通过的验证 Cookie 保存在这个目录里，后续运行复用，因此接管次数会越来越少。
+1. 用**持久化浏览器 profile** 启动有界面的 Chrome（`--profile`，默认 `.scholar-profile`）。
 2. 每次请求前随机等待（默认 4–11 秒），每 10 次请求长冷却 90 秒；计数覆盖整轮运行的全部请求（跨查询、跨作者、含 BibTeX 导出），换查询时不归零。页面加载后有滚动和随机停留，避免机器式的固定节奏。
-3. 每次导航后先做 challenge 判定：
-   - 命中 → 响铃 + 打印提示 + 把窗口提到最前，然后每 2 秒复检页面，人做完后自动回到抓取，并把页间延迟按 `--backoff-factor` 放大（默认 ×1.6），越被拦越慢；
-   - 未命中 → 解析当前结果页。
-4. 结果**逐页追加**写入 JSONL 并立即 flush，同时把「该查询下一个未抓取的 offset」写入 state 文件。中途 Ctrl+C、崩溃、接管超时都不会丢已抓到的数据，`--resume` 可从断点继续。
+3. 每次导航后先做 challenge 判定：命中就把窗口交给人（[被拦时会发生什么](#被拦时会发生什么)），未命中就解析当前结果页。
+4. 结果**逐页追加**写入 JSONL 并立即 flush，同时把「该查询下一个未抓取的 offset」写入 state 文件，`--resume` 从那里继续。
 
 判定依据是 URL（`/sorry/`、`consent.google.`、`accounts.google.com`）、DOM 选择器（`#gs_captcha_ccl`、`#gs_captcha_f`、`form#captcha-form`、reCAPTCHA iframe）以及无结果时的正文关键词；解析计数（被引数、版本数）从链接 href 判定，不依赖界面语言。
 
@@ -383,8 +381,8 @@ $ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh
   20 records collected between 475 and 0 days ago
   17 older than 60 days (85% of the set)
   17 of those can be re-listed by id, one page load each; 0 would need their query re-run
-    375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network...
-    475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks...
+    375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network…
+    475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks…
 [out] 5 id(s) to re-list -> out/refresh.txt (of 17 records older than 60 days)
 ```
 
@@ -443,7 +441,7 @@ $ scholar-digest out/*.jsonl --audit
 ```
 $ scholar-digest out/all.jsonl --group-by venue --groups 4
   by venue                                 count  citations  median  years      most cited
-    Advances in neural information processin     1     119743  119743  2014       Generative adversarial nets
+    Advances in neural information processi…    1     119743  119743  2014       Generative adversarial nets
     nature                                       1     118913  118913  2015       Deep learning
     arXiv preprint                               2      44564   22282  2017-2021  Graph attention networks
     The world wide web                           1       4408    4408  2019       Heterogeneous graph attention network
@@ -785,7 +783,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 429 个用例，全部离线
+python3 -m pytest -q     # 437 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -830,13 +828,14 @@ scholar_crawler/
   digest.py     离线汇总：合并去重、过滤、命令行
   analysis.py   离线分析：概览统计与分组
   refresh.py    离线判旧：该重抓哪些记录
-  graph.py      离线引文网络：还原边、体检、导出 GraphML/DOT
+  graph.py      离线引文网络：从已抓数据还原边、报告谁被引最多
   report.py     离线综述：可读的 Markdown 报告
   audit.py      离线体检：字段可疑值与缺失率
   bibsynth.py   离线书目：由已存字段拼出 BibTeX
   storage.py    JSONL 写入、作者主页记录、BibTeX 文件、断点状态
   config.py     TOML 设置文件：读取校验、与命令行的优先级、来源追溯
   machine.py    给程序看的一份 JSON 文档：字段固定、失败词表、stdout 只放它
+  text.py       终端列宽内的截断：截了就标出来
   cli.py        命令行入口：参数定义、模式分发
   __main__.py   让 python3 -m scholar_crawler 等价于 scholar-crawler
 tests/          离线测试（含 headless Chromium 判定测试）

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .models import record_key
+from .text import clip
 from .urls import parse_cluster_id
 
 Record = dict[str, Any]
@@ -224,5 +225,5 @@ def render_network(graph: Graph, *, top: int = 10) -> list[str]:
     for key, count in ranked:
         node = graph.nodes[key]
         total = f"{node.citations:,}" if node.citations is not None else "?"
-        lines.append(f"  {count:>4} here  {total:>9} on Scholar  {node.label[:64]}")
+        lines.append(f"  {count:>4} here  {total:>9} on Scholar  {clip(node.label, 64)}")
     return lines

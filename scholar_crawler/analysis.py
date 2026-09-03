@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from statistics import median
 from typing import Any
 
+from .text import clip
+
 Record = dict[str, Any]
 
 
@@ -238,8 +240,8 @@ def render_groups(groups: list[Group], key: str, *, limit: int = 10) -> list[str
             if group.last_year and group.last_year != group.first_year:
                 span += f"-{group.last_year}"
         lines.append(
-            f"  {group.label[:width]:<{width}} {group.records:>5} {group.citations:>10} "
-            f"{group.median_citations:>7}  {span:<9}  {group.best[1][:44]}"
+            f"  {clip(group.label, width):<{width}} {group.records:>5} {group.citations:>10} "
+            f"{group.median_citations:>7}  {span:<9}  {clip(group.best[1], 44)}"
         )
     if len(groups) > limit:
         lines.append(f"  ... and {len(groups) - limit} more groups")

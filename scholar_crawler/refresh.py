@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from .text import clip
 from .urls import parse_cluster_id
 
 Record = dict[str, Any]
@@ -89,7 +90,7 @@ class Aged:
         counted = f"{citations:,}" if isinstance(citations, int) else "?"
         how = f"--cluster {self.target}" if self.target else "no id; re-run its query"
         title = " ".join(str(self.record.get("title") or "untitled").split())
-        return f"{self.age_days:>5.0f}d  {counted:>9} citations  {how:<28} {title[:70]}"
+        return f"{self.age_days:>5.0f}d  {counted:>9} citations  {how:<28} {clip(title, 70)}"
 
 
 def _pressure(age_days: float, citations: int | None) -> float:
@@ -214,6 +215,6 @@ def render_refresh_list(aged: list[Aged], *, limit: int = DEFAULT_REFRESH_LIMIT)
     for cluster_id in kept:
         item = by_id[cluster_id]
         title = " ".join(str(item.record.get("title") or "untitled").split())
-        lines.append(f"# {item.age_days:.0f} days old: {title[:80]}")
+        lines.append(f"# {item.age_days:.0f} days old: {clip(title, 80)}")
         lines.append(cluster_id)
     return lines
