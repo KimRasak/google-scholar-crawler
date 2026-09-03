@@ -32,6 +32,14 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
+def test_the_first_recipe_collects_papers() -> None:
+    first = RECIPES[0]
+    argv = shlex.split(first.command)[1:]
+    args = build_parser().parse_args(argv)
+    assert args.query and args.out, f"the first recipe must collect, not diagnose: {first.command}"
+    assert not (args.doctor or args.dry_run or args.self_check or args.explain)
+
+
 def test_every_recipe_names_a_real_command_and_parses(workspace: Path) -> None:
     assert RECIPES, "the recipe list must not be empty"
     for recipe in RECIPES:
@@ -119,7 +127,9 @@ def test_a_run_with_no_arguments_points_at_the_recipes(
     captured = capsys.readouterr()
     assert "provide at least one --query" in captured.err
     assert "--recipes" in captured.err
-    assert "$ scholar-crawler --self-check" in captured.err
+    # The way out of this error is a command that collects, not another diagnostic.
+    assert "-q \"graph attention networks\"" in captured.err
+    assert captured.err.index("Collect one topic") < captured.err.index("--doctor")
 
 
 def test_a_usage_error_with_arguments_stays_terse(capsys: pytest.CaptureFixture[str]) -> None:

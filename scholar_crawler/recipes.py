@@ -26,9 +26,19 @@ class Recipe:
 
 RECIPES: tuple[Recipe, ...] = (
     Recipe(
+        purpose="Collect one topic — start here",
+        command='scholar-crawler -q "graph attention networks" -p 3 -o out/gat.jsonl',
+        note="3 pages, 10 records each, about a minute; clear any challenge in the window it opens",
+    ),
+    Recipe(
         purpose="Check that this machine can run a crawl at all",
         command="scholar-crawler --doctor",
         note="no requests; reports Python, the libraries, the browser and the directories",
+    ),
+    Recipe(
+        purpose="Cost a run before starting it",
+        command='scholar-crawler -q "diffusion models" -p 5 --bibtex out/refs.bib --dry-run',
+        note="prints page loads and duration; --bibtex costs two extra loads per record",
     ),
     Recipe(
         purpose="Check the parser against Scholar before trusting a long run",
@@ -54,16 +64,6 @@ RECIPES: tuple[Recipe, ...] = (
         purpose="Collect from a script or an agent, and parse the result",
         command='scholar-crawler -q "graph attention networks" -p 2 --json',
         note="one JSON object on stdout, every progress line on stderr; see AGENTS.md",
-    ),
-    Recipe(
-        purpose="Search one topic",
-        command='scholar-crawler -q "graph attention networks" -p 3 -o out/gat.jsonl',
-        note="3 pages, 10 records each, roughly a minute at the default rhythm",
-    ),
-    Recipe(
-        purpose="Cost a run before starting it",
-        command='scholar-crawler -q "diffusion models" -p 5 --bibtex out/refs.bib --dry-run',
-        note="prints page loads and duration; --bibtex costs two extra loads per record",
     ),
     Recipe(
         purpose="Search several topics into one file",
@@ -111,7 +111,12 @@ RECIPES: tuple[Recipe, ...] = (
         note="no requests at all; merges duplicates across files first",
     ),
 )
-"""The commands worth knowing, ordered from safest to most expensive."""
+"""The commands worth knowing.
+
+The first one collects papers, because that is what a reader came for; a list that opened with
+three diagnostics would answer a question nobody asked. After it come the checks, then roughly
+safest to most expensive.
+"""
 
 
 def render(recipes: tuple[Recipe, ...] = RECIPES) -> list[str]:
@@ -130,6 +135,8 @@ def render(recipes: tuple[Recipe, ...] = RECIPES) -> list[str]:
 
 def getting_started(count: int = 3) -> list[str]:
     """Format the first few recipes, for a run that was given nothing to do.
+
+    The first one collects, so the shortest path out of an error message is a working crawl.
 
     :param count: how many recipes to show.
     :returns: printable lines.

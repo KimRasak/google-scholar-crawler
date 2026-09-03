@@ -7,14 +7,81 @@ Runs academic searches on Google Scholar in a real browser (Playwright + your in
 
 The code never tries to solve, bypass or hide a verification challenge. Verification is done by a human, in a window they can see.
 
+## Three steps
+
+**1. Install** (two commands; details under [Install](#install))
+
+```sh
+pipx install git+https://github.com/KimRasak/google-scholar-crawler   # or pip install
+scholar-crawler --install-browser                                     # downloads Chromium once
+```
+
+**2. Collect once** (one request, about five seconds, in a real Chrome window)
+
+```sh
+$ scholar-crawler -q "retrieval augmented generation survey" -p 1 -o out/rag.jsonl
+[query] 'retrieval augmented generation survey' from offset 0
+[page] offset=0 parsed=10 new=10 total=~548000
+[out] 10 new records (0 duplicates skipped) -> out/rag.jsonl
+[run] 1 request in 5s, 0 takeovers, 0 navigation retries, delay now 4.0-11.0s
+```
+
+**3. See what you got**
+
+One record per line in `out/rag.jsonl`, carrying everything a Scholar result card shows (full field list under [Output](#output)):
+
+```json
+{"title":"Retrieval-augmented generation for large language models: A survey",
+ "authors":"Y Gao, Y Xiong, X Gao, K Jia, J Pan","year":2023,"venue":"arXiv preprint",
+ "cited_by_count":7878,"cited_by_url":"https://scholar.google.com/scholar?cites=...",
+ "cluster_id":"...","link":"...","query":"retrieval augmented generation survey"}
+```
+
+`out/state.json` appears alongside it — the resume cursor, so `--resume` continues from here next time. To see what a collection looks like, digest it without sending anything:
+
+```sh
+scholar-digest out/rag.jsonl                # size, years, venues, the most cited
+scholar-digest out/rag.jsonl --report out/report.md   # the same as readable Markdown
+```
+
+From here, pick a section from [Where to start](#where-to-start), or run `scholar-crawler --recipes` and copy a command. Calling it from an agent is one page: [AGENTS.md](AGENTS.md).
+
+## What a block looks like
+
+Google showing a verification page mid-crawl is normal, and this whole tool is built around that moment: **it does not recognize, bypass or hide a challenge** — it hands the window to a person. A real wait reads like this (with the URL replaced by a `/sorry/` one):
+
+```
+[handoff] captcha: matched #gs_captcha_ccl
+[handoff] URL: https://www.google.com/sorry/index?continue=...
+[handoff] The browser window is yours. Solve the challenge (or accept the
+[handoff] consent/sign-in page) and leave it on the Scholar result page.
+[handoff] No keypress needed — the page is re-checked every 2s and crawling resumes by itself. You have 600s to act.
+[handoff] Press Ctrl+C to stop instead.
+[handoff] waiting 15s so far, 585s left; still showing captcha
+[handoff] the page is now a sign_in: account sign-in wall
+[handoff] still waiting; 60s left before the run gives up and stops with whatever it collected
+[handoff] cleared after 128s — resuming automated crawl.
+[pace] backing off to 6.4-17.6s between pages
+```
+
+You have exactly one job: clear the challenge in the window that just came to the front, then press nothing. The details exist because the person it waits for has usually stepped away:
+
+- **No keypress is needed.** The page is re-inspected every two seconds and the crawl resumes by itself; the opening message says how long there is (`--handoff-timeout 0` waits forever).
+- **A change of challenge is announced.** Clearing a captcha only to land on a sign-in wall asks something different of you, so the wait says `the page is now a sign_in`.
+- **It rings again before giving up**, 60 seconds ahead, saying the run will stop with whatever it collected.
+- **Being challenged makes it slower.** After a takeover, page delays are multiplied by `--backoff-factor` (×1.6 by default), and the next run starts slower by reading [the takeover log](#the-takeover-log).
+- **Nothing is lost.** Records are flushed page by page, and under `--headless`, where nobody can take over, the run stops as `challenge_unattended` with everything collected so far still on disk.
+
+Expect one takeover on the very first run, because the profile has no cookies yet; once a human clears it, the cookies live in `.scholar-profile` and are reused. See also [Getting challenged less](#getting-challenged-less), [Rehearsing the human takeover](#rehearsing-the-human-takeover) and [Learning to slow down across runs](#learning-to-slow-down-across-runs).
+
 ## Where to start
 
 | Your situation | Sections to read |
 | --- | --- |
-| First time | [Install](#install) → [Usage](#usage) (run `--recipes` and `--self-check` first) |
-| Collecting a batch | [Usage](#usage) → [Settings files](#settings-files---config) → [Reading the command back](#reading-the-command-back---explain) → [Counting the cost first](#counting-the-cost-first---dry-run) → [Options](#options) → [Output](#output) |
+| First time | [Three steps](#three-steps) → [What a block looks like](#what-a-block-looks-like) |
+| Collecting a batch | [More commands](#more-commands) → [Settings files](#settings-files---config) → [Reading the command back](#reading-the-command-back---explain) → [Counting the cost first](#counting-the-cost-first---dry-run) → [Options](#options) → [Output](#output) |
 | Using what you collected | [A readable overview](#a-readable-overview---report) → [Building a bibliography offline](#building-a-bibliography-offline) → [Grouping](#grouping) |
-| Getting blocked | [The takeover log](#the-takeover-log) → [Learning to slow down across runs](#learning-to-slow-down-across-runs) → [Getting challenged less](#getting-challenged-less) → [Rehearsing the human takeover](#rehearsing-the-human-takeover) |
+| Getting blocked | [What a block looks like](#what-a-block-looks-like) → [The takeover log](#the-takeover-log) → [Learning to slow down across runs](#learning-to-slow-down-across-runs) → [Getting challenged less](#getting-challenged-less) → [Rehearsing the human takeover](#rehearsing-the-human-takeover) |
 | It stopped with an error | [Failures in plain words](#failures-in-plain-words) → [Self-check](#self-check) |
 | Parsing looks wrong | [Self-check](#self-check) → [Real-structure regression fixtures](#real-structure-regression-fixtures) → `--dump-html` |
 | Interrupted run | [Reviewing and resetting resume state](#reviewing-and-resetting-resume-state) → `--resume` |
@@ -36,14 +103,7 @@ Detection uses the URL (`/sorry/`, `consent.google.`, `accounts.google.com`), DO
 
 ## Install
 
-Two commands:
-
-```sh
-pipx install git+https://github.com/KimRasak/google-scholar-crawler   # or pip install
-scholar-crawler --install-browser                                     # downloads Chromium once
-```
-
-`--install-browser` runs Playwright's download through the current interpreter, so the browser lands in the right place whether the tool sits in a pipx environment, a venv, or the system Python. It is the one step a new user cannot guess, which is why it is a command rather than a paragraph.
+`pipx install git+https://github.com/KimRasak/google-scholar-crawler` then `scholar-crawler --install-browser` is the whole install (see [Three steps](#three-steps)). The second command runs Playwright's download through the current interpreter, so the browser lands in the right place whether the tool sits in a pipx environment, a venv, or the system Python. It is the one step a new user cannot guess, which is why it is a command rather than a paragraph.
 
 To change the code, install from a checkout:
 
@@ -78,15 +138,18 @@ Two deliberate choices: a missing Chrome is only a warning, because the bundled 
 
 Once the machine is sound, `--self-check` goes on to test the network.
 
-## Usage
+## More commands
 
-Rather than reading the flag table, start from `--recipes`: seventeen complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, a settings file, calling it from a program, one topic, costing a run, batch queries, an author, crawling the citation graph, resuming, auditing, who cites whom inside a collection, staleness and refreshing, keeping a collection current, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
+Rather than reading the flag table, start from `--recipes`: seventeen complete commands to copy. **The first one collects a topic** — a list opening with three diagnostics would answer a question nobody asked. The checks come after it, and the rest run roughly from cheapest to most expensive. A run given nothing to do prints the first three after the error, so copying a line out of the error message starts a crawl.
 
 ```sh
 $ scholar-crawler --recipes
-1. Check the parser against Scholar before trusting a long run
-   $ scholar-crawler --self-check
-     one request; reports per field whether Scholar's layout still parses
+1. Collect one topic — start here
+   $ scholar-crawler -q "graph attention networks" -p 3 -o out/gat.jsonl
+     3 pages, 10 records each, about a minute; clear any challenge in the window it opens
+2. Check that this machine can run a crawl at all
+   $ scholar-crawler --doctor
+     no requests; reports Python, the libraries, the browser and the directories
 ...
 ```
 
@@ -121,30 +184,6 @@ scholar-crawler --author "https://scholar.google.com/citations?user=kukA0LcAAAAJ
 # Scholar's advanced syntax goes straight into the query
 scholar-crawler -q 'author:"Yoshua Bengio" source:"NeurIPS"' -p 2
 ```
-
-A takeover looks like this (real output from a wait, with the URL replaced by a `/sorry/` one):
-
-```
-[handoff] captcha: matched #gs_captcha_ccl
-[handoff] URL: https://www.google.com/sorry/index?continue=...
-[handoff] The browser window is yours. Solve the challenge (or accept the
-[handoff] consent/sign-in page) and leave it on the Scholar result page.
-[handoff] No keypress needed — the page is re-checked every 2s and crawling resumes by itself. You have 600s to act.
-[handoff] Press Ctrl+C to stop instead.
-[handoff] waiting 15s so far, 585s left; still showing captcha
-[handoff] the page is now a sign_in: account sign-in wall
-[handoff] still waiting; 60s left before the run gives up and stops with whatever it collected
-[handoff] cleared after 128s — resuming automated crawl.
-[pace] backing off to 6.4-17.6s between pages
-```
-
-The wait does not go quiet on you, because the person it is waiting for has usually stepped away:
-
-- **No keypress is needed.** The page is re-inspected every `--poll` seconds and the crawl resumes by itself. The opening message states how long there is, or says the wait has no limit under `--handoff-timeout 0`.
-- **Progress is reported** — how long it has waited, how much is left, and which kind of challenge is still showing.
-- **A change of challenge is announced.** Clearing a captcha only to land on a sign-in wall asks something different of you, so the wait says `the page is now a sign_in`.
-- **It rings again before giving up**, 60 seconds ahead, saying the run will stop with whatever it collected. When the first bell went unheard, this is the one that matters.
-- **The timeout message names what happened**: `the window showed captcha -> sign_in` tells you afterwards which step actually blocked.
 
 ## Calling it from a program: `--json`
 
@@ -734,7 +773,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 428 tests, fully offline
+python3 -m pytest -q     # 429 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 

@@ -7,14 +7,81 @@
 
 程序不尝试识别、绕过或隐藏任何验证 challenge——验证只由人在可见窗口里完成。
 
+## 三步跑起来
+
+**一、装**（两条命令；细节见[安装](#安装)）
+
+```sh
+pipx install git+https://github.com/KimRasak/google-scholar-crawler   # 或 pip install
+scholar-crawler --install-browser                                     # 下载 Playwright 用的 Chromium
+```
+
+**二、抓一次**（一次请求，约 5 秒，会弹出一个真实的 Chrome 窗口）
+
+```sh
+$ scholar-crawler -q "retrieval augmented generation survey" -p 1 -o out/rag.jsonl
+[query] 'retrieval augmented generation survey' from offset 0
+[page] offset=0 parsed=10 new=10 total=~548000
+[out] 10 new records (0 duplicates skipped) -> out/rag.jsonl
+[run] 1 request in 5s, 0 takeovers, 0 navigation retries, delay now 4.0-11.0s
+```
+
+**三、看拿到了什么**
+
+`out/rag.jsonl` 每行一条记录，字段是 Scholar 结果卡片上能看到的一切（完整字段表见[输出](#输出)）：
+
+```json
+{"title":"Retrieval-augmented generation for large language models: A survey",
+ "authors":"Y Gao, Y Xiong, X Gao, K Jia, J Pan","year":2023,"venue":"arXiv preprint",
+ "cited_by_count":7878,"cited_by_url":"https://scholar.google.com/scholar?cites=...",
+ "cluster_id":"...","link":"...","query":"retrieval augmented generation survey"}
+```
+
+同时出现 `out/state.json`（断点，下次加 `--resume` 就接着抓）。想看看一份集合长什么样，接着跑一条不发请求的汇总：
+
+```sh
+scholar-digest out/rag.jsonl                # 规模、年份、期刊、被引最高的几篇
+scholar-digest out/rag.jsonl --report out/report.md   # 写成一份可读的 Markdown
+```
+
+再往下要么按[从哪读起](#从哪读起)挑一节，要么直接 `scholar-crawler --recipes` 复制现成命令。给 AI agent 调用的话，一页读完的约定在 [AGENTS.md](AGENTS.md)。
+
+## 被拦时会发生什么
+
+抓着抓着 Google 弹出验证是正常的，这个工具的整个设计就是围绕这件事：**它不认、不绕、不藏**，只把窗口交给人。真实的等待过程长这样（只把 URL 换成了 `/sorry/`）：
+
+```
+[handoff] captcha: matched #gs_captcha_ccl
+[handoff] URL: https://www.google.com/sorry/index?continue=...
+[handoff] The browser window is yours. Solve the challenge (or accept the
+[handoff] consent/sign-in page) and leave it on the Scholar result page.
+[handoff] No keypress needed — the page is re-checked every 2s and crawling resumes by itself. You have 600s to act.
+[handoff] Press Ctrl+C to stop instead.
+[handoff] waiting 15s so far, 585s left; still showing captcha
+[handoff] the page is now a sign_in: account sign-in wall
+[handoff] still waiting; 60s left before the run gives up and stops with whatever it collected
+[handoff] cleared after 128s — resuming automated crawl.
+[pace] backing off to 6.4-17.6s between pages
+```
+
+你要做的只有一件事：在弹到最前面的那个窗口里把验证做完，然后什么都不用按。几个为「人离开了一会儿」准备的细节：
+
+- **不需要按键**：程序每 2 秒重看一眼页面，恢复正常就继续；开头就说明还剩多少时间（`--handoff-timeout 0` 是无限等）。
+- **验证类型变了会说**：验证码点完却跳出登录墙时你要做的事不一样，所以它明确报出来（`the page is now a sign_in`）。
+- **放弃前再响一次铃**：超时前 60 秒重新响铃，并说明「再不处理就带着已抓到的数据停机」。
+- **越被拦越慢**：接管一次之后页间延迟按 `--backoff-factor` 放大（默认 ×1.6），下次运行也会参考[接管记录](#接管记录)自动起得更慢。
+- **数据不会丢**：结果逐页落盘，`--headless` 下无人可接管时会以 `challenge_unattended` 停机，已抓到的仍在文件里。
+
+第一次运行大概率会被拦一次（profile 里还没有 Cookie）；人工过一次之后 Cookie 存在 `.scholar-profile` 里复用，后面就少多了。相关几节：[降低验证频率](#降低验证频率)、[演练人工接管](#演练人工接管)、[跨运行学会减速](#跨运行学会减速)。
+
 ## 从哪读起
 
 | 你的情况 | 读这几节 |
 | --- | --- |
-| 第一次用 | [安装](#安装) → [快速开始](#快速开始)（先跑 `--recipes` 和 `--self-check`） |
-| 想抓一批数据 | [快速开始](#快速开始) → [把常用参数写进文件：`--config`](#把常用参数写进文件--config) → [先把命令读回来：`--explain`](#先把命令读回来--explain) → [先算账：`--dry-run`](#先算账--dry-run) → [常用参数](#常用参数) → [输出](#输出) |
+| 第一次用 | [三步跑起来](#三步跑起来) → [被拦时会发生什么](#被拦时会发生什么) |
+| 想抓一批数据 | [更多用法](#更多用法) → [把常用参数写进文件：`--config`](#把常用参数写进文件--config) → [先把命令读回来：`--explain`](#先把命令读回来--explain) → [先算账：`--dry-run`](#先算账--dry-run) → [常用参数](#常用参数) → [输出](#输出) |
 | 抓完了要用数据 | [出一份可读的综述](#出一份可读的综述--report) → [离线生成参考文献](#离线生成参考文献) → [分组统计](#分组统计) |
-| 被验证码拦了 | [接管记录](#接管记录) → [跨运行学会减速](#跨运行学会减速) → [降低验证频率](#降低验证频率) → [演练人工接管](#演练人工接管) |
+| 被验证码拦了 | [被拦时会发生什么](#被拦时会发生什么) → [接管记录](#接管记录) → [跨运行学会减速](#跨运行学会减速) → [降低验证频率](#降低验证频率) → [演练人工接管](#演练人工接管) |
 | 程序报错停了 | [出错时给人话](#出错时给人话) → [自检](#自检) |
 | 解析结果不对 | [自检](#自检) → [真实结构回归夹具](#真实结构回归夹具) → `--dump-html` |
 | 中途断了 | [查看与重置断点](#查看与重置断点) → `--resume` |
@@ -36,14 +103,7 @@
 
 ## 安装
 
-两条命令，装完即可用：
-
-```sh
-pipx install git+https://github.com/KimRasak/google-scholar-crawler   # 或 pip install
-scholar-crawler --install-browser                                     # 下载 Playwright 用的 Chromium
-```
-
-`--install-browser` 用当前解释器去执行 Playwright 的下载，所以无论装在 pipx 的独立环境、venv 还是全局，浏览器都落在对的地方——这一步是新装用户唯一猜不到的动作，所以它是一个命令而不是一段说明。
+`pipx install git+https://github.com/KimRasak/google-scholar-crawler` 之后 `scholar-crawler --install-browser`，两条就够（见[三步跑起来](#三步跑起来)）。第二条用当前解释器去执行 Playwright 的下载，所以无论装在 pipx 的独立环境、venv 还是全局，浏览器都落在对的地方——这一步是新装用户唯一猜不到的动作，所以它是一个命令而不是一段说明。
 
 想改代码就从源码装：
 
@@ -78,15 +138,18 @@ $ scholar-crawler --doctor
 
 环境没问题之后再用 `--self-check` 去碰网络。
 
-## 快速开始
+## 更多用法
 
-不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十七条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、设置文件、给程序调用、单查询、先算账、批量查询、作者主页、抓引文网络、断点续抓、数据体检、看清集合内部引用、判旧与重抓、维护文献库、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
+不想读参数表就先看 `--recipes`：十七条可以直接复制的完整命令。**第一条就是「抓一个主题」**——列表开头摆三条体检命令，等于回答没人问过的问题；抓取之后才是各种检查，再往后大致按「越靠后越贵」排。什么都不传时报错后也会列出前三条，所以从错误信息里抄一条就能开始抓。
 
 ```sh
 $ scholar-crawler --recipes
-1. Check the parser against Scholar before trusting a long run
-   $ scholar-crawler --self-check
-     one request; reports per field whether Scholar's layout still parses
+1. Collect one topic — start here
+   $ scholar-crawler -q "graph attention networks" -p 3 -o out/gat.jsonl
+     3 pages, 10 records each, about a minute; clear any challenge in the window it opens
+2. Check that this machine can run a crawl at all
+   $ scholar-crawler --doctor
+     no requests; reports Python, the libraries, the browser and the directories
 ...
 ```
 
@@ -121,30 +184,6 @@ scholar-crawler --author "https://scholar.google.com/citations?user=kukA0LcAAAAJ
 # Scholar 高级语法直接写进 query
 scholar-crawler -q 'author:"Yoshua Bengio" source:"NeurIPS"' -p 2
 ```
-
-运行中出现验证时终端会打印（下面是真实等待过程的输出，只把 URL 换成了 `/sorry/`）：
-
-```
-[handoff] captcha: matched #gs_captcha_ccl
-[handoff] URL: https://www.google.com/sorry/index?continue=...
-[handoff] The browser window is yours. Solve the challenge (or accept the
-[handoff] consent/sign-in page) and leave it on the Scholar result page.
-[handoff] No keypress needed — the page is re-checked every 2s and crawling resumes by itself. You have 600s to act.
-[handoff] Press Ctrl+C to stop instead.
-[handoff] waiting 15s so far, 585s left; still showing captcha
-[handoff] the page is now a sign_in: account sign-in wall
-[handoff] still waiting; 60s left before the run gives up and stops with whatever it collected
-[handoff] cleared after 128s — resuming automated crawl.
-[pace] backing off to 6.4-17.6s between pages
-```
-
-等待期间它不会闷着不说话——这是给「人离开了一会儿」准备的：
-
-- **不需要按任何键**：程序自己每 `--poll` 秒重新看一眼页面，页面恢复正常就继续。开头就说清剩多少时间（`--handoff-timeout 0` 则说明「无限等」）。
-- **定期报进度**：已等多久、还剩多久、当前仍是哪一类验证。
-- **验证类型变了会说**：验证码点完却跳出登录墙时，你要做的事不一样，所以它明确报出来（`the page is now a sign_in`）。
-- **放弃前再响一次铃**：超时前 60 秒会重新响铃并说明「再不处理就带着已抓到的数据停机」——第一次铃没听见时，这一声才是真正有用的那声。
-- **超时信息带上经过**：`the window showed captcha -> sign_in`，事后能看出当时到底卡在哪一步。
 
 ## 给程序调用：`--json`
 
@@ -731,7 +770,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 428 个用例，全部离线
+python3 -m pytest -q     # 429 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
