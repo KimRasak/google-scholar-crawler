@@ -9,6 +9,7 @@ flag that breaks the pattern fails here rather than confusing someone later.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -115,3 +116,21 @@ def test_size_thresholds_and_counts_are_named_apart() -> None:
     assert "--min-citations" in DIGEST, "a threshold reads as a minimum, not as a count"
     assert "cited fewer times" in (DIGEST["--min-citations"].help or "")
     assert "groups to list" in (DIGEST["--groups"].help or "")
+
+
+@pytest.mark.parametrize(
+    ("parser", "options"), [(crawler_parser(), CRAWLER), (digest_parser(), DIGEST)]
+)
+def test_the_usage_line_stays_short_and_names_real_flags(
+    parser: argparse.ArgumentParser, options: dict[str, argparse.Action]
+) -> None:
+    # Usage is written by hand because argparse's generated one fills the screen; the price of
+    # writing it is that a renamed flag could leave it lying, so the test reads it back.
+    usage = parser.format_usage().removeprefix("usage: ").splitlines()
+    assert len(usage) <= 3, "usage is the shapes a run takes, not the flag list"
+    for line in usage:
+        assert line.strip().startswith(parser.prog)
+    named = re.findall(r"--[a-z][a-z-]+", parser.format_usage())
+    assert named, "a usage line that names no flag says nothing"
+    for option in named:
+        assert option in options, f"usage names {option}, which the parser does not define"

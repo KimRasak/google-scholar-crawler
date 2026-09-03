@@ -36,8 +36,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     :returns: the configured argument parser.
     """
+    # argparse's generated usage lists all forty-odd flags and fills the screen before the
+    # first line of help. These three lines are the shapes a run actually takes.
     parser = argparse.ArgumentParser(
         prog="scholar-crawler",
+        usage=(
+            "scholar-crawler -q QUERY [-p PAGES] [-o FILE] [options]\n"
+            "       scholar-crawler (--cites ID | --cluster ID | --author ID) [options]\n"
+            "       scholar-crawler (--recipes | --doctor | --self-check | --dry-run | --explain)"
+        ),
         description="Search Google Scholar in a real browser; hand the window to a human on CAPTCHA.",
         epilog=(
             "Most of these flags exist to be left alone. Run --recipes for complete commands "

@@ -124,6 +124,7 @@ $ scholar-crawler --doctor
 [doctor] + playwright             1.60.0
 [doctor] + bs4                    4.14.3
 [doctor] + lxml                   6.1.0
+[doctor] + settings files         tomllib (stdlib) reads --config files
 [doctor] + bundled chromium       /Users/you/Library/Caches/ms-playwright/chromium-1223/...
 [doctor] + browser channel        chrome at /Applications/Google Chrome.app/...
 [doctor] ! profile                .scholar-profile holds no cookies yet, so the first challenge will need a human
@@ -132,7 +133,7 @@ $ scholar-crawler --doctor
 [doctor]   profile: expect one takeover on the first run; the cleared cookies are then reused
 ```
 
-It checks the Python version against 3.10, that all three dependencies import and are no older than the floors declared in `pyproject.toml`, that Playwright's own Chromium was actually downloaded, that the browser `--channel` names can be found, whether the profile already holds cookies from earlier runs, and whether the output and state directories can be written. Every failure names the command that fixes it (`pip install -e .`, `playwright install chromium`, `--channel ''`, …), and any `x` exits 1.
+It checks the Python version against 3.10, that all three dependencies import and are no older than the floors declared in `pyproject.toml`, that TOML settings files can be read (stdlib `tomllib` from 3.11, `tomli` on 3.10), that Playwright's own Chromium was actually downloaded, that the browser `--channel` names can be found, whether the profile already holds cookies from earlier runs, and whether the output and state directories can be written. Every failure names the command that fixes it (`pip install -e .`, `playwright install chromium`, `--channel ''`, …), and any `x` exits 1.
 
 Two deliberate choices: a missing Chrome is only a warning, because the bundled Chromium runs fine, and the check creates no directories — a mistyped path should not leave empty shells on disk, so it probes the closest existing ancestor and says plainly that the directory does not exist yet while its parent is writable.
 
@@ -639,12 +640,26 @@ Behaviour that used to be verified once against the real Scholar now runs on eve
 When results come back empty and you suspect a Scholar layout change, spend one request on the self-check:
 
 ```sh
-scholar-crawler --self-check
+$ scholar-crawler --self-check
+[check] fetching one page for 'machine learning'
+[check] results_parsed   ok    10 records on the page
+[check] titles           ok    10/10 have a title
+[check] links            ok    10/10 non-citation records have a link
+[check] bylines          ok    10/10 have an author line
+[check] years            ok    10/10 have a year
+[check] snippets         ok    10/10 have a snippet
+[check] card_ids         ok    10/10 carry Scholar's data-cid (needed for BibTeX)
+[check] citation_counts  ok    10/10 link their citing works
+[check] total_estimate   ok    result count read as 6010000
+[check] pagination       ok    next-page link found
+[check] all 10 checks passed
 ```
 
-It fetches one page of a broad query and reports, field by field, whether titles, links, author lines, years, snippets, `data-cid`s, citing-works links, the result count and the next-page link still parse. Exit code 0 means everything held; 1 lists what failed and points at `--dump-html`.
+It fetches one page of a broad query and reports, field by field, whether titles, links, author lines, years, snippets, `data-cid`s, citing-works links, the result count and the next-page link still parse. Exit code 0 means everything held; any `x` exits 1 and points at `--dump-html` for a copy of the page. The output above is a real run; when Scholar changes its markup, `card_ids` and `citation_counts` are usually the first to go.
 
 ## Options
+
+`--help` opens with the three shapes a run takes (a search, an id, an offline mode) rather than filling a screen with forty flags; the full list follows it in groups, and the table below is the same set arranged by purpose.
 
 | Option | Meaning |
 | --- | --- |

@@ -223,6 +223,10 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         prog="scholar-digest",
+        usage=(
+            "scholar-digest FILE... [--report FILE] [--bibtex FILE] [-o FILE] [options]\n"
+            "       scholar-digest --collection DIR [--since FILE] [options]"
+        ),
         description="Merge, filter and summarize crawled JSONL files. Reads local files only.",
         epilog=(
             "Records are merged and deduplicated first; every report and file below covers the "

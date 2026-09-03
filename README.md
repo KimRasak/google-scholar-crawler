@@ -124,6 +124,7 @@ $ scholar-crawler --doctor
 [doctor] + playwright             1.60.0
 [doctor] + bs4                    4.14.3
 [doctor] + lxml                   6.1.0
+[doctor] + settings files         tomllib (stdlib) reads --config files
 [doctor] + bundled chromium       /Users/you/Library/Caches/ms-playwright/chromium-1223/...
 [doctor] + browser channel        chrome at /Applications/Google Chrome.app/...
 [doctor] ! profile                .scholar-profile holds no cookies yet, so the first challenge will need a human
@@ -132,7 +133,7 @@ $ scholar-crawler --doctor
 [doctor]   profile: expect one takeover on the first run; the cleared cookies are then reused
 ```
 
-检查项：Python 版本是否达到 3.10、三个依赖是否装上且版本不低于 `pyproject.toml` 声明的下限、Playwright 自带的 Chromium 是否真的下载了、`--channel` 指定的浏览器是否找得到、profile 里有没有以前攒下的 cookie、输出与断点文件的目录是否可写。每项失败都给出具体的修复命令（`pip install -e .`、`playwright install chromium`、`--channel ''`……），有 `x` 就退出码 1。
+检查项：Python 版本是否达到 3.10、三个依赖是否装上且版本不低于 `pyproject.toml` 声明的下限、能不能读 TOML 设置文件（3.11 起是标准库的 `tomllib`，3.10 需要 `tomli`）、Playwright 自带的 Chromium 是否真的下载了、`--channel` 指定的浏览器是否找得到、profile 里有没有以前攒下的 cookie、输出与断点文件的目录是否可写。每项失败都给出具体的修复命令（`pip install -e .`、`playwright install chromium`、`--channel ''`……），有 `x` 就退出码 1。
 
 两个刻意的设计：找不到 Chrome 只算警告（自带 Chromium 照样能跑），而体检本身不会创建任何目录——路径打错了不该在磁盘上留下空壳，所以它探测的是最近的已存在上级目录，并如实写明「目录还不存在，但上级可写」。
 
@@ -635,12 +636,26 @@ python3 -m tests.sanitize out/dump/<结果页>.html tests/pages/results.html 6
 先 `--doctor` 确认本机装好了（见[安装](#安装)），再用自检碰网络。怀疑 Scholar 改版、解析结果变空时，先跑一次自检（只发一次请求）：
 
 ```sh
-scholar-crawler --self-check
+$ scholar-crawler --self-check
+[check] fetching one page for 'machine learning'
+[check] results_parsed   ok    10 records on the page
+[check] titles           ok    10/10 have a title
+[check] links            ok    10/10 non-citation records have a link
+[check] bylines          ok    10/10 have an author line
+[check] years            ok    10/10 have a year
+[check] snippets         ok    10/10 have a snippet
+[check] card_ids         ok    10/10 carry Scholar's data-cid (needed for BibTeX)
+[check] citation_counts  ok    10/10 link their citing works
+[check] total_estimate   ok    result count read as 6010000
+[check] pagination       ok    next-page link found
+[check] all 10 checks passed
 ```
 
-它抓一页固定的宽泛查询，逐项报告标题、链接、作者行、年份、摘要、`data-cid`、被引链接、结果总数、下一页是否都还能解析出来，全通过退出码 0，任一项失败退出码 1 并提示用 `--dump-html` 保存页面。
+它抓一页固定的宽泛查询，逐项报告标题、链接、作者行、年份、摘要、`data-cid`、被引链接、结果总数、下一页是否都还能解析出来。全通过退出码 0；任一项变成 `x` 就退出码 1，并提示用 `--dump-html` 把页面存下来对比。上面这份输出是真跑出来的，Scholar 改版时最先变的通常是 `card_ids` 或 `citation_counts`。
 
 ## 常用参数
+
+`--help` 开头只列三种运行形态（检索、按 id 抓、离线模式），而不是把四十多个旗标铺满一屏；完整列表在 `--help` 的分组里，下面这张表是同一批参数按用途的中文对照。
 
 | 参数 | 说明 |
 | --- | --- |
