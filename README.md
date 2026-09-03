@@ -510,17 +510,19 @@ $ scholar-crawler --show-state
 [state] 3 targets in out/state.json (1 finished)
 [state]   attention is all you need [en] — next offset 30, 2026-09-02 10:45:51 UTC
 [handoff] 2 takeovers in out/challenges.jsonl (captcha x2)
-[handoff]   2026-09-02T12:26:23+00:00  captcha -> unattended, waited 6s (after 11 requests, loading 20)
+[handoff]   2026-09-02T12:26:23+00:00  captcha -> unattended, waited 6s (on request 11, loading 20)
 [handoff]     matched form#captcha-form at about:blank
 ```
 
-一条记录包含：时间、类型（`captcha`/`rate_limit`/`consent`）、检测器命中的是什么、被拦在哪个 URL、这轮此前已发了多少次请求、是否连续被拦（第几次）、等了人多久、等待期间页面依次变成过哪些验证类型（`became sign_in`）、以及结局——`resolved`（人解完了，继续抓）、`unattended`（`--headless` 拒绝或等待超时）、`budget`（用满 `--max-handoffs` 停机）、`interrupted`（Ctrl+C）、`rehearsed`（演练）。
+一条记录有 10 个字段：时间 `at`、类型 `kind`（`captcha`/`rate_limit`/`consent`）、检测器命中的是什么 `reason`、被拦在哪个 URL（`url`，已脱敏）、这轮的第几次请求被拦 `request_index`（算上被拦这一次）、是否连续被拦 `consecutive`（第几次）、等了人多久 `waited`、被拦时正在取哪个目标 `target`、等待期间页面依次变成过哪些验证类型 `saw`（`became sign_in`）、以及结局 `outcome`——`resolved`（人解完了，继续抓）、`unattended`（`--headless` 拒绝或等待超时）、`budget`（用满 `--max-handoffs` 停机）、`interrupted`（Ctrl+C）、`rehearsed`（演练）。
 
 有了这些，事后能回答真正要紧的问题：是抓到第几次请求被拦的、是不是解完一次又立刻被拦（说明当前节奏还是太快）、还是根本没人在电脑前。
 
 **URL 会脱敏后再写入**：`/sorry/` 这类验证页上的 `q` 是验证令牌而不是查询词，所以整条只留 `hl`；普通检索页则保留 `q`、`start`、`cites`、`cluster`、`user` 等描述请求的参数，`scisig` 之类签名参数一律写成 `REDACTED`。所以这个文件可以放心留存和分享。
 
-`--rehearse-handoff` 演练时也会写一条（`outcome=rehearsed`），顺带证明这个日志路径是可写的——不必等真被拦时才发现写不进去。
+`--rehearse-handoff` 演练时也会写一条，顺带证明这个日志路径是可写的——不必等真被拦时才发现写不进去。演练走完记 `rehearsed`，但没人理它超时了就记 `unattended`，用 Ctrl+C 结束（文档里推荐的提前结束方式）则记 `interrupted`。所以「是不是演练」看的是 `target` 是否为 `rehearsal`，而不是看结局；`--show-state` 会在这类记录后标上 `(drill)`。否则演练完走开一次，之后每次运行都会被拖慢，还会声称「这个 profile 在第 0 次请求就被拦」。
+
+`--json` 里，只有真发生过接管的那次运行才会在 `files` 里多出一个 `challenges` 指向这个文件：接管是唯一一件程序无法从文档里重建的事（它发生在浏览器窗口里、由人处理），所以文档得指出证据在哪；没被拦过就不列，免得让调用方去读一个不存在的文件。
 
 ### 本轮内的减速
 
@@ -541,7 +543,7 @@ $ scholar-crawler -q "graph attention networks" -p 5
 - 被拦 ≥2 次：×1.3；≥5 次：×1.6。
 - 出现过「解完一次立刻又被拦」：再 +0.2（说明解验证码并没有恢复信任）。
 - 通常在第 30 次请求以内就被拦：再 +0.2（说明问题是节奏，而不是抓得多）。
-- 各项加起来最多 ×2.0，这不是一道额外的封顶，而是这几项之和；一条测试穷举所有组合来保证这句话成立。演练记录（`outcome=rehearsed`）不算证据。
+- 各项加起来最多 ×2.0，这不是一道额外的封顶，而是这几项之和；一条测试穷举所有组合来保证这句话成立。演练记录不算证据，不管它是怎么结束的。
 
 你自己传了 `--min-delay`/`--max-delay` 时，它绝不会覆盖你的选择——只打印历史，并说明「按你传的值跑」。`--no-learn-from-history` 完全关掉这个行为。`--dry-run` 里的用时估算也会用学到的节奏，所以能先看到「这轮会慢多少」。
 
@@ -815,7 +817,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 462 个用例，全部离线
+python3 -m pytest -q     # 466 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -836,7 +838,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 46 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 48 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

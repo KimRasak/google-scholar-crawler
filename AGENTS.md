@@ -57,7 +57,9 @@ reports rather than results.
 ```
 
 With `--dry-run` the document adds `"plan": {"page_loads", "records_at_most", "seconds",
-"cooldowns", "targets"}` and collects nothing.
+"cooldowns", "targets"}` and collects nothing. `files` names only the files the run actually
+wrote; `counts.takeovers > 0` adds `challenges`, the JSONL log of what blocked the run and how
+each takeover ended.
 
 One record carries exactly these keys: `cluster_id`, `position`, `title`, `link`,
 `resource_link`, `resource_type`, `byline`, `authors`, `venue`, `year`, `snippet`,

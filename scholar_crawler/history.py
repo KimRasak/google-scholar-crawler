@@ -16,9 +16,6 @@ from statistics import median
 
 from .storage import ChallengeRecord
 
-REHEARSED = "rehearsed"
-"""Drills are excluded: they prove the takeover path works, not that Scholar blocked us."""
-
 CROWDED = 30
 """Blocks arriving within this many requests mean the rhythm, not the volume, is the problem."""
 
@@ -59,10 +56,15 @@ class History:
 def read_history(entries: list[ChallengeRecord]) -> History:
     """Summarize a challenge log.
 
+    Drills are excluded: they prove the takeover path works, not that Scholar blocked us. They
+    are identified by :attr:`ChallengeRecord.drill` rather than by outcome, because a drill
+    nobody attends records ``unattended`` and one ended with Ctrl+C records ``interrupted`` —
+    either would otherwise read as evidence that this profile gets blocked at request 0.
+
     :param entries: records read from the challenge log, oldest first.
     :returns: the history; ``blocks`` is 0 when nothing but rehearsals was recorded.
     """
-    blocks = [entry for entry in entries if entry.outcome != REHEARSED]
+    blocks = [entry for entry in entries if not entry.drill]
     if not blocks:
         return History(blocks=0, back_to_back=0, typical_request=None, last_at=None, kinds={})
     kinds: dict[str, int] = {}

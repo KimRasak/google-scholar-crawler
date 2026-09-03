@@ -22,7 +22,12 @@ from scholar_crawler.storage import ChallengeLog, ChallengeRecord  # noqa: E402
 
 
 def _block(
-    request_index: int = 20, *, consecutive: int = 1, kind: str = "captcha", outcome: str = "resolved"
+    request_index: int = 20,
+    *,
+    consecutive: int = 1,
+    kind: str = "captcha",
+    outcome: str = "resolved",
+    target: str = "0",
 ) -> ChallengeRecord:
     return ChallengeRecord(
         at=f"2026-09-0{min(request_index % 9 + 1, 9)}T10:00:00+00:00",
@@ -33,7 +38,7 @@ def _block(
         consecutive=consecutive,
         waited=30.0,
         outcome=outcome,
-        target="0",
+        target=target,
     )
 
 
@@ -43,6 +48,20 @@ def test_rehearsals_are_not_evidence_of_being_blocked() -> None:
     assert history.typical_request is None
     assert advise([_block(outcome="rehearsed")], 4.0, 11.0) is None
     assert advise([], 4.0, 11.0) is None
+
+
+def test_an_unattended_drill_is_still_a_drill() -> None:
+    # Nobody watching a --rehearse-handoff drill lets it time out, and Ctrl+C is the documented
+    # way to end one early. Both write a real-looking outcome, so only the target tells them
+    # apart — otherwise a drill would slow every later run and claim blocks arrive at request 0.
+    drills = [
+        _block(0, outcome="unattended", target="rehearsal"),
+        _block(0, outcome="interrupted", target="rehearsal"),
+    ]
+    history = read_history(drills)
+    assert (history.blocks, history.typical_request) == (0, None)
+    assert advise(drills, 4.0, 11.0) is None
+    assert all("(drill)" in entry.describe() for entry in drills)
 
 
 def test_history_summarizes_kinds_position_and_streaks() -> None:

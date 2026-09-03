@@ -302,6 +302,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "an unattended drill is not read as a block",
+        "scholar_crawler/storage.py",
+        'return self.outcome == "rehearsed" or self.target == REHEARSAL_TARGET',
+        'return self.outcome == "rehearsed"',
+        "tests/test_history.py",
+    ),
+    Mutation(
+        "a takeover names its evidence file",
+        "scholar_crawler/cli.py",
+        '        if ran.outcome.stats.handoffs:',
+        '        if False:',
+        "tests/test_end_to_end.py",
+    ),
+    Mutation(
         "a batch tells each target its place",
         "scholar_crawler/run.py",
         'place = (lambda index: f"{index}/{seeds}") if seeds > 1 else (lambda _index: "")',

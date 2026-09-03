@@ -293,6 +293,10 @@ class StateStore:
         self.path.write_text(json.dumps(self._data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+REHEARSAL_TARGET = "rehearsal"
+"""``target`` written by a rehearsed takeover; no real listing can be called this."""
+
+
 @dataclass(slots=True)
 class ChallengeRecord:
     """One human takeover, as it happened.
@@ -301,7 +305,7 @@ class ChallengeRecord:
     :param kind: challenge kind — ``captcha``, ``rate_limit`` or ``consent``.
     :param url: the challenge URL with session material redacted.
     :param reason: what the detector matched.
-    :param request_index: requests this run had already made.
+    :param request_index: which request of this run was blocked, counting this one.
     :param consecutive: how many challenges in a row, counting this one.
     :param waited: seconds spent waiting for the human.
     :param outcome: ``resolved``, ``unattended``, ``budget`` or ``interrupted``.
@@ -339,17 +343,30 @@ class ChallengeRecord:
             "saw": list(self.saw),
         }
 
+    @property
+    def drill(self) -> bool:
+        """Whether this record came from ``--rehearse-handoff`` rather than from Scholar.
+
+        A drill nobody attends ends as ``unattended``, and one ended with Ctrl+C as
+        ``interrupted``, so the outcome alone cannot tell a drill from a real block. Only the
+        target can: a real block always names the listing or profile being fetched.
+
+        :returns: True when this record is a rehearsal.
+        """
+        return self.outcome == "rehearsed" or self.target == REHEARSAL_TARGET
+
     def describe(self) -> str:
         """Summarize the takeover in one line.
 
         :returns: timestamp, kind, outcome and the request it interrupted.
         """
+        drill = " (drill)" if self.drill else ""
         streak = f" x{self.consecutive} in a row" if self.consecutive > 1 else ""
         waited = f", waited {self.waited:.0f}s" if self.waited >= 1 else ""
         turned = f", became {' -> '.join(self.saw[1:])}" if len(self.saw) > 1 else ""
         return (
-            f"{self.at}  {self.kind}{streak} -> {self.outcome}{waited}{turned} "
-            f"(after {self.request_index} requests, loading {self.target})"
+            f"{self.at}  {self.kind}{streak} -> {self.outcome}{drill}{waited}{turned} "
+            f"(on request {self.request_index}, loading {self.target})"
         )
 
 
@@ -384,7 +401,7 @@ class ChallengeLog:
         :param kind: challenge kind.
         :param url: the challenge URL; redacted before it is written.
         :param reason: what the detector matched.
-        :param request_index: requests this run had already made.
+        :param request_index: which request of this run was blocked, counting this one.
         :param consecutive: how many challenges in a row, counting this one.
         :param waited: seconds spent waiting for the human.
         :param outcome: how the takeover ended.

@@ -35,6 +35,9 @@ from tests.fixtures import (  # noqa: E402
 
 CAPTCHA = Challenge(ChallengeKind.CAPTCHA, "https://scholar.google.com/scholar?q=x", "test")
 
+PAGES = Path(__file__).parent / "pages"
+"""Sanitized copies of pages the crawler really loaded."""
+
 
 @pytest.fixture(scope="module")
 def page() -> Iterator[Page]:
@@ -89,6 +92,15 @@ def _scripted_detector(
 def test_result_page_is_not_a_challenge(page: Page) -> None:
     page.set_content(RESULT_PAGE_HTML)
     assert detect_challenge(page) is None
+
+
+def test_a_real_scholar_page_is_not_mistaken_for_a_challenge(page: Page) -> None:
+    # The hand-written fixtures above are what this detector was designed against. These two
+    # are sanitized copies of pages Scholar really served (see tests/sanitize.py): a false
+    # positive here would stop a perfectly good run and demand a person who has nothing to do.
+    for name in ("results.html", "author.html"):
+        page.set_content((PAGES / name).read_text(encoding="utf-8"))
+        assert detect_challenge(page) is None, name
 
 
 def test_zero_hit_page_is_not_a_challenge(page: Page) -> None:

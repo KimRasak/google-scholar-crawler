@@ -83,7 +83,7 @@ def test_a_logged_url_keeps_the_request_and_drops_the_session() -> None:
 def test_a_record_reads_as_one_line() -> None:
     assert _record().describe() == (
         "2026-09-02T12:00:00+00:00  captcha -> resolved, waited 42s "
-        "(after 7 requests, loading 10)"
+        "(on request 7, loading 10)"
     )
     assert "x3 in a row" in _record(consecutive=3).describe()
     assert "waited" not in _record(waited=0.2).describe()  # a refusal never waits

@@ -281,6 +281,108 @@ def test_a_run_described_entirely_by_a_settings_file_collects_the_same_records(
     assert site.offsets_requested() == [0]
 
 
+TAKEOVER_KEYS = {
+    "at",
+    "kind",
+    "url",
+    "reason",
+    "request_index",
+    "consecutive",
+    "waited",
+    "outcome",
+    "target",
+    "saw",
+}
+"""Every field of a takeover record, as the README's takeover-log section describes it."""
+
+
+def test_a_run_stopped_by_a_challenge_names_its_takeover_log_in_the_document(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A takeover is the one event a program cannot reconstruct from the document: it happened
+    # in a browser window while a person worked. So the document has to point at the evidence.
+    site = FakeScholar(pages=3, challenge_at=(10,))
+    log = tmp_path / "challenges.jsonl"
+    with serving(site) as host:
+        exit_code = main(
+            [
+                "-q",
+                "graph attention",
+                "-p",
+                "3",
+                "--headless",
+                "--channel",
+                "",
+                "--host",
+                host,
+                "--profile",
+                str(tmp_path / "profile"),
+                "-o",
+                str(tmp_path / "results.jsonl"),
+                "--state",
+                str(tmp_path / "state.json"),
+                "--challenge-log",
+                str(log),
+                "--min-delay",
+                "0.0",
+                "--max-delay",
+                "0.0",
+                "--cooldown-every",
+                "0",
+                "--json",
+            ]
+        )
+
+    assert exit_code == 1
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["counts"]["takeovers"] == 1
+    assert parsed["files"]["challenges"] == str(log), "the document points at the evidence"
+    assert parsed["error"]["kind"] == "challenge_unattended"
+
+    written = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert len(written) == 1
+    assert set(written[0]) == TAKEOVER_KEYS
+    assert (written[0]["kind"], written[0]["outcome"]) == ("captcha", "unattended")
+    assert written[0]["request_index"] == 2, "the second load was the one blocked"
+
+
+def test_a_run_without_a_takeover_does_not_name_a_takeover_log(tmp_path: Path) -> None:
+    # An empty log would still be listed as a file, sending a caller to read nothing.
+    site = FakeScholar(pages=1)
+    with serving(site) as host:
+        assert (
+            main(
+                [
+                    "-q",
+                    "graph attention",
+                    "-p",
+                    "1",
+                    "--headless",
+                    "--channel",
+                    "",
+                    "--host",
+                    host,
+                    "--profile",
+                    str(tmp_path / "profile"),
+                    "-o",
+                    str(tmp_path / "results.jsonl"),
+                    "--state",
+                    str(tmp_path / "state.json"),
+                    "--challenge-log",
+                    str(tmp_path / "challenges.jsonl"),
+                    "--min-delay",
+                    "0.0",
+                    "--max-delay",
+                    "0.0",
+                    "--cooldown-every",
+                    "0",
+                ]
+            )
+            == 0
+        )
+    assert not (tmp_path / "challenges.jsonl").exists()
+
+
 def test_an_unattended_challenge_stops_the_run_without_losing_what_it_had(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

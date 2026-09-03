@@ -513,17 +513,19 @@ $ scholar-crawler --show-state
 [state] 3 targets in out/state.json (1 finished)
 [state]   attention is all you need [en] — next offset 30, 2026-09-02 10:45:51 UTC
 [handoff] 2 takeovers in out/challenges.jsonl (captcha x2)
-[handoff]   2026-09-02T12:26:23+00:00  captcha -> unattended, waited 6s (after 11 requests, loading 20)
+[handoff]   2026-09-02T12:26:23+00:00  captcha -> unattended, waited 6s (on request 11, loading 20)
 [handoff]     matched form#captcha-form at about:blank
 ```
 
-Each record carries the time, the kind (`captcha`, `rate_limit`, `consent`), what the detector matched, the URL it was stopped on, how many requests the run had already made, whether challenges arrived back to back and which one this was, how long it waited for a human, which kinds the window showed while they worked (`became sign_in`), and how it ended — `resolved` (solved, crawling continued), `unattended` (`--headless` refusal or the wait timed out), `budget` (`--max-handoffs` exhausted), `interrupted` (Ctrl+C) or `rehearsed` (a drill).
+Each record carries 10 fields: the time `at`, the kind `kind` (`captcha`, `rate_limit`, `consent`), what the detector matched `reason`, the redacted URL `url`, which request of the run was blocked `request_index` (counting the blocked one), whether challenges arrived back to back and which one this was `consecutive`, how long it waited for a human `waited`, the target being fetched `target`, which kinds the window showed while they worked `saw` (`became sign_in`), and how it ended `outcome` — `resolved` (solved, crawling continued), `unattended` (`--headless` refusal or the wait timed out), `budget` (`--max-handoffs` exhausted), `interrupted` (Ctrl+C) or `rehearsed` (a drill).
 
 That answers the questions that actually matter afterwards: at which request the block arrived, whether solving one was immediately followed by another (the pacing is still too fast), or whether nobody was at the keyboard.
 
+A run that was actually stopped by a takeover names this file in the `files` section of its `--json` document, as `challenges`. A takeover is the one event a program cannot reconstruct from the document — it happened in a browser window while a person worked — so the document points at the evidence; a run with no takeover lists nothing, rather than sending a caller to read an empty file.
+
 **The URL is redacted before it is written.** On a `/sorry/` challenge page `q` is the challenge token rather than a search query, so only `hl` survives there; on an ordinary result URL the parameters that describe the request (`q`, `start`, `cites`, `cluster`, `user`, …) are kept and signed ones like `scisig` become `REDACTED`. The file is safe to keep and to share.
 
-`--rehearse-handoff` writes a record too (`outcome=rehearsed`), which also proves the log path is writable before a real challenge depends on it.
+`--rehearse-handoff` writes a record too, which also proves the log path is writable before a real challenge depends on it. A completed drill records `rehearsed`, but one nobody attends times out as `unattended` and one ended with Ctrl+C records `interrupted` — the documented way to end a drill early. So a drill is recognized by its `target` of `rehearsal`, never by its outcome, and `--show-state` prints `(drill)` on those lines. Otherwise walking away from a drill would slow every later run and claim this profile gets blocked at request 0.
 
 ### Slowing down within a run
 
@@ -544,7 +546,7 @@ The rules are deliberately conservative, and they **only ever widen the delays**
 - Two or more blocks: x1.3; five or more: x1.6.
 - A block that arrived with no successful page in between: +0.2 (solving the first one did not restore trust).
 - Blocks typically arriving within the first 30 requests: +0.2 (the rhythm is the problem, not the volume).
-- The terms sum to at most x2.0. That is the sum, not a separate clamp; a test enumerates every combination to keep the sentence true. Rehearsals (`outcome=rehearsed`) are not evidence.
+- The terms sum to at most x2.0. That is the sum, not a separate clamp; a test enumerates every combination to keep the sentence true. Rehearsals are not evidence, however they ended.
 
 Delays you passed yourself are never overridden: the history is printed and the run states that it keeps your values. `--no-learn-from-history` turns the behavior off entirely. `--dry-run` estimates with the learned rhythm, so you can see how much slower this run will be before starting it.
 
@@ -818,7 +820,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 462 tests, fully offline
+python3 -m pytest -q     # 466 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -841,7 +843,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 46 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 48 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

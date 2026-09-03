@@ -558,6 +558,7 @@ class _Ran:
     :param outputs: the files a crawl wrote, or None when no crawl ran.
     :param plan: the estimate a ``--dry-run`` produced, or None when a crawl ran.
     :param reason: why the command was refused, for a caller that reads only the document.
+    :param challenges: the takeover log this run would have written to.
     """
 
     exit_code: int
@@ -565,6 +566,7 @@ class _Ran:
     outputs: Outputs | None = None
     plan: RunPlan | None = None
     reason: str | None = None
+    challenges: Path | None = None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -650,6 +652,10 @@ def _document(ran: _Ran) -> dict[str, object]:
     if ran.outcome is not None and ran.outcome.stats is not None:
         counts["requests"] = ran.outcome.stats.requests
         counts["takeovers"] = ran.outcome.stats.handoffs
+        # A takeover is the one event a caller cannot reconstruct from this document, so a run
+        # that had one names the file holding the evidence.
+        if ran.outcome.stats.handoffs:
+            files["challenges"] = ran.challenges
     error = None
     if ran.outcome is not None and not ran.outcome.ok:
         error = failure(ran.outcome.kind, ran.outcome.message, ran.outcome.next_steps)
@@ -779,7 +785,7 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
         filter_template(args),
         outputs,
     )
-    return _Ran(outcome.exit_code, outcome=outcome, outputs=outputs)
+    return _Ran(outcome.exit_code, outcome=outcome, outputs=outputs, challenges=args.challenge_log)
 
 
 if __name__ == "__main__":

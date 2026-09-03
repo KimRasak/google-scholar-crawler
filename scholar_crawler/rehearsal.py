@@ -14,7 +14,7 @@ import time
 from playwright.sync_api import Page
 
 from .challenge import ChallengeUnattended, HumanHandoff, detect_challenge
-from .storage import ChallengeLog
+from .storage import REHEARSAL_TARGET, ChallengeLog
 
 REHEARSAL_HTML = """<!doctype html>
 <html><head><meta charset="utf-8"><title>Handoff rehearsal</title>
@@ -88,7 +88,7 @@ def rehearse(page: Page, handoff: HumanHandoff, log: ChallengeLog | None = None)
                 consecutive=1,
                 waited=waited,
                 outcome=outcome,
-                target="rehearsal",
+                target=REHEARSAL_TARGET,
                 saw=saw,
             )
             print(f"[rehearse] recorded -> {log.path}: {entry.describe()}", flush=True)
