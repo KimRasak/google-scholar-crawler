@@ -40,6 +40,7 @@ from .refresh import (
     DEFAULT_REFRESH_LIMIT,
     DEFAULT_STALE_DAYS,
     rank_stale,
+    refresh_command,
     refresh_ids,
     render_refresh_list,
     render_staleness,
@@ -499,7 +500,7 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     if args.refresh_list:
         days = args.stale if args.stale is not None else float(DEFAULT_STALE_DAYS)
         aged = rank_stale(kept, days=days)
-        lines = render_refresh_list(aged, limit=args.refresh_limit)
+        lines = render_refresh_list(aged, path=args.refresh_list, limit=args.refresh_limit)
         args.refresh_list.parent.mkdir(parents=True, exist_ok=True)
         args.refresh_list.write_text("\n".join(lines) + "\n", encoding="utf-8")
         ids = len(refresh_ids(aged, limit=args.refresh_limit))
@@ -508,6 +509,8 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
             f"(of {len(aged)} records older than {days:g} days)",
             flush=True,
         )
+        if ids:
+            print(f"[out]   $ {refresh_command(args.refresh_list)}", flush=True)
         written["refresh_list"] = args.refresh_list
     if args.bibtex:
         report = write_bibtex(kept, args.bibtex)

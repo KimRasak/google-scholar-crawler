@@ -11,8 +11,10 @@ Nothing here contacts Scholar. It produces the list of ids a later crawl consume
 from __future__ import annotations
 
 import math
+import shlex
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .text import clip
@@ -205,13 +207,25 @@ def refresh_ids(aged: list[Aged], *, limit: int = DEFAULT_REFRESH_LIMIT) -> list
     return ids
 
 
-def render_refresh_list(aged: list[Aged], *, limit: int = DEFAULT_REFRESH_LIMIT) -> list[str]:
+def refresh_command(path: Path) -> str:
+    """Spell the crawl that reads a refresh file back.
+
+    :param path: the refresh file, named as the caller wrote it.
+    :returns: a complete command line, ready to paste.
+    """
+    return shlex.join(["scholar-crawler", "--clusters-file", str(path), "-p", "1"])
+
+
+def render_refresh_list(
+    aged: list[Aged], *, path: Path, limit: int = DEFAULT_REFRESH_LIMIT
+) -> list[str]:
     """Build the refresh file: one id per line, each preceded by what it stands for.
 
     The format is the one ``scholar-crawler --clusters-file`` reads, so the output of a digest
     is the input of the next crawl.
 
     :param aged: ranked stale records.
+    :param path: where this file is being written, so its own header can name it.
     :param limit: how many ids to write.
     :returns: the file's lines, comments included.
     """
@@ -219,7 +233,7 @@ def render_refresh_list(aged: list[Aged], *, limit: int = DEFAULT_REFRESH_LIMIT)
     by_id = {item.target: item for item in reversed(aged) if item.target}
     lines = [
         "# stale records worth re-listing, most-moved first",
-        "# feed this back with: scholar-crawler --clusters-file <this file> -p 1",
+        f"# feed this back with: {refresh_command(path)}",
     ]
     for cluster_id in kept:
         item = by_id[cluster_id]

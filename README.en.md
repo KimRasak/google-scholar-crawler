@@ -227,7 +227,7 @@ The eight top-level keys stay put: `tool`, `version`, `ok`, `exit_code`, `counts
 
 `scholar-digest --json` works the same way and adds `overview` (records, citations, years, venues, most cited) plus, with `--since`, `delta` (added, gone, re-clustered, moved, citations gained): what changed since last time, without re-crawling.
 
-The rule that matters most to an agent is that **a challenge belongs to a human**: under `--headless` a challenge ends the run with `challenge_unattended`, and the correct response is not to retry harder but to hand it to a person once. The whole calling interface is one page: [AGENTS.md](AGENTS.md), written for programs, while this README is written for people.
+The rule that matters most to an agent is that **a challenge belongs to a human**: under `--headless` a challenge ends the run with `challenge_unattended`, and the correct response is not to retry harder but to hand it to a person once. `next_steps[0]` is then that command itself — the same one without `--headless` and with `--resume` — and the terminal prints the same line, because what you hand a person should be a command they can run, not a description of one. The whole calling interface is one page: [AGENTS.md](AGENTS.md), written for programs, while this README is written for people.
 
 ## Digesting collected results (no requests)
 
@@ -479,7 +479,10 @@ $ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh
     375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network…
     475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks…
 [out] 5 id(s) to re-list -> out/refresh.txt (of 17 records older than 60 days)
+[out]   $ scholar-crawler --clusters-file out/refresh.txt -p 1
 ```
+
+That last line is the next command with the path already filled in, and the file's own header carries the same one — it used to say `<this file>`, a placeholder only the reader could resolve.
 
 The order is not age alone: a paper with three citations gains none in a year, while one with forty thousand drifts by hundreds in two months. The weight is age × log(citations), which puts the records whose numbers actually moved first. It orders a list for a human; it does not claim to predict the new count.
 
@@ -886,7 +889,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 545 tests, fully offline
+python3 -m pytest -q     # 546 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -913,7 +916,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 77 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 79 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

@@ -375,6 +375,47 @@ def test_a_timezone_given_on_the_command_line_wins_over_the_language(
     assert "Accept-Language de and reports its clock in Europe/Berlin (matching" in derived
 
 
+def test_a_headless_stop_hands_back_the_command_that_finishes_the_job(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Headless plus a challenge is the failure this tool expects, and the way out is one exact
+    # command: the same one without --headless, continuing from the cursor.
+    state = tmp_path / "state.json"
+    with serving(FakeScholar(pages=2, challenge_at=(10,))) as host:
+        typed = [
+            "-q",
+            "graph attention",
+            "-p",
+            "2",
+            "--headless",
+            "--channel",
+            "",
+            "--profile",
+            str(tmp_path / "profile"),
+            "--challenge-log",
+            str(tmp_path / "challenges.jsonl"),
+            "-o",
+            str(tmp_path / "results.jsonl"),
+            "--state",
+            str(state),
+            "--host",
+            host,
+        ]
+        assert main(typed) == 1
+    stopped = capsys.readouterr().err
+    handed = [line.split("$ ", 1)[1] for line in stopped.splitlines() if "$ scholar-crawler" in line]
+    assert len(handed) == 1, stopped
+
+    argv = shlex.split(handed[0].removeprefix("scholar-crawler "))
+    assert "--headless" not in argv
+    assert "--resume" in argv
+    # The first page was collected before the challenge, and the handed command continues there.
+    store = StateStore(state)
+    store.load()
+    assert store.entries()[0].next_start == 10
+    assert argv[:4] == typed[:4]
+
+
 def test_the_command_show_state_hands_back_really_resumes_the_target(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -529,6 +570,10 @@ def test_a_run_stopped_by_a_challenge_names_its_takeover_log_in_the_document(
     assert parsed["counts"]["takeovers"] == 1
     assert parsed["files"]["challenges"] == str(log), "the document points at the evidence"
     assert parsed["error"]["kind"] == "challenge_unattended"
+    # An agent reading this document gets the command to hand a person, not a description of it.
+    first_step = parsed["error"]["next_steps"][0]
+    assert first_step.startswith("run: scholar-crawler ")
+    assert "--headless" not in first_step and "--resume" in first_step
 
     written = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
     assert len(written) == 1

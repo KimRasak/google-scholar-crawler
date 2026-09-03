@@ -145,8 +145,9 @@ def test_the_refresh_file_is_ids_plus_comments_and_names_the_command() -> None:
         _record(days_old=80, citations=300, cluster_id="c", versions_url="?cluster=333"),
     ]
     ranked = rank_stale(records, days=30, now=NOW)
-    lines = render_refresh_list(ranked, limit=2)
-    assert lines[1].endswith("--clusters-file <this file> -p 1")
+    lines = render_refresh_list(ranked, path=Path("out/refresh.txt"), limit=2)
+    # The header used to say "<this file>", a placeholder only the reader could resolve.
+    assert lines[1] == "# feed this back with: scholar-crawler --clusters-file out/refresh.txt -p 1"
     assert [line for line in lines if not line.startswith("#")] == ["111", "222"]
     assert any("100 days old: Graph attention networks" in line for line in lines)
 

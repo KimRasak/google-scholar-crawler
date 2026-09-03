@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import re
+import shlex
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -201,10 +202,15 @@ def test_the_refresh_file_from_real_records_is_a_command_the_crawler_accepts(
     later = datetime.now(timezone.utc) + timedelta(days=120)
     ranked = rank_stale(_real_records(), days=60, now=later)
     written = tmp_path / "refresh.txt"
-    written.write_text("\n".join(render_refresh_list(ranked, limit=3)) + "\n", encoding="utf-8")
+    written.write_text(
+        "\n".join(render_refresh_list(ranked, path=Path("refresh.txt"), limit=3)) + "\n",
+        encoding="utf-8",
+    )
     monkeypatch.chdir(tmp_path)
 
-    assert crawler_main(["--clusters-file", "refresh.txt", "-p", "1", "--dry-run"]) == 0
+    # The command in the header is the one run here, taken from the file rather than retyped.
+    handed = written.read_text(encoding="utf-8").splitlines()[1].split(": ", 1)[1]
+    assert crawler_main([*shlex.split(handed.removeprefix("scholar-crawler ")), "--dry-run"]) == 0
     printed = capsys.readouterr().out
 
     expected = [item.target for item in ranked[:3]]

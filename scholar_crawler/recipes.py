@@ -195,3 +195,22 @@ def resume_command(
     if state != DEFAULT_STATE_PATH:
         parts += ["--state", str(state)]
     return shlex.join(parts)
+
+
+def rerun_attended(given: list[str]) -> str | None:
+    """Spell the same run with a person at the screen, for a run headless mode ended.
+
+    A challenge cannot be handed to anyone without a window, and the only way forward is this
+    command minus ``--headless``. The cursor is already on disk, so it continues rather than
+    refetching what was collected.
+
+    :param given: the argument vector as typed, which is what can be edited back.
+    :returns: the command to run instead, or None when ``--headless`` was not typed there and
+        this cannot know where it came from.
+    """
+    if "--headless" not in given:
+        return None
+    kept = [argument for argument in given if argument != "--headless"]
+    if "--resume" not in kept:
+        kept.append("--resume")
+    return shlex.join(["scholar-crawler", *kept])

@@ -227,7 +227,7 @@ $ scholar-crawler -q "graph attention networks" -p 1 --json 2>/dev/null
 
 `scholar-digest --json` 同理，另加 `overview`（记录数、被引总数、年份、期刊、被引最高）和 `--since` 的 `delta`（新增、不在了、换了 id、被引变动、净增），也就是「这轮和上次比变了什么」——不用重抓。
 
-最重要的一条给 agent 的约定是**验证码只能交给人**：`--headless` 下遇到验证会以 `challenge_unattended` 结束，正确的反应不是重试更狠，而是把这件事交给人处理一次。完整的调用约定写在 [AGENTS.md](AGENTS.md)（一页），它是给程序读的，人读 README。
+最重要的一条给 agent 的约定是**验证码只能交给人**：`--headless` 下遇到验证会以 `challenge_unattended` 结束，正确的反应不是重试更狠，而是把这件事交给人处理一次。这时 `next_steps[0]` 就是那条命令本身（去掉 `--headless`、加上 `--resume`），终端里也会打印同一行——交给人的应该是一条能直接跑的命令，而不是一句描述。完整的调用约定写在 [AGENTS.md](AGENTS.md)（一页），它是给程序读的，人读 README。
 
 ## 汇总已抓到的结果（不发请求）
 
@@ -476,7 +476,10 @@ $ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh
     375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network…
     475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks…
 [out] 5 id(s) to re-list -> out/refresh.txt (of 17 records older than 60 days)
+[out]   $ scholar-crawler --clusters-file out/refresh.txt -p 1
 ```
+
+最后那行就是下一步要敲的命令，路径已经填好；文件自己的头两行也写着同一条（以前写的是 `<this file>`，得读的人自己替换）。
 
 排序不是单纯按年龄：被引 3 次的论文放一年数字也不会动，被引四万次的放两个月就差了几百。所以权重是「年龄 × log(被引数)」——把数字真的变了的排在前面。这只是给人排个序，不假装能预测新的被引数。
 
@@ -883,7 +886,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 545 个用例，全部离线
+python3 -m pytest -q     # 546 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -906,7 +909,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 77 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 79 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

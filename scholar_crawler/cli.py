@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .browser import BrowserOptions, Session, locale_for, timezone_for
@@ -34,7 +34,7 @@ from .modes import (
     show_state,
 )
 from .plan import RunPlan, plan_run
-from .recipes import getting_started, render
+from .recipes import getting_started, render, rerun_attended
 from .run import CrawlLimits, Outputs, RunOutcome, crawl, report_ignored_progress
 from .storage import (
     DEFAULT_CHALLENGE_LOG_PATH,
@@ -781,6 +781,10 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
         filter_template(args),
         outputs,
     )
+    if outcome.kind == "challenge_unattended" and (attended := rerun_attended(given)) is not None:
+        # The one failure this tool expects, so the way out of it is the command, not advice.
+        print(f"[stop]   $ {attended}", file=sys.stderr)
+        outcome = replace(outcome, next_steps=(f"run: {attended}", *outcome.next_steps[1:]))
     return _Ran(outcome.exit_code, outcome=outcome, outputs=outputs, challenges=args.challenge_log)
 
 

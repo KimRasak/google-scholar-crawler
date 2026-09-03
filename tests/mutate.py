@@ -302,6 +302,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "a headless stop hands back an attended rerun",
+        "scholar_crawler/recipes.py",
+        '    if "--headless" not in given:\n        return None',
+        '    if "--headless" in given:\n        return None',
+        "tests/test_end_to_end.py",
+    ),
+    Mutation(
+        "the refresh file names itself, not a placeholder",
+        "scholar_crawler/refresh.py",
+        '        f"# feed this back with: {refresh_command(path)}",',
+        '        "# feed this back with: scholar-crawler --clusters-file <this file> -p 1",',
+        "tests/test_refresh.py tests/test_real_pages.py",
+    ),
+    Mutation(
         "a finished target is not offered a way to continue",
         "scholar_crawler/modes.py",
         "            if request is not None and not entry.exhausted:",

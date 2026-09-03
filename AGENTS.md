@@ -26,6 +26,8 @@ CAPTCHA, the browser window is brought to the front and the run waits. So:
 - With `--headless`, a challenge ends the run with `"error": {"kind": "challenge_unattended"}`.
   That is not a bug to retry harder — surface it to a human, let them clear it once, and the
   persistent profile (`--profile`, default `.scholar-profile`) reuses the cleared cookies.
+  `next_steps[0]` is then `"run: scholar-crawler …"`: the same command without `--headless` and
+  with `--resume`, so what you hand the human is a command, not a description of one.
 - Never add a solver, a proxy rotation, or a retry loop against a challenge. Scraping Scholar is
   against its terms; for bulk metadata use Semantic Scholar, OpenAlex or Crossref instead.
 
@@ -93,7 +95,7 @@ On failure the document carries `"error": {"kind", "message", "next_steps"}`. Br
 
 | `kind` | What to do |
 | --- | --- |
-| `challenge_unattended` | ask a human to run it once without `--headless` |
+| `challenge_unattended` | ask a human to run the command in `next_steps[0]` once |
 | `rate_limited` | stop for a while, then resume with `--resume` and slower `--min-delay` |
 | `connection_refused`, `dns`, `offline`, `proxy`, `certificate` | a local network problem, not Scholar |
 | `unknown_layout` | run `scholar-crawler --self-check`; Scholar's HTML may have changed |
