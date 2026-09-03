@@ -80,7 +80,7 @@ Once the machine is sound, `--self-check` goes on to test the network.
 
 ## Usage
 
-Rather than reading the flag table, start from `--recipes`: seventeen complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, a settings file, calling it from a program, one topic, costing a run, batch plus CSV, an author, crawling the citation graph, resuming, auditing, exporting that graph, staleness and refreshing, keeping a collection current, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
+Rather than reading the flag table, start from `--recipes`: seventeen complete commands to copy, ordered from safest to most expensive (the environment check, self-check, takeover rehearsal, reading a command back, a settings file, calling it from a program, one topic, costing a run, batch queries, an author, crawling the citation graph, resuming, auditing, who cites whom inside a collection, staleness and refreshing, keeping a collection current, the offline overview and bibliography). A run given nothing to do prints the first three after the error.
 
 ```sh
 $ scholar-crawler --recipes
@@ -96,9 +96,9 @@ The tests keep these honest: every recipe is parsed by the real parser and must 
 # Keyword search, three pages (10 results each)
 scholar-crawler -q "large language model agents" -p 3 -o out/agents.jsonl
 
-# Year filter, sorted by date, CSV export, capped at 40 records
+# Year filter, sorted by date, capped at 40 records
 scholar-crawler -q "retrieval augmented generation" \
-  --year-from 2023 --sort-by-date -n 40 -o out/rag.jsonl --csv out/rag.csv
+  --year-from 2023 --sort-by-date -n 40 -o out/rag.jsonl
 
 # Batch queries (one per line, # comments allowed) with resume
 scholar-crawler --queries-file queries.example.txt -p 10 --resume -o out/batch.jsonl
@@ -212,7 +212,7 @@ When the same work appears in several files, the higher citation count wins as t
 | Option | Effect |
 | --- | --- |
 | `--top` | entries in every printed list: most cited, stale, cited from inside (default: 5; `0` keeps the counts and drops the lists) |
-| `--group-by`, `--min-group-size`, `--groups` | group by `author`, `venue`, `year` or `level`; hide groups below N records; how many groups to list (default: 10) |
+| `--group-by`, `--groups` | group by `author`, `venue`, `year` or `level`; how many groups to list (default: 10) |
 | `--audit` | audit fields: implausible values and missing rates, as errors and warnings |
 | `--network` | report the citation graph the records already carry |
 | `--stale [DAYS]` | report how old the collection is, most-moved records first |
@@ -221,14 +221,201 @@ When the same work appears in several files, the higher citation count wins as t
 
 | Option | Effect |
 | --- | --- |
-| `-o`, `--csv` | write the merged records as JSONL / CSV |
+| `-o`, `--csv` | write the merged records as JSONL / CSV (the only CSV export) |
 | `--bibtex` | build a bibliography offline (no requests) |
 | `--report`, `--report-title`, `--report-top` | write a readable Markdown overview; how many records it lists (default: 15) |
 | `--refresh-list`, `--refresh-limit` | write the cluster ids worth re-listing |
-| `--graph`, `--graph-format` | export that graph as GraphML or DOT |
 | `--quiet` | print only what was written; needs one of the writing options |
 
-`--top` governs terminal lists only and `--report-top` the Markdown report, so shortening what you read does not shorten what you wrote. `--min-group-size` is a threshold and `--groups` is a count — a size and a number, named apart.
+`--top` governs terminal lists only and `--report-top` the Markdown report, so shortening what you read does not shorten what you wrote.
+
+### Building a bibliography offline
+
+Exporting BibTeX during a crawl costs two extra page loads per record, the most expensive part of a run. But the title, authors, venue, year and link from the result card are already stored, so a usable bibliography can be assembled afterwards without contacting Scholar:
+
+```sh
+scholar-digest out/all.jsonl --min-citations 500 --bibtex out/refs.bib
+[out] 42 entries -> out/refs.bib (7 keys from the crawl, 35 generated, 12 truncated author lists)
+```
+
+These are reconstructions, not Scholar's own export, and the difference is worth knowing:
+
+```bibtex
+% exported by Scholar (--bibtex during the crawl, 2 requests per record)
+@article{velivckovic2017graph,
+  title={Graph attention networks},
+  author={Veli{\v{c}}kovi{\'c}, Petar and Cucurull, Guillem and Casanova, Arantxa and ...},
+  journal={arXiv preprint arXiv:1710.10903},
+  year={2017}
+}
+
+% assembled offline (0 requests)
+@article{velickovic2017graph,
+  title = {{Graph attention networks}},
+  author = {P Veličković and G Cucurull and A Casanova and others},
+  journal = {arXiv preprint},
+  year = {2017},
+  url = {https://arxiv.org/abs/1710.10903},
+  note = {cited by 41135 on Google Scholar},
+}
+```
+
+So: author names keep Scholar's initials, a list Scholar truncated gains `and others`, and the arXiv identifier may be missing — in exchange for zero requests, plus the original link and the citation count. Export during the crawl when you need exact entries; build offline when you want a usable bibliography without waiting hours again.
+
+Details: a record exported during the crawl reuses its key, so both files name the same work identically; `Veličković` transliterates to `velickovic` (`ł`, `ø`, `ß`, `æ` are handled too); colliding keys gain `a`, `b`, …; a venue mentioning Proceedings, Conference or Workshop becomes `@inproceedings` with `booktitle`, and a record without a venue becomes `@misc`; titles are double-braced so a style cannot flatten their capitalization; `&`, `%` and `_` are escaped. Records without a title are skipped and counted.
+
+### A readable overview: `--report`
+
+JSONL and CSV are for programs and the terminal summary scrolls away, while what a literature search actually has to hand over is prose. `--report` writes the merged records as a Markdown overview you can paste into a first draft:
+
+```sh
+scholar-digest out/*.jsonl --report out/report.md --report-title "Graph attention networks: a first pass"
+```
+
+It contains the size of the collection at a glance (records, total citations, year span, venues, first authors), the most-cited works with their original links, two grouped tables — by venue and by first author, each with records, citations, median, year span and the group's most-cited work — a text bar chart of records per year (which survives copy-paste), which query each record came from, and finally a "how much of this to trust" section that reuses the `--audit` checks to state the missing rates and doubtful fields outright.
+
+The report opens by saying that every number comes from what Scholar showed when the records were collected and that nothing was re-fetched, so nobody mistakes it for live data.
+
+### Who cites whom inside the collection: `--network`
+
+A `--cites X` listing means every record on it cites the work whose citing-works id is `X`, and each record's own `cited_by_url` carries that id for itself. The citation relation is therefore already in the JSONL a crawl wrote: no extra request, and collections made before this existed still yield their graph.
+
+```sh
+$ scholar-digest out/graph.jsonl --network
+  38 records and 0 uncollected works, 28 edges
+  10 component(s), largest 11 works; 7 record(s) neither cite nor are cited here
+  most cited from inside this collection:
+      10 here     41,135 on Scholar  Graph attention networks
+       9 here      4,408 on Scholar  Heterogeneous graph attention network
+```
+
+"From inside this collection" is the point: `10 here` means ten of these 38 records cite it, while `41,135 on Scholar` is its global count. Only the first says how central it is **to the topic you collected**.
+
+Two limits, stated plainly:
+
+- Seeding with `--cites <id>` means the cited work itself is not in the collection. Such targets are counted as `uncollected work <id>`, because otherwise a collection with no edges at all would look broken.
+- One paper can appear under several `--cites` listings while merging keeps only one of its `query` values. Edges are therefore taken from every observation **before** merging, and nodes from the merged, filtered set, so deduplication cannot drop an edge.
+
+A keyword-only collection has no citation edges, and the report says exactly that instead of drawing an empty graph.
+
+### A folder as one collection: `--collection` and `--since`
+
+After a few weeks a topic is a pile of files under `out/`, and remembering which one came from which session — and which one was last run's merge — is bookkeeping nobody should do by hand. `--collection` makes the folder the unit, and `--since` answers what changed:
+
+```sh
+$ scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl
+[in] 11 records from 2 file(s), 3 duplicates merged, 0 filtered out
+  ...
+  6 works since out/merged.jsonl -> 8 now: 2 new, 0 no longer here, 2 with a new citation count
+  citations gained across the works in both: +41
+  biggest movers:
+    +    40  now      140  Work 0
+    +     1  now      111  Work 1
+  new:
+    Work 6
+    Work 7
+[out] 8 records -> out/merged.jsonl
+```
+
+There is a trap `--collection` exists for: run `scholar-digest out/*.jsonl -o out/merged.jsonl` a second time and the glob **includes the merge it wrote last time**. Deduplication hides the damage, but the "how many files, how many duplicates" line stops meaning anything, and a collection that reads its own output back always looks complete. `--collection` excludes the files this run writes (`-o` and `--since`), which is what `11 records from 2 file(s)` above proves: the folder holds three `.jsonl` files and two were read.
+
+`--since` keys both sides exactly as the crawler deduplicates, so a work stays the same work when its count, venue or snippet changed. The three outcomes mean:
+
+- **new** — in this run's inputs, absent from the earlier merge.
+- **with a new citation count** — present on both sides with a different number, sorted by how far it moved. A fall is reported as a fall (`-32`); Scholar does revise counts down. Note that merging keeps the higher count when one work appears in several inputs, so a fall shows only when the current inputs really report fewer.
+- **no longer here** — in the earlier merge, absent now. This is **not** Scholar dropping a paper: its file was moved away, or the current filters (`--min-citations`, `--year-from`) now exclude it. The report says so in place, so the line cannot be misread as data loss.
+
+When nothing moved, that is one line: `nothing changed since out/merged.jsonl: the same 20 works, same counts`.
+
+Together with the refresh loop above, keeping a collection current is three commands and no mental bookkeeping:
+
+```sh
+scholar-digest --collection out --stale 60 --refresh-list out/refresh.txt   # offline: what to collect again
+scholar-crawler --clusters-file out/refresh.txt -p 1 -o out/refresh-1.jsonl # one page load per id
+scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl --min-citations 1
+```
+
+Other files may sit in the folder: only `.jsonl` is read and subdirectories are not walked. Named files still work and are read after the folder.
+
+### Keeping a collection current: `--stale` and `--refresh-list`
+
+Every record carries `fetched_at`, the UTC moment it was collected, so how old a set is can be answered offline. Citation counts only grow, and the number stored three months ago is no longer quotable.
+
+```sh
+$ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh-limit 5
+  20 records collected between 475 and 0 days ago
+  17 older than 60 days (85% of the set)
+  17 of those can be re-listed by id, one page load each; 0 would need their query re-run
+    375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network...
+    475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks...
+[out] 5 id(s) to re-list -> out/refresh.txt (of 17 records older than 60 days)
+```
+
+The order is not age alone: a paper with three citations gains none in a year, while one with forty thousand drifts by hundreds in two months. The weight is age × log(citations), which puts the records whose numbers actually moved first. It orders a list for a human; it does not claim to predict the new count.
+
+The file `--refresh-list` writes is the format `scholar-crawler --clusters-file` reads, so the loop closes:
+
+```sh
+scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt   # offline: pick what to redo
+scholar-crawler --clusters-file out/refresh.txt -p 1 -o out/new.jsonl  # one page load each
+scholar-digest out/*.jsonl out/new.jsonl --min-citations 1 -o out/library.jsonl
+```
+
+Why the last line filters: `--cluster` lists *all versions* of a work, so besides the canonical record it returns the mirrors and preprints of the same paper as extra rows that carry no `data-cid` and no citation count. Five refreshes brought back 37 records here, 32 of them such version rows; `--min-citations 1` drops exactly those and leaves the 20 canonical records.
+
+Merging was corrected to match: the richer record still wins, but fields it lacks are now filled from the other copy. A re-collected record carries the fresher count while a versions listing carries no snippet, and replacing the record wholesale would throw away what was already collected.
+
+### Auditing what you collected: `--audit`
+
+A Scholar card carries one grey line holding "authors - venue, year - site", and the parser splits it by position. That works for the usual card and fails quietly on the rest: a venue that is really a page range, a year taken from digits in the journal name, an author list Scholar itself truncated. Nothing downstream notices — `--group-by year` simply groups a wrong year.
+
+`--audit` reads local files only and measures how much of what you already collected can be trusted:
+
+```
+$ scholar-digest out/*.jsonl --audit
+  audit of 9 records: 2 checks tripped (0 errors, 2 warnings)
+    warn  authors_truncated              3  33.3%  Scholar elided the author list, so BibTeX gets 'and others'
+        e.g. P Veličković, G Cucurull, A Casanova… | Graph attention networks
+    warn  cluster_id_missing             3  33.3%  no card id, so BibTeX export and citation expansion cannot address this record
+        e.g. <empty> | Generative adversarial nets
+```
+
+Two severities: `error` means the value is wrong (an implausible year, a year that appears nowhere in the byline it was read from, a venue that is a volume/issue/page range, a venue that still contains a year, a citation count with no citing-works link, a negative count, a missing title), and `warn` means missing or lossy (no venue/year/authors, a truncated author list, a bare hostname as the venue, a `[PDF]` tag left on the title, no card id). Each finding reports the count, the share and two real examples — not a score, but enough to judge whether the batch is usable.
+
+Its first run found a real defect: the profile parser kept the year inside the venue (`Advances in neural information processing systems 27, 2014`) while the result-page parser stripped it. Grouping happened to be immune (`normalize_venue` cuts the volume tail), but the stored field disagreed between the two sources and the exported BibTeX repeated the year inside `journal`. Both parsing paths now share one stripping function.
+
+### Auditing while crawling
+
+Running `--audit` afterwards finds spoiled data, but by then the pages have been fetched. So every run applies the same checks to the records **it just wrote** (counting per check as they go past, no memory growth), says nothing at all in the normal case, and speaks up after the run summary only when an error-severity check matches at least 3 records and at least 20% of them:
+
+```
+[out] 40 new records (0 duplicates skipped) -> out/results.jsonl
+[run] 5 requests in 1m, 0 takeovers, 0 navigation retries, delay now 4.0-11.0s
+[audit] 1 field(s) parsed badly for a large share of this run's records — Scholar's layout may have changed
+[audit]   venue_looks_like_pages: 16 of 40 records (40%) — venue is a volume, issue or page range, so venue grouping is wrong
+[audit]       e.g. 521 (7553), 436-444 | Deep learning
+[audit] run --self-check to test the parser, or scholar-digest --audit for the details
+```
+
+The thresholds exist so the run does not cry wolf: a single odd record (Scholar has plenty) stays quiet, and only a field failing across a large share of one run — usually a layout change — speaks. Missing-field warnings never raise an alarm, because Scholar withholding a venue or truncating an author list is not a parse failure.
+
+### Grouping
+
+`--group-by` splits the merged records by first author, venue, year or citation-graph level, ranked by total citations:
+
+```
+$ scholar-digest out/all.jsonl --group-by venue --groups 4
+  by venue                                 count  citations  median  years      most cited
+    Advances in neural information processin     1     119743  119743  2014       Generative adversarial nets
+    nature                                       1     118913  118913  2015       Deep learning
+    arXiv preprint                               2      44564   22282  2017-2021  Graph attention networks
+    The world wide web                           1       4408    4408  2019       Heterogeneous graph attention network
+    ... and 4 more groups
+```
+
+The `median` column is there for fair comparison: it tells a group carried by one runaway paper apart from a group that is well cited throughout.
+
+Two normalizations keep one venue from being split across groups: every arXiv preprint becomes `arXiv preprint` (Scholar writes the identifier into the venue), and profile-style venues like `nature 521 (7553), 436-444, 2015` lose the volume and pages to become `nature`. Grouping is case-insensitive and displays the first spelling seen. The overview's venue list uses the same normalization.
 
 ## The takeover log
 
@@ -388,197 +575,6 @@ $ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
 
 Every number is an upper bound: listings that run out of results and expansions with nothing left to expand cost less. Bad arguments still fail under `--dry-run`, so it doubles as an argument check.
 
-### Building a bibliography offline
-
-Exporting BibTeX during a crawl costs two extra page loads per record, the most expensive part of a run. But the title, authors, venue, year and link from the result card are already stored, so a usable bibliography can be assembled afterwards without contacting Scholar:
-
-```sh
-scholar-digest out/all.jsonl --min-citations 500 --bibtex out/refs.bib
-[out] 42 entries -> out/refs.bib (7 keys from the crawl, 35 generated, 12 truncated author lists)
-```
-
-These are reconstructions, not Scholar's own export, and the difference is worth knowing:
-
-```bibtex
-% exported by Scholar (--bibtex during the crawl, 2 requests per record)
-@article{velivckovic2017graph,
-  title={Graph attention networks},
-  author={Veli{\v{c}}kovi{\'c}, Petar and Cucurull, Guillem and Casanova, Arantxa and ...},
-  journal={arXiv preprint arXiv:1710.10903},
-  year={2017}
-}
-
-% assembled offline (0 requests)
-@article{velickovic2017graph,
-  title = {{Graph attention networks}},
-  author = {P Veličković and G Cucurull and A Casanova and others},
-  journal = {arXiv preprint},
-  year = {2017},
-  url = {https://arxiv.org/abs/1710.10903},
-  note = {cited by 41135 on Google Scholar},
-}
-```
-
-So: author names keep Scholar's initials, a list Scholar truncated gains `and others`, and the arXiv identifier may be missing — in exchange for zero requests, plus the original link and the citation count. Export during the crawl when you need exact entries; build offline when you want a usable bibliography without waiting hours again.
-
-Details: a record exported during the crawl reuses its key, so both files name the same work identically; `Veličković` transliterates to `velickovic` (`ł`, `ø`, `ß`, `æ` are handled too); colliding keys gain `a`, `b`, …; a venue mentioning Proceedings, Conference or Workshop becomes `@inproceedings` with `booktitle`, and a record without a venue becomes `@misc`; titles are double-braced so a style cannot flatten their capitalization; `&`, `%` and `_` are escaped. Records without a title are skipped and counted.
-
-### A readable overview: `--report`
-
-JSONL and CSV are for programs and the terminal summary scrolls away, while what a literature search actually has to hand over is prose. `--report` writes the merged records as a Markdown overview you can paste into a first draft:
-
-```sh
-scholar-digest out/*.jsonl --report out/report.md --report-title "Graph attention networks: a first pass"
-```
-
-It contains the size of the collection at a glance (records, total citations, year span, venues, first authors), the most-cited works with their original links, two grouped tables — by venue and by first author, each with records, citations, median, year span and the group's most-cited work — a text bar chart of records per year (which survives copy-paste), which query each record came from, and finally a "how much of this to trust" section that reuses the `--audit` checks to state the missing rates and doubtful fields outright.
-
-The report opens by saying that every number comes from what Scholar showed when the records were collected and that nothing was re-fetched, so nobody mistakes it for live data.
-
-### Exporting the citation graph: `--network` and `--graph`
-
-A `--cites X` listing means every record on it cites the work whose citing-works id is `X`, and each record's own `cited_by_url` carries that id for itself. The citation relation is therefore already in the JSONL a crawl wrote: no extra request, and collections made before this existed still yield their graph.
-
-```sh
-$ scholar-digest out/graph.jsonl --network --graph out/graph.graphml
-  38 records and 0 uncollected works, 28 edges
-  10 component(s), largest 11 works; 7 record(s) neither cite nor are cited here
-  most cited from inside this collection:
-      10 here     41,135 on Scholar  Graph attention networks
-       9 here      4,408 on Scholar  Heterogeneous graph attention network
-[out] 38 nodes and 28 edges as graphml -> out/graph.graphml
-```
-
-"From inside this collection" is the point: `10 here` means ten of these 38 records cite it, while `41,135 on Scholar` is its global count. Only the first says how central it is **to the topic you collected**.
-
-`--graph` picks the format from the suffix: `.graphml` for Gephi, yEd and networkx, `.dot`/`.gv` for Graphviz (`dot -Tsvg out/graph.dot -o graph.svg`). An unrecognized suffix is refused with a pointer to `--graph-format` rather than guessed. Nodes carry label, year, citations, depth (expansion level) and collected.
-
-Two limits, stated plainly:
-
-- Seeding with `--cites <id>` means the cited work itself is not in the collection. Such targets appear as dashed `uncollected work <id>` nodes, because otherwise the graph would come out with no edges at all and look broken.
-- One paper can appear under several `--cites` listings while merging keeps only one of its `query` values. Edges are therefore taken from every observation **before** merging, and nodes from the merged, filtered set, so deduplication cannot drop an edge.
-
-A keyword-only collection has no citation edges, and the report says exactly that instead of drawing an empty graph.
-
-### A folder as one collection: `--collection` and `--since`
-
-After a few weeks a topic is a pile of files under `out/`, and remembering which one came from which session — and which one was last run's merge — is bookkeeping nobody should do by hand. `--collection` makes the folder the unit, and `--since` answers what changed:
-
-```sh
-$ scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl
-[in] 11 records from 2 file(s), 3 duplicates merged, 0 filtered out
-  ...
-  6 works since out/merged.jsonl -> 8 now: 2 new, 0 no longer here, 2 with a new citation count
-  citations gained across the works in both: +41
-  biggest movers:
-    +    40  now      140  Work 0
-    +     1  now      111  Work 1
-  new:
-    Work 6
-    Work 7
-[out] 8 records -> out/merged.jsonl
-```
-
-There is a trap `--collection` exists for: run `scholar-digest out/*.jsonl -o out/merged.jsonl` a second time and the glob **includes the merge it wrote last time**. Deduplication hides the damage, but the "how many files, how many duplicates" line stops meaning anything, and a collection that reads its own output back always looks complete. `--collection` excludes the files this run writes (`-o` and `--since`), which is what `11 records from 2 file(s)` above proves: the folder holds three `.jsonl` files and two were read.
-
-`--since` keys both sides exactly as the crawler deduplicates, so a work stays the same work when its count, venue or snippet changed. The three outcomes mean:
-
-- **new** — in this run's inputs, absent from the earlier merge.
-- **with a new citation count** — present on both sides with a different number, sorted by how far it moved. A fall is reported as a fall (`-32`); Scholar does revise counts down. Note that merging keeps the higher count when one work appears in several inputs, so a fall shows only when the current inputs really report fewer.
-- **no longer here** — in the earlier merge, absent now. This is **not** Scholar dropping a paper: its file was moved away, or the current filters (`--min-citations`, `--year-from`) now exclude it. The report says so in place, so the line cannot be misread as data loss.
-
-When nothing moved, that is one line: `nothing changed since out/merged.jsonl: the same 20 works, same counts`.
-
-Together with the refresh loop above, keeping a collection current is three commands and no mental bookkeeping:
-
-```sh
-scholar-digest --collection out --stale 60 --refresh-list out/refresh.txt   # offline: what to collect again
-scholar-crawler --clusters-file out/refresh.txt -p 1 -o out/refresh-1.jsonl # one page load per id
-scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl --min-citations 1
-```
-
-Other files may sit in the folder: only `.jsonl` is read and subdirectories are not walked. Named files still work and are read after the folder.
-
-### Keeping a collection current: `--stale` and `--refresh-list`
-
-Every record carries `fetched_at`, the UTC moment it was collected, so how old a set is can be answered offline. Citation counts only grow, and the number stored three months ago is no longer quotable.
-
-```sh
-$ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh-limit 5
-  20 records collected between 475 and 0 days ago
-  17 older than 60 days (85% of the set)
-  17 of those can be re-listed by id, one page load each; 0 would need their query re-run
-    375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network...
-    475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks...
-[out] 5 id(s) to re-list -> out/refresh.txt (of 17 records older than 60 days)
-```
-
-The order is not age alone: a paper with three citations gains none in a year, while one with forty thousand drifts by hundreds in two months. The weight is age × log(citations), which puts the records whose numbers actually moved first. It orders a list for a human; it does not claim to predict the new count.
-
-The file `--refresh-list` writes is the format `scholar-crawler --clusters-file` reads, so the loop closes:
-
-```sh
-scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt   # offline: pick what to redo
-scholar-crawler --clusters-file out/refresh.txt -p 1 -o out/new.jsonl  # one page load each
-scholar-digest out/*.jsonl out/new.jsonl --min-citations 1 -o out/library.jsonl
-```
-
-Why the last line filters: `--cluster` lists *all versions* of a work, so besides the canonical record it returns the mirrors and preprints of the same paper as extra rows that carry no `data-cid` and no citation count. Five refreshes brought back 37 records here, 32 of them such version rows; `--min-citations 1` drops exactly those and leaves the 20 canonical records.
-
-Merging was corrected to match: the richer record still wins, but fields it lacks are now filled from the other copy. A re-collected record carries the fresher count while a versions listing carries no snippet, and replacing the record wholesale would throw away what was already collected.
-
-### Auditing what you collected: `--audit`
-
-A Scholar card carries one grey line holding "authors - venue, year - site", and the parser splits it by position. That works for the usual card and fails quietly on the rest: a venue that is really a page range, a year taken from digits in the journal name, an author list Scholar itself truncated. Nothing downstream notices — `--group-by year` simply groups a wrong year.
-
-`--audit` reads local files only and measures how much of what you already collected can be trusted:
-
-```
-$ scholar-digest out/*.jsonl --audit
-  audit of 9 records: 2 checks tripped (0 errors, 2 warnings)
-    warn  authors_truncated              3  33.3%  Scholar elided the author list, so BibTeX gets 'and others'
-        e.g. P Veličković, G Cucurull, A Casanova… | Graph attention networks
-    warn  cluster_id_missing             3  33.3%  no card id, so BibTeX export and citation expansion cannot address this record
-        e.g. <empty> | Generative adversarial nets
-```
-
-Two severities: `error` means the value is wrong (an implausible year, a year that appears nowhere in the byline it was read from, a venue that is a volume/issue/page range, a venue that still contains a year, a citation count with no citing-works link, a negative count, a missing title), and `warn` means missing or lossy (no venue/year/authors, a truncated author list, a bare hostname as the venue, a `[PDF]` tag left on the title, no card id). Each finding reports the count, the share and two real examples — not a score, but enough to judge whether the batch is usable.
-
-Its first run found a real defect: the profile parser kept the year inside the venue (`Advances in neural information processing systems 27, 2014`) while the result-page parser stripped it. Grouping happened to be immune (`normalize_venue` cuts the volume tail), but the stored field disagreed between the two sources and the exported BibTeX repeated the year inside `journal`. Both parsing paths now share one stripping function.
-
-### Auditing while crawling
-
-Running `--audit` afterwards finds spoiled data, but by then the pages have been fetched. So every run applies the same checks to the records **it just wrote** (counting per check as they go past, no memory growth), says nothing at all in the normal case, and speaks up after the run summary only when an error-severity check matches at least 3 records and at least 20% of them:
-
-```
-[out] 40 new records (0 duplicates skipped) -> out/results.jsonl
-[run] 5 requests in 1m, 0 takeovers, 0 navigation retries, delay now 4.0-11.0s
-[audit] 1 field(s) parsed badly for a large share of this run's records — Scholar's layout may have changed
-[audit]   venue_looks_like_pages: 16 of 40 records (40%) — venue is a volume, issue or page range, so venue grouping is wrong
-[audit]       e.g. 521 (7553), 436-444 | Deep learning
-[audit] run --self-check to test the parser, or scholar-digest --audit for the details
-```
-
-The thresholds exist so the run does not cry wolf: a single odd record (Scholar has plenty) stays quiet, and only a field failing across a large share of one run — usually a layout change — speaks. Missing-field warnings never raise an alarm, because Scholar withholding a venue or truncating an author list is not a parse failure.
-
-### Grouping
-
-`--group-by` splits the merged records by first author, venue, year or citation-graph level, ranked by total citations:
-
-```
-$ scholar-digest out/all.jsonl --group-by venue --groups 4
-  by venue                                 count  citations  median  years      most cited
-    Advances in neural information processin     1     119743  119743  2014       Generative adversarial nets
-    nature                                       1     118913  118913  2015       Deep learning
-    arXiv preprint                               2      44564   22282  2017-2021  Graph attention networks
-    The world wide web                           1       4408    4408  2019       Heterogeneous graph attention network
-    ... and 4 more groups
-```
-
-The `median` column is there for fair comparison: it tells a group carried by one runaway paper apart from a group that is well cited throughout. `--min-group-size 3` folds away the long tail of one-off groups.
-
-Two normalizations keep one venue from being split across groups: every arXiv preprint becomes `arXiv preprint` (Scholar writes the identifier into the venue), and profile-style venues like `nature 521 (7553), 436-444, 2015` lose the volume and pages to become `nature`. Grouping is case-insensitive and displays the first spelling seen. The overview's venue list uses the same normalization.
-
 ## Real-structure regression fixtures
 
 `tests/pages/` holds sanitized copies of four pages the crawler really loaded: a result page, an author profile, a cite popup and a BibTeX export. Hand-written fixtures prove the parser's logic but not that it still fits Scholar's real markup; these do, entirely offline — the result page runs all ten `--self-check` checks.
@@ -597,7 +593,7 @@ python3 -m tests.sanitize out/dump/<result-page>.html tests/pages/results.html 6
 
 Unit tests feed HTML strings to the parser and `--self-check` needs the real network; neither covers the path that matters most: a **real browser** navigating real URLs, tripping a challenge, resuming after a takeover and writing the files correctly. `tests/fakescholar.py` serves a fake Scholar on loopback with `http.server`, answering only `/scholar` and `/citations`, and can be told to answer a given offset with a challenge page the first time it is asked. The stand-in human in the tests clears it the way a person does — reload the page, the challenge is gone, the crawl continues.
 
-Behaviour that used to be verified once against the real Scholar now runs on every CI job: paging to the page budget and not one page further, 20 records and the matching CSV rows, a cursor at 40, challenge → takeover → the same offset refetched → nothing lost, `resolved` in the takeover log with a redacted URL, `--resume` continuing from 20 to 40, an author profile and its header stored, clean data raising no audit alarm, and — when headless refuses the takeover — the 10 records already collected still on disk, exit code 1, and the cursor left at 10.
+Behaviour that used to be verified once against the real Scholar now runs on every CI job: paging to the page budget and not one page further, all 20 records on disk, a cursor at 40, challenge → takeover → the same offset refetched → nothing lost, `resolved` in the takeover log with a redacted URL, `--resume` continuing from 20 to 40, an author profile and its header stored, clean data raising no audit alarm, and — when headless refuses the takeover — the 10 records already collected still on disk, exit code 1, and the cursor left at 10.
 
 ## Self-check
 
@@ -623,7 +619,7 @@ It fetches one page of a broad query and reports, field by field, whether titles
 | `--no-citations`, `--no-patents` | exclude citation-only records / patents |
 | `--lang`, `--host` | interface language (`hl`); mirror such as `https://scholar.google.de` |
 | `--challenge-log` | takeover log (default `out/challenges.jsonl`, URLs redacted) |
-| `-o/--out`, `--csv`, `--state` | JSONL output, CSV export, resume state |
+| `-o/--out`, `--state` | JSONL output and resume state (CSV is `scholar-digest --csv`; a crawl does not export tables) |
 | `--bibtex` | also export BibTeX to a `.bib` file; deduplicated by citation key, with `extra.bibtex_key` recorded on each record |
 | `--profiles-out`, `--dump-html` | author profile headers (one record per author, re-crawls replace it), raw HTML of every fetched page |
 | `--profile`, `--channel`, `--locale`, `--timezone`, `--proxy` | browser profile and environment |
@@ -738,35 +734,21 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 439 tests, fully offline
+python3 -m pytest -q     # 428 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
-All tests run offline (no network at all), grouped by area:
+Every test is offline (no network). Grouped by what they cover; read `tests/` for the detail:
 
-- **Parsing**: result cards (citation-only records, PDF side links, cited-by and version counts, bolded query terms mid-word, the page-two result count, zero-hit pages), author profiles (header lines, the position-read summary table, publication rows, missing years and zero citations, the "show more" state), real-page fixtures (all ten self-checks on a real result page, field completeness, the sanitizing rules, a no-credentials scan)
-- **URLs and filters**: query and profile URL assembly, filter parameters, id and URL parsing, cite-popup addresses
-- **Crawl loop**: pagination and author batching, pacing and cooldowns, the back-to-back challenge wait and its off switch, both run-summary duration formats, HTML dumps, a challenge during export
-- **Failure diagnosis**: nine classes of network error, retrying only failures a retry could survive, an unrecognized error keeping its text and still advising, every diagnosis naming the URL and a next step, 429/503 told apart from other 5xx, an unreadable page pointing at parser.py and the saved copy, repeated challenges reported as a block, and the render order
-- **End to end**: a real browser against the local fake Scholar — paging and the page budget, a takeover losing nothing, `--resume`, an author profile stored, no alarm on clean data, data kept on disk when headless refuses the takeover, plain-words diagnoses for a refused connection, an unreadable page and HTTP 429, a zero-hit listing still reported as empty, and a run described entirely by a settings file — query, pages, host, profile and every output path read from TOML, with `--config` the only flag — collecting the same records
-- **Auditing while crawling**: the incremental tally agrees exactly with the batch audit, one bad record stays quiet, a field failing across a run raises an alarm, missing-field warnings never do, and the alarm prints after the run's output
-- **The report**: stating that the numbers are as-collected, the counts at a glance, links only where a destination exists, the grouped tables, a chart scaled to the busiest year, which query each record came from, its own trust section, an escaped pipe in a title, an em dash for a missing field, and counting as output under `--quiet`
-- **Record audit**: a clean record trips nothing, page-range venues and leftover years, a year the byline never mentioned, citations without a link, negative counts, the severity of missing and lossy fields, citation-only records not blamed for a missing card id, counts with examples, and zero errors on records parsed from the real fixtures
-- **Documentation**: in-page links in both READMEs resolve to real sections, the navigation table covers at least seven situations, and both documents list exactly the modules that exist
-- **The document for programs**: the eight top-level keys are always present, only written files are named, non-ASCII is not escaped, `--dry-run` fills `plan` with numbers, a `kind` outside the vocabulary raises, AGENTS.md matches that vocabulary word for word, a refused report mode is itself a document, stdout carries the document while every progress line goes to stderr, the digest's `overview`/`delta`/`files`, `--install-browser` runs through the current interpreter and says how to see a failure, and the browser probe keeps only the child's path while discarding Playwright's teardown noise
-- **Collections**: only `.jsonl` is read and subdirectories are not walked, the files this run writes are excluded from its inputs, the diff pairs records by the crawler's own dedup key (new, no longer here, counts moved including falls), movements sort by size either way, a record without a count is not a movement, an unchanged collection is one line, long lists are cut with a count, and an emptied folder, a non-directory, no inputs at all and a missing `--since` file each fail by name
-- **Settings files**: a table and a top-level key mean the same thing, dashes and underscores both work, a flag beats the file and the override is reported, a repeated flag replaces the file's list, a misspelled key suggests the closest real one, modes are refused, every type mismatch is refused by name (number-as-string, switch-as-string, list-versus-single, outside choices), a nested table, a key set twice, broken TOML, a missing file, and the shipped `scholar.toml.example` reading back in full and running its recipe as written under `--explain`
-- **The interface**: both parsers are read back and compared — a shared flag parses the same way in both commands, every flag has help, every flag sits in a described group, a flag with a default states it, and terminal lists and the written report are governed by separate options
-- **Modes**: all four modes driven without argparse (the rehearsal in a real headless Chromium), showing and forgetting state, and takeovers printed newest last
-- **Recipes**: every recipe parses, builds a target and (for the `--dry-run` one) actually runs; the print format, the first three shown for a bare invocation, and a terse error when arguments were passed
-- **Cross-run learning**: rehearsals excluded as evidence, the history summary (kinds, position, streaks), one block only warning, factors stacking for repeated and early blocks with a cap, never speeding a run up, hand-passed delays left alone, the off switch, an empty log leaving defaults
-- **Takeover log**: URL redaction (challenge tokens and search parameters treated differently), the one-line summary, appending and reading back (skipping bad lines), all three outcomes during a crawl (solved, budget exhausted, headless refusal), a recorded rehearsal, and `--show-state` reading it back
-- **Human takeover**: challenge detection against a real headless-Chromium DOM, the wait's timeout, closed window and headless refusal, the full rehearsal path (detected, cleared, resumed)
-- **Citation graph**: most-cited ordering, breadth cap, visited dedup, citation floor, level progression and early convergence
-- **Output and resume state**: JSONL dedup, CSV export, profile upserts, `.bib` dedup, state review and reset (signatures rendered back, timestamps, older files), a target capped by `-n` staying resumable
-- **Offline tools**: digest merge precedence, filters and summaries, grouping with venue normalization, bibliography building (transliteration and surnames, truncated author lists, key reuse and collisions, entry types, escaping and double braces)
-- **Plan versus reality**: the load count `--dry-run` computes is compared against the loads the real crawl loop performs for the same arguments, including three `-n` truncation cases
-- **Command line**: argument validation, `--dry-run` numbers with no files written, `--self-check`, BibTeX link discovery (by href, not label) and `<pre>` extraction, `--quiet` combinations
+- **Parsing**: every field of result cards and author profiles, plus four real-page fixtures (`tests/pages/`) so parsing is both correct and still true to Scholar's markup
+- **Crawl loop**: paging, author batching, pacing and cooldowns, the quiet wait after back-to-back blocks, HTML dumps, run summaries
+- **Human takeover**: challenge detection on real headless Chromium, waiting and timeouts, a closed window, a headless refusal, the takeover log and cross-run slowdown
+- **End to end**: a real browser against a local fake Scholar (`tests/fakescholar.py`) — page budget, no loss across a takeover, `--resume`, author profiles, collected records surviving a headless refusal, and one run described entirely by a settings file
+- **Failure diagnosis**: nine network failures classified apart, only plausibly transient ones retried, unrecognized errors keeping their text and still offering a next step
+- **Output for people**: what `--doctor`, `--explain`, `--dry-run`, `--recipes`, `--audit` and `--report` say, and the planned load count matched against the real one
+- **Output for programs**: the document's fixed keys, the failure vocabulary, the stdout/stderr split, and AGENTS.md matching that vocabulary word for word
+- **Offline tools**: merging, filtering, summaries, grouping, bibliography synthesis, staleness and refresh lists, collection deltas
+- **Configuration and interface**: settings-file equivalence and errors, both parsers (groups, help, defaults), and both READMEs' links and module lists
 
 ## Compliance
 
@@ -801,7 +783,7 @@ scholar_crawler/
   report.py     offline overview: the readable Markdown report
   audit.py      offline audit: implausible and missing fields
   bibsynth.py   offline bibliography: BibTeX from stored fields
-  storage.py    JSONL/CSV writers, author profile records, the .bib file, resume state
+  storage.py    JSONL writer, author profile records, the .bib file, resume state
   config.py     TOML settings files: reading, validation, precedence, provenance
   machine.py    the JSON document for programs: fixed keys, failure vocabulary, stdout discipline
   cli.py        command-line entry point: flag definitions and mode dispatch

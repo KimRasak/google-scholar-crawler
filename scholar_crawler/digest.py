@@ -23,7 +23,7 @@ from .analysis import (
 from .audit import audit_records, render_audit
 from .bibsynth import write_bibtex
 from .collection import SUFFIX, Delta, collection_files, compare, render_delta
-from .graph import FORMATS, build_graph, format_for, render_graph, render_network
+from .graph import build_graph, render_network
 from .machine import document, emit, failure, human_lines_to_stderr, version
 from .models import record_key
 from .refresh import (
@@ -288,13 +288,6 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"also print a per-group table ({', '.join(GROUP_KEYS)})",
     )
     printed.add_argument(
-        "--min-group-size",
-        type=int,
-        default=1,
-        metavar="N",
-        help="hide groups holding fewer records than this (default: 1)",
-    )
-    printed.add_argument(
         "--groups", type=int, default=10, metavar="N", help="groups to list (default: 10)"
     )
     printed.add_argument(
@@ -365,17 +358,6 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"ids to write for --refresh-list; each costs one page load "
         f"(default: {DEFAULT_REFRESH_LIMIT})",
     )
-    written.add_argument(
-        "--graph",
-        type=Path,
-        metavar="FILE",
-        help="export the citation graph; .graphml for Gephi/yEd/networkx, .dot for Graphviz",
-    )
-    written.add_argument(
-        "--graph-format",
-        choices=FORMATS,
-        help="override the format --graph infers from the file suffix",
-    )
     return parser
 
 
@@ -425,11 +407,11 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     except (NotADirectoryError, ValueError) as error:
         return _fail("bad_inputs", str(error))
     if args.quiet and not (
-        args.out or args.csv or args.bibtex or args.report or args.refresh_list or args.graph
+        args.out or args.csv or args.bibtex or args.report or args.refresh_list
     ):
         return _fail(
             "usage",
-            "--quiet needs --out, --csv, --bibtex, --report, --refresh-list or --graph, "
+            "--quiet needs --out, --csv, --bibtex, --report or --refresh-list, "
             "otherwise the run prints nothing",
         )
     try:
@@ -477,7 +459,7 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
             for line in render_staleness(kept, days=args.stale, top=args.top):
                 print(f"  {line}", flush=True)
         if args.group_by:
-            groups = group_records(kept, args.group_by, min_size=args.min_group_size)
+            groups = group_records(kept, args.group_by)
             for line in render_groups(groups, args.group_by, limit=args.groups):
                 print(f"  {line}", flush=True)
     written: dict[str, Path | None] = {}
@@ -494,23 +476,6 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
         counted = f"{len(kept)} record" + ("" if len(kept) == 1 else "s")
         print(f"[out] report on {counted} -> {args.report}", flush=True)
         written["report"] = args.report
-    if args.graph:
-        fmt = args.graph_format or format_for(args.graph.suffix)
-        if fmt is None:
-            return _fail(
-                "unknown_graph_format",
-                f"cannot tell the format of {args.graph.name}; "
-                f"use a .graphml or .dot suffix, or pass --graph-format",
-            )
-        graph = build_graph(records, kept)
-        args.graph.parent.mkdir(parents=True, exist_ok=True)
-        args.graph.write_text(render_graph(graph, fmt), encoding="utf-8")
-        print(
-            f"[out] {len(graph.nodes)} nodes and {len(graph.edges)} edges as {fmt} "
-            f"-> {args.graph}",
-            flush=True,
-        )
-        written["graph"] = args.graph
     if args.refresh_list:
         days = args.stale if args.stale is not None else float(DEFAULT_STALE_DAYS)
         aged = rank_stale(kept, days=days)

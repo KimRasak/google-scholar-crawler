@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import json
 import sys
 from pathlib import Path
@@ -42,20 +41,6 @@ def test_reopening_dedups_against_existing_file(tmp_path: Path) -> None:
     assert second.write(results[0]) is False
     assert second.write(results[1]) is True
     second.close()
-
-
-def test_csv_export_has_header_and_rows(tmp_path: Path) -> None:
-    sink = _sink(tmp_path)
-    for result in parse_result_page(RESULT_PAGE_HTML).results:
-        sink.write(result)
-    sink.close()
-    csv_path = tmp_path / "out" / "results.csv"
-    assert sink.export_csv(csv_path) == 3
-    with csv_path.open(encoding="utf-8", newline="") as handle:
-        rows = list(csv.reader(handle))
-    assert rows[0][:3] == ["position", "title", "authors"]
-    assert len(rows) == 4
-    assert rows[1][1] == "Attention is all you need"
 
 
 def test_state_round_trip(tmp_path: Path) -> None:

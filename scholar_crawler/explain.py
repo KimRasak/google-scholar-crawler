@@ -123,11 +123,10 @@ def _expansion(follow: FollowPolicy, seeds: int) -> list[str]:
     ]
 
 
-def _rhythm(pacing: Pacing, args: argparse.Namespace) -> list[str]:
+def _rhythm(pacing: Pacing) -> list[str]:
     """Describe the request rhythm.
 
     :param pacing: the resolved pacing.
-    :param args: parsed arguments.
     :returns: the lines describing delays, pauses and timeouts.
     """
     lines = [f"waiting {pacing.min_delay:g}–{pacing.max_delay:g}s between page loads"]
@@ -136,8 +135,6 @@ def _rhythm(pacing: Pacing, args: argparse.Namespace) -> list[str]:
             f"pausing {pacing.cooldown_seconds:g}s every {pacing.cooldown_every} loads, "
             f"and giving up on a page after {pacing.nav_timeout:g}s"
         )
-    if args.slow_mo:
-        lines.append(f"delaying every browser action by {args.slow_mo:g}ms")
     return lines
 
 
@@ -165,7 +162,6 @@ def _files(args: argparse.Namespace) -> list[str]:
     """
     planned: list[tuple[str, Path | None]] = [
         ("records", args.out),
-        ("csv", args.csv),
         ("bibtex", args.bibtex),
         ("author profiles", args.profiles_out if args.author else None),
         ("resume state", args.state),
@@ -189,7 +185,6 @@ def _output_collisions(args: argparse.Namespace) -> list[Concern]:
     """
     named = {
         "--out": args.out,
-        "--csv": args.csv,
         "--bibtex": args.bibtex,
         "--state": args.state,
         "--challenge-log": args.challenge_log,
@@ -422,7 +417,7 @@ def explain(
         *_paging(args, listings),
         *_filters(args),
         *_expansion(follow, len(listings) + len(authors)),
-        *_rhythm(pacing, args),
+        *_rhythm(pacing),
         *_takeover(args),
         *_files(args),
     ]

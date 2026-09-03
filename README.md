@@ -80,7 +80,7 @@ $ scholar-crawler --doctor
 
 ## 快速开始
 
-不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十七条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、设置文件、给程序调用、单查询、先算账、批量+CSV、作者主页、抓引文网络、断点续抓、数据体检、导出引文网络、判旧与重抓、维护文献库、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
+不想读参数表就先看 `--recipes`：它按「最安全 → 最贵」列出十七条可以直接复制的完整命令（环境体检、自检、演练接管、读回命令、设置文件、给程序调用、单查询、先算账、批量查询、作者主页、抓引文网络、断点续抓、数据体检、看清集合内部引用、判旧与重抓、维护文献库、离线出综述与书目）。什么都不传时，报错后也会顺手列出前三条。
 
 ```sh
 $ scholar-crawler --recipes
@@ -96,9 +96,9 @@ $ scholar-crawler --recipes
 # 关键词检索，抓 3 页（每页 10 条）
 scholar-crawler -q "large language model agents" -p 3 -o out/agents.jsonl
 
-# 限定年份 + 按时间排序 + 同时导出 CSV，最多 40 条
+# 限定年份 + 按时间排序，最多 40 条
 scholar-crawler -q "retrieval augmented generation" \
-  --year-from 2023 --sort-by-date -n 40 -o out/rag.jsonl --csv out/rag.csv
+  --year-from 2023 --sort-by-date -n 40 -o out/rag.jsonl
 
 # 批量查询（文件内一行一个，# 开头为注释，见 queries.example.txt），断点续爬
 scholar-crawler --queries-file queries.example.txt -p 10 --resume -o out/batch.jsonl
@@ -212,23 +212,207 @@ scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.js
 | 参数 | 作用 |
 | --- | --- |
 | `--top` | 每个终端列表列出几条：高被引、最旧、集合内被引（默认 5，`0` 表示只要统计不要列表） |
-| `--group-by`、`--min-group-size`、`--groups` | 按 `author`/`venue`/`year`/`level` 分组；隐藏记录数少于 N 的组；最多列出几组（默认 10） |
+| `--group-by`、`--groups` | 按 `author`/`venue`/`year`/`level` 分组；最多列出几组（默认 10） |
 | `--audit` | 体检字段：可疑值与缺失率，分 error/warn 两档 |
 | `--network` | 报告记录里已有的引文网络：谁引用了谁、连通分量、孤立记录 |
 | `--stale [天数]` | 报告数据有多旧，并按「最可能变了」排序 |
 
-**写成文件**（交给别的工具：表格、LaTeX、Gephi）
+**写成文件**（交给别的工具：表格、LaTeX）
 
 | 参数 | 作用 |
 | --- | --- |
-| `-o`、`--csv` | 写出合并后的 JSONL / CSV |
+| `-o`、`--csv` | 写出合并后的 JSONL / CSV（表格导出只在这里） |
 | `--bibtex` | 离线拼出参考文献文件（不发请求） |
 | `--report`、`--report-title`、`--report-top` | 输出一份可读的 Markdown 综述；正文列多少条（默认 15） |
 | `--refresh-list`、`--refresh-limit` | 写出该重抓的 cluster id 清单 |
-| `--graph`、`--graph-format` | 导出引文网络为 GraphML 或 DOT |
 | `--quiet` | 只打印写出结果，需要配合任一写文件的参数 |
 
-`--top` 只管终端里的列表，`--report-top` 只管 Markdown 综述——把终端列表调短，不会连带把写出的综述也削短。同理，`--min-group-size` 是「组的门槛」，`--groups` 是「列几组」：一个是尺寸，一个是数量，名字上就区分开。
+`--top` 只管终端里的列表，`--report-top` 只管 Markdown 综述——把终端列表调短，不会连带把写出的综述也削短。
+
+### 离线生成参考文献
+
+抓取时加 `--bibtex` 会向 Scholar 多要两次页面（每条记录），是整轮里最贵的部分。但结果页上的题名、作者、期刊、年份、链接其实都已经存下来了，所以事后可以离线拼出可用的条目：
+
+```sh
+scholar-digest out/all.jsonl --min-citations 500 --bibtex out/refs.bib
+[out] 42 entries -> out/refs.bib (7 keys from the crawl, 35 generated, 12 truncated author lists)
+```
+
+这是重建，不是 Scholar 的官方导出，差别值得知道：
+
+```bibtex
+% Scholar 自己导出的（抓取时 --bibtex，每条 2 次请求）
+@article{velivckovic2017graph,
+  title={Graph attention networks},
+  author={Veli{\v{c}}kovi{\'c}, Petar and Cucurull, Guillem and Casanova, Arantxa and ...},
+  journal={arXiv preprint arXiv:1710.10903},
+  year={2017}
+}
+
+% 离线拼出来的（0 次请求）
+@article{velickovic2017graph,
+  title = {{Graph attention networks}},
+  author = {P Veličković and G Cucurull and A Casanova and others},
+  journal = {arXiv preprint},
+  year = {2017},
+  url = {https://arxiv.org/abs/1710.10903},
+  note = {cited by 41135 on Google Scholar},
+}
+```
+
+也就是说：作者名只有 Scholar 显示的缩写、被它截断的作者列表补 `and others`、arXiv 编号可能缺失；换来的是零请求，外加原始链接与被引数。要精确条目就在抓取时导；要一份能直接用的书目、又不想再等几小时，就离线生成。
+
+其他细节：已经在抓取时导出过的记录会沿用同一个 key（两份文件指同一篇论文时名字一致）；`Veličković` 这类会正确转写成 `velickovic`（`ł`、`ø`、`ß`、`æ` 也都处理）；key 撞车时追加 `a`、`b`；venue 里出现 Proceedings/Conference/Workshop 的记为 `@inproceedings` 并用 `booktitle`，没有 venue 的记为 `@misc`；题名用双花括号包住，避免某些样式把大小写压平；`&`、`%`、`_` 等会转义。没有题名的记录会被跳过并计数。
+
+### 出一份可读的综述：`--report`
+
+JSONL 和 CSV 是给程序看的，终端汇总会滚走。一次文献检索最后真正要交出去的东西是文字，所以 `--report` 把合并后的记录写成一份 Markdown 概览，可以直接贴进综述初稿：
+
+```sh
+scholar-digest out/*.jsonl --report out/report.md --report-title "图注意力网络：初步梳理"
+```
+
+包含：一眼看完的规模（记录数、总被引、年份跨度、期刊数、第一作者数）、高被引清单（标题带原始链接）、按期刊/会议与按第一作者的两张分组表（记录数、总被引、中位数、年份跨度、代表作）、逐年分布的文本柱状图（复制粘贴不会坏）、这些记录分别来自哪个查询，最后是一节「这份报告有多可信」——直接复用 `--audit` 的检查结果，把缺失率和可疑字段摊开写。
+
+报告开头写明「所有数字都来自抓取当时 Scholar 显示的内容，生成报告没有重新请求」，避免读者把它当成实时数据。
+
+### 看清集合内部谁引用谁：`--network`
+
+`--cites X` 这种列表的含义是「这一页上的每条记录都引用了 X」，而每条记录自己的 `cited_by_url` 里就带着它自己的那个 X。所以引文关系其实早就存在 JSONL 里了——不用多发一个请求，之前几轮抓的老数据也照样能算。
+
+```sh
+$ scholar-digest out/graph.jsonl --network
+  38 records and 0 uncollected works, 28 edges
+  10 component(s), largest 11 works; 7 record(s) neither cite nor are cited here
+  most cited from inside this collection:
+      10 here     41,135 on Scholar  Graph attention networks
+       9 here      4,408 on Scholar  Heterogeneous graph attention network
+```
+
+「in this collection」是关键：`10 here` 指这 38 条里有 10 条引用了它，`41,135 on Scholar` 是全网被引数。前者才说明它在**你这个主题范围内**有多中心。
+
+一个如实说明的边界：用 `--cites <id>` 直接起抓时，被引的那篇本身并不在集合里，它会以 `uncollected work <id>` 计入——否则「一条边都没有」会看起来像坏了。一篇论文可能出现在多个 `--cites` 列表里，所以统计边时用的是**合并前**的全部观测，节点用合并、过滤后的集合，边不会因为去重而丢。
+
+关键词检索出来的集合没有引文边，这时它会直接说清楚，而不是画一张空图。
+
+### 把一个目录当作文献库：`--collection` 与 `--since`
+
+抓上几周之后，一个课题的产出就是 `out/` 下的一堆文件，靠人记住「哪个是哪次抓的、上次合并的结果是哪个」。`--collection` 让目录本身成为单位，`--since` 回答「和上次比变了什么」：
+
+```sh
+$ scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl
+[in] 11 records from 2 file(s), 3 duplicates merged, 0 filtered out
+  ...
+  6 works since out/merged.jsonl -> 8 now: 2 new, 0 no longer here, 2 with a new citation count
+  citations gained across the works in both: +41
+  biggest movers:
+    +    40  now      140  Work 0
+    +     1  now      111  Work 1
+  new:
+    Work 6
+    Work 7
+[out] 8 records -> out/merged.jsonl
+```
+
+这里有一个容易中招的坑，`--collection` 专门为它而存在：`scholar-digest out/*.jsonl -o out/merged.jsonl` 跑第二遍时，`out/*.jsonl` 已经**包含上次写出的 merged.jsonl**。去重让它看起来没事，但「几个文件、多少重复」的统计从此没有意义，而一个只读回自己上次结果的库看起来永远是完整的。`--collection` 会把这一轮要写的文件（`-o` 与 `--since`）从输入里排除，上面那行 `11 records from 2 file(s)` 就是证据——目录里有三个 `.jsonl`，只读了两个。
+
+`--since` 的比较口径和抓取时的去重完全一致（同一个 `record_key`），所以被引数、期刊、摘要变了仍算同一篇。三类结果各自的含义：
+
+- **new**：这次输入里有、上次合并里没有的。
+- **with a new citation count**：两边都有但数字变了，按变化幅度绝对值排序。**降**也会如实报（`-32`）：Scholar 自己会下修被引数。注意合并规则是「同一篇在多份输入里出现时保留被引数更高的那条」，所以只有当前输入确实报了更小的数字时才会看到降。
+- **no longer here**：上次有、这次没有。这**不是** Scholar 删了论文，而是那条记录所在的文件被移走了，或者当前的过滤条件（`--min-citations`/`--year-from`）把它排除了——输出里就直接这么写着，免得被误读成数据丢失。
+
+什么都没变时只有一行：`nothing changed since out/merged.jsonl: the same 20 works, same counts`。
+
+和上一节的重抓闭环拼起来，维护一个库就是三条命令，不需要人脑记账：
+
+```sh
+scholar-digest --collection out --stale 60 --refresh-list out/refresh.txt   # 离线：该重抓哪些
+scholar-crawler --clusters-file out/refresh.txt -p 1 -o out/refresh-1.jsonl # 每条一次加载
+scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl --min-citations 1
+```
+
+目录里可以混着别的文件：只有 `.jsonl` 会被读，子目录不递归。命令行上再补几个文件也行，它们接在目录之后。
+
+### 维护一个持续更新的文献库：`--stale` 与 `--refresh-list`
+
+每条记录都带 `fetched_at`（抓取时刻，UTC），所以「这批数据有多旧」是离线就能算的。被引数会一直涨，抓过三个月的记录里那个数字已经不能引用了。
+
+```sh
+$ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh-limit 5
+  20 records collected between 475 and 0 days ago
+  17 older than 60 days (85% of the set)
+  17 of those can be re-listed by id, one page load each; 0 would need their query re-run
+    375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network...
+    475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks...
+[out] 5 id(s) to re-list -> out/refresh.txt (of 17 records older than 60 days)
+```
+
+排序不是单纯按年龄：被引 3 次的论文放一年数字也不会动，被引四万次的放两个月就差了几百。所以权重是「年龄 × log(被引数)」——把数字真的变了的排在前面。这只是给人排个序，不假装能预测新的被引数。
+
+`--refresh-list` 写出的文件就是 `scholar-crawler --clusters-file` 读的格式，一进一出闭环：
+
+```sh
+scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt   # 离线，选出该重抓的
+scholar-crawler --clusters-file out/refresh.txt -p 1 -o out/new.jsonl  # 每条一次页面加载
+scholar-digest out/*.jsonl out/new.jsonl --min-citations 1 -o out/library.jsonl
+```
+
+第三条为什么要 `--min-citations 1`：`--cluster` 列的是「这篇的所有版本」，除了正主之外还会带回同一篇的镜像、预印本等版本行——它们没有 `data-cid`、也没有被引数。实测 5 次重抓带回 37 条，其中 32 条是这种版本行；`--min-citations 1` 正好把它们滤掉，剩下 20 条正主。
+
+合并时也做了一处修正：以前只保留「更富」的那条记录，现在胜者缺的字段会从另一条补上。重抓回来的记录被引数更新、但版本列表里没有摘要，如果整条替换就会把已经抓到的摘要丢掉。
+
+### 体检已抓到的数据：`--audit`
+
+Scholar 的结果卡片只有一行灰字承载「作者 - 期刊, 年份 - 站点」，解析靠位置切分：常见卡片没问题，剩下的会静默出错——venue 实际上是页码范围、year 来自期刊名里的数字、作者列表被 Scholar 自己截断。下游不会察觉，`--group-by year` 照样按错的年份分组。
+
+`--audit` 只读本地文件，把「已经抓到的数据有多不可信」量出来：
+
+```
+$ scholar-digest out/*.jsonl --audit
+  audit of 9 records: 2 checks tripped (0 errors, 2 warnings)
+    warn  authors_truncated              3  33.3%  Scholar elided the author list, so BibTeX gets 'and others'
+        e.g. P Veličković, G Cucurull, A Casanova… | Graph attention networks
+    warn  cluster_id_missing             3  33.3%  no card id, so BibTeX export and citation expansion cannot address this record
+        e.g. <empty> | Generative adversarial nets
+```
+
+分两档：`error` 是值本身错了（年份不在合理区间、年份在原始灰字里根本没出现过、venue 是卷期页码、venue 里还留着年份、有被引数却没有被引链接、计数为负、标题缺失），`warn` 是缺失或有损（缺 venue/year/作者、作者被截断、venue 是裸域名、标题带 `[PDF]` 标签、没有 card id）。每项给出条数、占比、以及两个真实例子——不是给个总分，而是让你自己判断这批数据能不能用。
+
+这个功能第一次跑就抓到一个真实缺陷：作者主页解析出的 venue 保留了年份（`Advances in neural information processing systems 27, 2014`），而检索页解析是剥掉年份的。分组统计侥幸没受影响（`normalize_venue` 会切掉卷期尾巴），但 JSONL/CSV 里两种来源的字段不一致，导出的 BibTeX 里 `journal` 也重复带上了年份。现在两个解析路径共用同一个剥离函数。
+
+### 抓取时的静默体检
+
+事后跑 `--audit` 能发现数据变质，但那时页面已经抓完了。所以每次运行会对**本轮新写入的**记录顺带做同样的检查（逐条累加计数，不占内存），平时一句话都不说，只在某项 error 级检查同时满足「≥3 条」且「≥20%」时才在运行摘要后面出声：
+
+```
+[out] 40 new records (0 duplicates skipped) -> out/results.jsonl
+[run] 5 requests in 1m, 0 takeovers, 0 navigation retries, delay now 4.0-11.0s
+[audit] 1 field(s) parsed badly for a large share of this run's records — Scholar's layout may have changed
+[audit]   venue_looks_like_pages: 16 of 40 records (40%) — venue is a volume, issue or page range, so venue grouping is wrong
+[audit]       e.g. 521 (7553), 436-444 | Deep learning
+[audit] run --self-check to test the parser, or scholar-digest --audit for the details
+```
+
+阈值是为了不喊狼来了：单条奇怪的记录（Scholar 上确实有）不触发，只有「一个字段在这一轮里大面积解析失败」才触发——那通常意味着版式变了。缺失类的 `warn`（Scholar 自己就没给 venue、自己截断了作者）永远不会触发，因为那不是解析错误。
+
+### 分组统计
+
+`--group-by` 把合并后的结果按第一作者、期刊/会议、年份或引文层级分组，按被引总数排序：
+
+```
+$ scholar-digest out/all.jsonl --group-by venue --groups 4
+  by venue                                 count  citations  median  years      most cited
+    Advances in neural information processin     1     119743  119743  2014       Generative adversarial nets
+    nature                                       1     118913  118913  2015       Deep learning
+    arXiv preprint                               2      44564   22282  2017-2021  Graph attention networks
+    The world wide web                           1       4408    4408  2019       Heterogeneous graph attention network
+    ... and 4 more groups
+```
+
+`median`（组内被引中位数）是为了公平比较：某组只靠一篇爆款撑起来，还是整体都被引得多，看中位数才分得清。
+
+分组时会做两处归一化，否则同一个去处会被拆散：所有 arXiv 预印本归为 `arXiv preprint`（Scholar 会把 arXiv 编号写进 venue），作者主页那种 `nature 521 (7553), 436-444, 2015` 会去掉卷号页码归为 `nature`；大小写不同也算同一组（显示时保留先出现的写法）。默认概览里的「出现最多的期刊」现在也用同一套归一化。
 
 ## 接管记录
 
@@ -387,197 +571,6 @@ $ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
 
 所有数字都是上限：列表提前抓完、引文网络无可展开时都会更少。目标写错（比如一个入口都没给）在 `--dry-run` 下同样会报错，所以它也能当参数检查用。
 
-### 离线生成参考文献
-
-抓取时加 `--bibtex` 会向 Scholar 多要两次页面（每条记录），是整轮里最贵的部分。但结果页上的题名、作者、期刊、年份、链接其实都已经存下来了，所以事后可以离线拼出可用的条目：
-
-```sh
-scholar-digest out/all.jsonl --min-citations 500 --bibtex out/refs.bib
-[out] 42 entries -> out/refs.bib (7 keys from the crawl, 35 generated, 12 truncated author lists)
-```
-
-这是重建，不是 Scholar 的官方导出，差别值得知道：
-
-```bibtex
-% Scholar 自己导出的（抓取时 --bibtex，每条 2 次请求）
-@article{velivckovic2017graph,
-  title={Graph attention networks},
-  author={Veli{\v{c}}kovi{\'c}, Petar and Cucurull, Guillem and Casanova, Arantxa and ...},
-  journal={arXiv preprint arXiv:1710.10903},
-  year={2017}
-}
-
-% 离线拼出来的（0 次请求）
-@article{velickovic2017graph,
-  title = {{Graph attention networks}},
-  author = {P Veličković and G Cucurull and A Casanova and others},
-  journal = {arXiv preprint},
-  year = {2017},
-  url = {https://arxiv.org/abs/1710.10903},
-  note = {cited by 41135 on Google Scholar},
-}
-```
-
-也就是说：作者名只有 Scholar 显示的缩写、被它截断的作者列表补 `and others`、arXiv 编号可能缺失；换来的是零请求，外加原始链接与被引数。要精确条目就在抓取时导；要一份能直接用的书目、又不想再等几小时，就离线生成。
-
-其他细节：已经在抓取时导出过的记录会沿用同一个 key（两份文件指同一篇论文时名字一致）；`Veličković` 这类会正确转写成 `velickovic`（`ł`、`ø`、`ß`、`æ` 也都处理）；key 撞车时追加 `a`、`b`；venue 里出现 Proceedings/Conference/Workshop 的记为 `@inproceedings` 并用 `booktitle`，没有 venue 的记为 `@misc`；题名用双花括号包住，避免某些样式把大小写压平；`&`、`%`、`_` 等会转义。没有题名的记录会被跳过并计数。
-
-### 出一份可读的综述：`--report`
-
-JSONL 和 CSV 是给程序看的，终端汇总会滚走。一次文献检索最后真正要交出去的东西是文字，所以 `--report` 把合并后的记录写成一份 Markdown 概览，可以直接贴进综述初稿：
-
-```sh
-scholar-digest out/*.jsonl --report out/report.md --report-title "图注意力网络：初步梳理"
-```
-
-包含：一眼看完的规模（记录数、总被引、年份跨度、期刊数、第一作者数）、高被引清单（标题带原始链接）、按期刊/会议与按第一作者的两张分组表（记录数、总被引、中位数、年份跨度、代表作）、逐年分布的文本柱状图（复制粘贴不会坏）、这些记录分别来自哪个查询，最后是一节「这份报告有多可信」——直接复用 `--audit` 的检查结果，把缺失率和可疑字段摊开写。
-
-报告开头写明「所有数字都来自抓取当时 Scholar 显示的内容，生成报告没有重新请求」，避免读者把它当成实时数据。
-
-### 把引文网络导出来：`--network` 与 `--graph`
-
-`--cites X` 这种列表的含义是「这一页上的每条记录都引用了 X」，而每条记录自己的 `cited_by_url` 里就带着它自己的那个 X。所以引文关系其实早就存在 JSONL 里了——不用多发一个请求，之前几轮抓的老数据也照样能出图。
-
-```sh
-$ scholar-digest out/graph.jsonl --network --graph out/graph.graphml
-  38 records and 0 uncollected works, 28 edges
-  10 component(s), largest 11 works; 7 record(s) neither cite nor are cited here
-  most cited from inside this collection:
-      10 here     41,135 on Scholar  Graph attention networks
-       9 here      4,408 on Scholar  Heterogeneous graph attention network
-[out] 38 nodes and 28 edges as graphml -> out/graph.graphml
-```
-
-「in this collection」是关键：`10 here` 指这 38 条里有 10 条引用了它，`41,135 on Scholar` 是全网被引数。前者才说明它在**你这个主题范围内**有多中心。
-
-`--graph` 按后缀选格式：`.graphml` 给 Gephi / yEd / networkx，`.dot`/`.gv` 给 Graphviz（`dot -Tsvg out/graph.dot -o graph.svg`）。后缀认不出来就报错并让你用 `--graph-format`，不会猜。节点带 label、year、citations、depth（扩展层数）和 collected 五个属性。
-
-两个如实说明的边界：
-
-- 用 `--cites <id>` 直接起抓时，被引的那篇本身并不在集合里。这种目标会以虚线的 `uncollected work <id>` 节点出现——否则整张图会因为「一条边都没有」看起来像坏了。
-- 一篇论文可能出现在多个 `--cites` 列表里，而合并后只剩一个 `query` 值。所以出图时边取自**合并前**的全部观测，节点取自合并、过滤后的集合，边不会因为去重而丢。
-
-关键词检索出来的集合没有引文边，这时它会直接说清楚，而不是画一张空图。
-
-### 把一个目录当作文献库：`--collection` 与 `--since`
-
-抓上几周之后，一个课题的产出就是 `out/` 下的一堆文件，靠人记住「哪个是哪次抓的、上次合并的结果是哪个」。`--collection` 让目录本身成为单位，`--since` 回答「和上次比变了什么」：
-
-```sh
-$ scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl
-[in] 11 records from 2 file(s), 3 duplicates merged, 0 filtered out
-  ...
-  6 works since out/merged.jsonl -> 8 now: 2 new, 0 no longer here, 2 with a new citation count
-  citations gained across the works in both: +41
-  biggest movers:
-    +    40  now      140  Work 0
-    +     1  now      111  Work 1
-  new:
-    Work 6
-    Work 7
-[out] 8 records -> out/merged.jsonl
-```
-
-这里有一个容易中招的坑，`--collection` 专门为它而存在：`scholar-digest out/*.jsonl -o out/merged.jsonl` 跑第二遍时，`out/*.jsonl` 已经**包含上次写出的 merged.jsonl**。去重让它看起来没事，但「几个文件、多少重复」的统计从此没有意义，而一个只读回自己上次结果的库看起来永远是完整的。`--collection` 会把这一轮要写的文件（`-o` 与 `--since`）从输入里排除，上面那行 `11 records from 2 file(s)` 就是证据——目录里有三个 `.jsonl`，只读了两个。
-
-`--since` 的比较口径和抓取时的去重完全一致（同一个 `record_key`），所以被引数、期刊、摘要变了仍算同一篇。三类结果各自的含义：
-
-- **new**：这次输入里有、上次合并里没有的。
-- **with a new citation count**：两边都有但数字变了，按变化幅度绝对值排序。**降**也会如实报（`-32`）：Scholar 自己会下修被引数。注意合并规则是「同一篇在多份输入里出现时保留被引数更高的那条」，所以只有当前输入确实报了更小的数字时才会看到降。
-- **no longer here**：上次有、这次没有。这**不是** Scholar 删了论文，而是那条记录所在的文件被移走了，或者当前的过滤条件（`--min-citations`/`--year-from`）把它排除了——输出里就直接这么写着，免得被误读成数据丢失。
-
-什么都没变时只有一行：`nothing changed since out/merged.jsonl: the same 20 works, same counts`。
-
-和上一节的重抓闭环拼起来，维护一个库就是三条命令，不需要人脑记账：
-
-```sh
-scholar-digest --collection out --stale 60 --refresh-list out/refresh.txt   # 离线：该重抓哪些
-scholar-crawler --clusters-file out/refresh.txt -p 1 -o out/refresh-1.jsonl # 每条一次加载
-scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl --min-citations 1
-```
-
-目录里可以混着别的文件：只有 `.jsonl` 会被读，子目录不递归。命令行上再补几个文件也行，它们接在目录之后。
-
-### 维护一个持续更新的文献库：`--stale` 与 `--refresh-list`
-
-每条记录都带 `fetched_at`（抓取时刻，UTC），所以「这批数据有多旧」是离线就能算的。被引数会一直涨，抓过三个月的记录里那个数字已经不能引用了。
-
-```sh
-$ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh-limit 5
-  20 records collected between 475 and 0 days ago
-  17 older than 60 days (85% of the set)
-  17 of those can be re-listed by id, one page load each; 0 would need their query re-run
-    375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network...
-    475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks...
-[out] 5 id(s) to re-list -> out/refresh.txt (of 17 records older than 60 days)
-```
-
-排序不是单纯按年龄：被引 3 次的论文放一年数字也不会动，被引四万次的放两个月就差了几百。所以权重是「年龄 × log(被引数)」——把数字真的变了的排在前面。这只是给人排个序，不假装能预测新的被引数。
-
-`--refresh-list` 写出的文件就是 `scholar-crawler --clusters-file` 读的格式，一进一出闭环：
-
-```sh
-scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt   # 离线，选出该重抓的
-scholar-crawler --clusters-file out/refresh.txt -p 1 -o out/new.jsonl  # 每条一次页面加载
-scholar-digest out/*.jsonl out/new.jsonl --min-citations 1 -o out/library.jsonl
-```
-
-第三条为什么要 `--min-citations 1`：`--cluster` 列的是「这篇的所有版本」，除了正主之外还会带回同一篇的镜像、预印本等版本行——它们没有 `data-cid`、也没有被引数。实测 5 次重抓带回 37 条，其中 32 条是这种版本行；`--min-citations 1` 正好把它们滤掉，剩下 20 条正主。
-
-合并时也做了一处修正：以前只保留「更富」的那条记录，现在胜者缺的字段会从另一条补上。重抓回来的记录被引数更新、但版本列表里没有摘要，如果整条替换就会把已经抓到的摘要丢掉。
-
-### 体检已抓到的数据：`--audit`
-
-Scholar 的结果卡片只有一行灰字承载「作者 - 期刊, 年份 - 站点」，解析靠位置切分：常见卡片没问题，剩下的会静默出错——venue 实际上是页码范围、year 来自期刊名里的数字、作者列表被 Scholar 自己截断。下游不会察觉，`--group-by year` 照样按错的年份分组。
-
-`--audit` 只读本地文件，把「已经抓到的数据有多不可信」量出来：
-
-```
-$ scholar-digest out/*.jsonl --audit
-  audit of 9 records: 2 checks tripped (0 errors, 2 warnings)
-    warn  authors_truncated              3  33.3%  Scholar elided the author list, so BibTeX gets 'and others'
-        e.g. P Veličković, G Cucurull, A Casanova… | Graph attention networks
-    warn  cluster_id_missing             3  33.3%  no card id, so BibTeX export and citation expansion cannot address this record
-        e.g. <empty> | Generative adversarial nets
-```
-
-分两档：`error` 是值本身错了（年份不在合理区间、年份在原始灰字里根本没出现过、venue 是卷期页码、venue 里还留着年份、有被引数却没有被引链接、计数为负、标题缺失），`warn` 是缺失或有损（缺 venue/year/作者、作者被截断、venue 是裸域名、标题带 `[PDF]` 标签、没有 card id）。每项给出条数、占比、以及两个真实例子——不是给个总分，而是让你自己判断这批数据能不能用。
-
-这个功能第一次跑就抓到一个真实缺陷：作者主页解析出的 venue 保留了年份（`Advances in neural information processing systems 27, 2014`），而检索页解析是剥掉年份的。分组统计侥幸没受影响（`normalize_venue` 会切掉卷期尾巴），但 JSONL/CSV 里两种来源的字段不一致，导出的 BibTeX 里 `journal` 也重复带上了年份。现在两个解析路径共用同一个剥离函数。
-
-### 抓取时的静默体检
-
-事后跑 `--audit` 能发现数据变质，但那时页面已经抓完了。所以每次运行会对**本轮新写入的**记录顺带做同样的检查（逐条累加计数，不占内存），平时一句话都不说，只在某项 error 级检查同时满足「≥3 条」且「≥20%」时才在运行摘要后面出声：
-
-```
-[out] 40 new records (0 duplicates skipped) -> out/results.jsonl
-[run] 5 requests in 1m, 0 takeovers, 0 navigation retries, delay now 4.0-11.0s
-[audit] 1 field(s) parsed badly for a large share of this run's records — Scholar's layout may have changed
-[audit]   venue_looks_like_pages: 16 of 40 records (40%) — venue is a volume, issue or page range, so venue grouping is wrong
-[audit]       e.g. 521 (7553), 436-444 | Deep learning
-[audit] run --self-check to test the parser, or scholar-digest --audit for the details
-```
-
-阈值是为了不喊狼来了：单条奇怪的记录（Scholar 上确实有）不触发，只有「一个字段在这一轮里大面积解析失败」才触发——那通常意味着版式变了。缺失类的 `warn`（Scholar 自己就没给 venue、自己截断了作者）永远不会触发，因为那不是解析错误。
-
-### 分组统计
-
-`--group-by` 把合并后的结果按第一作者、期刊/会议、年份或引文层级分组，按被引总数排序：
-
-```
-$ scholar-digest out/all.jsonl --group-by venue --groups 4
-  by venue                                 count  citations  median  years      most cited
-    Advances in neural information processin     1     119743  119743  2014       Generative adversarial nets
-    nature                                       1     118913  118913  2015       Deep learning
-    arXiv preprint                               2      44564   22282  2017-2021  Graph attention networks
-    The world wide web                           1       4408    4408  2019       Heterogeneous graph attention network
-    ... and 4 more groups
-```
-
-`median`（组内被引中位数）是为了公平比较：某组只靠一篇爆款撑起来，还是整体都被引得多，看中位数才分得清。`--min-group-size 3` 之类可以把只有一两条的长尾折掉。
-
-分组时会做两处归一化，否则同一个去处会被拆散：所有 arXiv 预印本归为 `arXiv preprint`（Scholar 会把 arXiv 编号写进 venue），作者主页那种 `nature 521 (7553), 436-444, 2015` 会去掉卷号页码归为 `nature`；大小写不同也算同一组（显示时保留先出现的写法）。默认概览里的「出现最多的期刊」现在也用同一套归一化。
-
 ## 真实结构回归夹具
 
 `tests/pages/` 里放着四份**真实抓取页面**的脱敏副本（结果页、作者主页、cite 弹窗、BibTeX 导出页）。手写夹具能证明解析逻辑对，但证明不了它还贴合 Scholar 的真实结构；这几份夹具补的就是这块，而且离线跑：结果页那份会把 `--self-check` 的 10 项检查完整跑一遍。
@@ -596,7 +589,7 @@ python3 -m tests.sanitize out/dump/<结果页>.html tests/pages/results.html 6
 
 单元测试把 HTML 字符串喂给解析器，`--self-check` 需要真网络，两者都没覆盖最要紧的那条路：**真实浏览器**导航真实 URL、撞上验证页、接管后恢复、把文件写对。`tests/fakescholar.py` 用 `http.server` 在本地回环起一个假 Scholar，只答 `/scholar` 和 `/citations` 两条路径，可以指定某个 offset「第一次被请求时返回验证页」；测试里的替身「人」处理方式和真人一样——把页面重新加载一次，验证消失，抓取继续。
 
-于是这些以前只能在真 Scholar 上验证一次的行为，现在每次 CI 都跑：翻页到页数上限（不多请求一页）、20 条记录与 CSV 行数、断点写到 40、遇验证 → 接管 → 同一 offset 重取 → 一条不丢、接管记录里 `resolved` 与 URL 脱敏、`--resume` 从 20 接着抓到 40、作者主页与档案落盘、干净数据不触发体检报警，以及 headless 下拒绝接管时**已抓到的 10 条仍在盘上**、退出码为 1、断点停在 10；还有一条完全由设置文件描述的运行——查询、页数、host、profile、输出路径全从 TOML 读出，命令行只有 `--config`——抓到同样的 10 条。
+于是这些以前只能在真 Scholar 上验证一次的行为，现在每次 CI 都跑：翻页到页数上限（不多请求一页）、20 条记录都在盘上、断点写到 40、遇验证 → 接管 → 同一 offset 重取 → 一条不丢、接管记录里 `resolved` 与 URL 脱敏、`--resume` 从 20 接着抓到 40、作者主页与档案落盘、干净数据不触发体检报警，以及 headless 下拒绝接管时**已抓到的 10 条仍在盘上**、退出码为 1、断点停在 10；还有一条完全由设置文件描述的运行——查询、页数、host、profile、输出路径全从 TOML 读出，命令行只有 `--config`——抓到同样的 10 条。
 
 ## 自检
 
@@ -622,7 +615,7 @@ scholar-crawler --self-check
 | `--year-from/--year-to`、`--sort-by-date`、`--review-only` | 年份区间、按日期排序、只要综述 |
 | `--no-citations`、`--no-patents` | 排除仅引用条目、排除专利 |
 | `--lang`、`--host` | 界面语言 `hl`；镜像站如 `https://scholar.google.de` |
-| `-o/--out`、`--csv`、`--state` | JSONL 输出、CSV 导出、断点文件 |
+| `-o/--out`、`--state` | JSONL 输出、断点文件（CSV 交给 `scholar-digest --csv`，抓取本身不导表） |
 | `--challenge-log` | 接管记录文件（默认 `out/challenges.jsonl`，URL 已脱敏） |
 | `--bibtex` | 同时导出 BibTeX 到 `.bib` 文件；按引用键去重，记录里写入 `extra.bibtex_key` 便于关联 |
 | `--profiles-out`、`--dump-html` | 作者主页头部记录（每位作者一行，重复抓取覆盖旧值）、抓到的原始 HTML（排查解析问题用） |
@@ -738,39 +731,21 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 439 个用例，全部离线
+python3 -m pytest -q     # 428 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
-测试全部离线（不发任何网络请求），按模块分组：
+测试全部离线（不发任何网络请求）。按覆盖面分组，细节直接读 `tests/`：
 
-- **解析**：结果卡片（仅引用条目、PDF 侧链、被引/版本计数、词中加粗、第二页的结果计数、零结果页）、作者主页（头部各行、按行位置读统计表、论文行、缺年份与零被引、「显示更多」状态）、真实页面夹具（结果页 10 项自检全过、字段完整性、脱敏规则、夹具不含凭证）
-- **URL 与过滤**：查询/主页地址拼装、过滤参数、id 与 URL 解析、cite 弹窗地址
-- **抓取循环**：翻页与作者分批、节奏与冷却、连续被拦的静默等待与关闭开关、运行摘要的长短两种格式、HTML dump、导出过程中被拦
-- **失败诊断**：九类网络错误各自归类、只重试可能是暂时的失败、认不出的错误保留原文并仍给建议、每条诊断都带 URL 与下一步、429/503 与其他 5xx 区分、无法解析的页面指向 parser.py 与存盘副本、连续验证被判为封锁、渲染顺序
-- **全链路**：真实浏览器打本地假 Scholar——翻页与页数上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、干净数据不报警、headless 拒绝接管时已抓数据仍在、连接被拒/不可解析页面/429 各自给出人话、零结果页仍是零结果
-- **抓取时体检**：逐条累加与整批体检结果完全一致、单条坏记录不报警、一个字段大面积失败才报警、缺失类警告永不报警、运行结束时打印在输出之后
-- **引文网络**：边的方向、未抓到的目标变虚线节点、自引不成环、合并前后边不丢、重复观测只留一条边、连通分量忽略方向、GraphML 能被 XML 解析器解析且恶意标题被转义、DOT 用反斜杠转义、后缀认不出来时报错
-- **判旧与重抓**：时间戳缺失/写坏/无时区各自处理、只有超期的入选、排序把「数字真的变了的」排前面、能按 id 重抓与只能重跑查询分开统计、清单去重、写出的文件真的能被 `--clusters-file` 读回、重抓不丢已有字段
-- **命令自述**：目标与文件逐条列出、创建与追加分开、十三种可疑组合各有一条用例、`warn` 排在 `note` 前、`--explain` 不写任何文件、可与 `--dry-run` 同时用
-- **环境体检**：依赖过旧算失败、缺 Chrome 只算警告、不存在的目录如实报告且绝不创建、上级目录不可读也不崩、profile 有无 cookie、`--doctor` 走一遍 CLI
-- **综述报告**：说明数字来自抓取当时、规模统计、链接只在有目标时生成、分组表、柱状图按最忙的一年缩放、查询来源、自带可信度一节、标题里的竖线被转义、缺失字段显示为破折号、`--quiet` 下也算输出
-- **数据体检**：干净记录不误报、页码型 venue 与残留年份、与灰字矛盾的年份、有被引数无链接、负计数、缺失与有损字段的档位、仅引用条目不因缺 card id 被判错、占比与例子、真实夹具记录零 error
-- **文档导航**：两份 README 的页内链接都指向真实小节、导航表覆盖至少 7 种情况、两份文档的模块清单一致且与实际模块完全对应
-- **给程序的文档**：八个顶层键始终存在、只列写出的文件、非 ASCII 不转义、`--dry-run` 的 `plan` 数字、词表外的 `kind` 直接抛错、AGENTS.md 与词表逐词一致、报告类模式被拒也是一个文档、stdout 只有文档而进度全在 stderr、digest 的 `overview`/`delta`/`files`、`--install-browser` 走当前解释器且失败时说怎么看原因、浏览器探测只取子进程的路径而丢掉 Playwright 的收尾噪声
-- **文献库**：目录里只读 `.jsonl` 且不递归、这一轮要写的文件被排除在输入之外、差异按抓取时的同一口径配对（新增/不在了/被引数变动，含下降）、变动按幅度绝对值排序、缺被引数的记录不算变动、什么都没变时只有一行、列表过长时给出「还有几条」、目录空了/路径不是目录/没给任何输入/`--since` 文件不存在各自报错
-- **设置文件**：表与顶层键等价、键名可用横线或下划线、命令行覆盖文件且被记录、可重复参数是替换而非追加、拼错的键给出最接近的建议、模式类参数被拒、类型不符（数字写成字符串、开关写成字符串、列表与单值互换、超出 choices）各自报错、表嵌套过深、同键两次、坏 TOML、文件不存在、随仓库发布的 `scholar.toml.example` 能被完整读入，并按 recipe 原样跑通一次 `--explain`
-- **命令行界面**：两条命令的参数表直接读回来比对——同名参数在两边的取值方式一致、每个参数都有说明、每个参数都在有说明的分组里、有默认值的参数必须在帮助里写出来、终端列表与写出综述各归各的参数管
-- **模式**：四种模式脱离 argparse 直接调用（演练在真实 headless Chromium 上跑）、断点查看与清除、接管记录按时间倒数打印
-- **示例命令**：每条 recipe 都能被解析、能构造出目标、`--dry-run` 那条真跑一遍；输出格式与「无参数时提示前三条、有参数出错时只报错」
-- **跨运行学习**：演练不算证据、历史摘要（类型/位置/连续）、1 次只提示、重复被拦与提前被拦的倍数叠加与上限、只放慢不加快、手动传参不被覆盖、可关闭、空日志不改默认
-- **接管记录**：URL 脱敏（验证页令牌与检索参数区别对待）、单行摘要格式、追加与读回（跳过坏行）、抓取中被拦/接管额度用尽/headless 拒绝三种结局各自落账、演练也落账、`--show-state` 读回
-- **人工接管**：真实 headless Chromium DOM 上的验证页判定、等待超时/窗口被关/headless 拒绝、接管演练全链路（识别→清除→恢复）、等待期间按间隔报进度、验证类型变化被记录进 `saw`、放弃前只警告一次且只多响一次铃、超时信息带上经过、旧日志没有 `saw` 字段也能读回
-- **引文网络**：按被引排序选点、宽度上限、访问去重、被引下限、层级推进与提前收敛
-- **输出与断点**：JSONL 去重、CSV 导出、作者档案 upsert、`.bib` 去重、断点查看与清除（签名还原、时间戳、旧格式）、被 `-n` 截断的目标仍可续抓
-- **离线工具**：汇总的合并取舍/过滤/统计、分组统计与 venue 归一化、书目生成（转写与姓氏、截断作者列表、key 复用与撞车、条目类型、转义与双花括号）
-- **计划与实际一致**：把 `--dry-run` 算出的加载次数与真实抓取循环在同一组参数下实际发出的次数逐一比对（含 `-n` 截断的三种情况）
-- **命令行**：参数校验、`--dry-run` 的计划数字且不落地文件、`--self-check`、BibTeX 链接发现（按 href 而非文案）与 `<pre>` 提取、`--quiet` 的组合校验
+- **解析**：结果卡片与作者主页的每个字段，加上四份真实页面夹具（`tests/pages/`），保证解析既对又贴合 Scholar 的真实结构
+- **抓取循环**：翻页、作者分批、节奏与冷却、连续被拦后的静默等待、HTML dump、运行摘要
+- **人工接管**：真实 headless Chromium 上的验证判定、等待与超时、窗口被关、headless 拒绝、接管记录与跨运行减速
+- **全链路**：真实浏览器打本地假 Scholar（`tests/fakescholar.py`）——翻页上限、遇验证接管后不丢数据、`--resume` 续抓、作者主页落盘、headless 拒绝时已抓数据仍在盘上、一次完全由设置文件描述的运行
+- **失败诊断**：九类网络错误各自归类、只重试可能是暂时的、认不出的错误保留原文并仍给下一步
+- **给人的输出**：`--doctor`、`--explain`、`--dry-run`、`--recipes`、`--audit`、`--report` 各自说的话，以及计划数字与真实请求数逐一对齐
+- **给程序的输出**：JSON 文档的固定键、失败词表、stdout/stderr 分工，以及 AGENTS.md 与词表逐词一致
+- **离线工具**：合并去重、过滤、统计、分组、书目生成、判旧与重抓清单、文献库差异
+- **配置与界面**：设置文件的等价与报错、两条命令的参数表（分组、说明、默认值）、两份 README 的链接与模块清单
 
 ## 合规
 
@@ -805,7 +780,7 @@ scholar_crawler/
   report.py     离线综述：可读的 Markdown 报告
   audit.py      离线体检：字段可疑值与缺失率
   bibsynth.py   离线书目：由已存字段拼出 BibTeX
-  storage.py    JSONL/CSV 写入、作者主页记录、BibTeX 文件、断点状态
+  storage.py    JSONL 写入、作者主页记录、BibTeX 文件、断点状态
   config.py     TOML 设置文件：读取校验、与命令行的优先级、来源追溯
   machine.py    给程序看的一份 JSON 文档：字段固定、失败词表、stdout 只放它
   cli.py        命令行入口：参数定义、模式分发

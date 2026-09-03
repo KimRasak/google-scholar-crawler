@@ -66,8 +66,8 @@ RECIPES: tuple[Recipe, ...] = (
         note="prints page loads and duration; --bibtex costs two extra loads per record",
     ),
     Recipe(
-        purpose="Search several topics into one file, with a CSV for a spreadsheet",
-        command="scholar-crawler --queries-file queries.txt -p 2 -o out/all.jsonl --csv out/all.csv",
+        purpose="Search several topics into one file",
+        command="scholar-crawler --queries-file queries.txt -p 2 -o out/all.jsonl",
         note="one query per line; # comments are ignored",
     ),
     Recipe(
@@ -91,8 +91,8 @@ RECIPES: tuple[Recipe, ...] = (
         note="no requests; flags implausible years, page-range venues and missing fields",
     ),
     Recipe(
-        purpose="Draw the citation graph of what you already collected",
-        command="scholar-digest out/*.jsonl --network --graph out/graph.graphml",
+        purpose="See who cites whom inside what you already collected",
+        command="scholar-digest out/*.jsonl --network",
         note="no requests; edges come from --cites listings already on disk",
     ),
     Recipe(

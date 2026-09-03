@@ -180,12 +180,11 @@ class Group:
     best: tuple[int, str]
 
 
-def group_records(records: list[Record], key: str, *, min_size: int = 1) -> list[Group]:
+def group_records(records: list[Record], key: str) -> list[Group]:
     """Group records along one dimension, most-cited group first.
 
     :param records: records to group.
     :param key: one of :data:`GROUP_KEYS`.
-    :param min_size: drop groups holding fewer records than this.
     :returns: the groups, ordered by total citations then record count.
     :raises ValueError: when ``key`` is not a known dimension.
     """
@@ -199,8 +198,6 @@ def group_records(records: list[Record], key: str, *, min_size: int = 1) -> list
             members.append(record)
     groups = []
     for label, members in buckets.values():
-        if len(members) < min_size:
-            continue
         counts = [record.get("cited_by_count") or 0 for record in members]
         years = sorted(record["year"] for record in members if record.get("year"))
         best = max(members, key=lambda record: record.get("cited_by_count") or 0)

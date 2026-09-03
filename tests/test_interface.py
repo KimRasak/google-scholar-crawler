@@ -112,6 +112,6 @@ def test_a_shorter_terminal_list_leaves_the_written_report_alone(tmp_path: Path)
 
 
 def test_size_thresholds_and_counts_are_named_apart() -> None:
-    assert "--min-group-size" in DIGEST, "a threshold reads as a minimum, not as a count"
-    assert "fewer records than this" in (DIGEST["--min-group-size"].help or "")
+    assert "--min-citations" in DIGEST, "a threshold reads as a minimum, not as a count"
+    assert "cited fewer times" in (DIGEST["--min-citations"].help or "")
     assert "groups to list" in (DIGEST["--groups"].help or "")

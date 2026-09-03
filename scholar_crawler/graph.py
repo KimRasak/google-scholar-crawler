@@ -5,7 +5,8 @@ A ``--cites X`` listing means every record on it cites the work whose citing-wor
 citation graph are already in the JSONL a crawl wrote: no extra request, and collections made
 before this module existed still yield their graph.
 
-Nothing here contacts Scholar. It reads records and writes GraphML or DOT.
+Nothing here contacts Scholar. It reads records and reports what they already say about
+who cites whom.
 """
 
 from __future__ import annotations
@@ -13,18 +14,11 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
-from xml.sax.saxutils import escape
 
 from .models import record_key
 from .urls import parse_cluster_id
 
 Record = dict[str, Any]
-
-FORMATS = ("graphml", "dot")
-"""Export formats, chosen by :func:`format_for` from the output file's suffix."""
-
-_SUFFIXES = {".graphml": "graphml", ".xml": "graphml", ".dot": "dot", ".gv": "dot"}
-
 
 def citing_works_id(record: Record) -> str | None:
     """Read the id that identifies this work's citing-works listing.
@@ -232,104 +226,3 @@ def render_network(graph: Graph, *, top: int = 10) -> list[str]:
         total = f"{node.citations:,}" if node.citations is not None else "?"
         lines.append(f"  {count:>4} here  {total:>9} on Scholar  {node.label[:64]}")
     return lines
-
-
-def _graphml_attributes() -> list[tuple[str, str, str]]:
-    """Declare the GraphML node keys.
-
-    :returns: ``(id, name, type)`` for every node attribute written.
-    """
-    return [
-        ("d0", "label", "string"),
-        ("d1", "year", "int"),
-        ("d2", "citations", "int"),
-        ("d3", "depth", "int"),
-        ("d4", "collected", "boolean"),
-    ]
-
-
-def to_graphml(graph: Graph) -> str:
-    """Render the graph as GraphML, which Gephi, yEd and networkx read.
-
-    :param graph: the citation graph.
-    :returns: the GraphML document.
-    """
-    ids = {key: f"n{index}" for index, key in enumerate(graph.nodes)}
-    lines = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        '<graphml xmlns="http://graphml.graphdrawing.org/xmlns">',
-    ]
-    for key, name, kind in _graphml_attributes():
-        lines.append(
-            f'  <key id="{key}" for="node" attr.name="{name}" attr.type="{kind}"/>'
-        )
-    lines.append('  <graph id="citations" edgedefault="directed">')
-    for key, node in graph.nodes.items():
-        lines.append(f'    <node id="{ids[key]}">')
-        lines.append(f'      <data key="d0">{escape(node.label)}</data>')
-        if node.year is not None:
-            lines.append(f'      <data key="d1">{node.year}</data>')
-        if node.citations is not None:
-            lines.append(f'      <data key="d2">{node.citations}</data>')
-        if node.depth is not None:
-            lines.append(f'      <data key="d3">{node.depth}</data>')
-        lines.append(f'      <data key="d4">{str(not node.stub).lower()}</data>')
-        lines.append("    </node>")
-    for index, (citing, cited) in enumerate(graph.edges):
-        lines.append(f'    <edge id="e{index}" source="{ids[citing]}" target="{ids[cited]}"/>')
-    lines.append("  </graph>")
-    lines.append("</graphml>")
-    return "\n".join(lines) + "\n"
-
-
-def _dot_quote(text: str) -> str:
-    """Quote a label for DOT, which escapes with backslashes rather than entities.
-
-    :param text: the label text.
-    :returns: the label as a double-quoted DOT string.
-    """
-    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
-
-
-def to_dot(graph: Graph) -> str:
-    """Render the graph as DOT, which Graphviz draws directly.
-
-    :param graph: the citation graph.
-    :returns: the DOT document.
-    """
-    ids = {key: f"n{index}" for index, key in enumerate(graph.nodes)}
-    lines = ["digraph citations {", "  rankdir=LR;", '  node [shape=box, fontsize=10];']
-    for key, node in graph.nodes.items():
-        year = f" ({node.year})" if node.year is not None else ""
-        label = f"{node.label[:60]}{year}"
-        style = ", style=dashed" if node.stub else ""
-        lines.append(f"  {ids[key]} [label={_dot_quote(label)}{style}];")
-    for citing, cited in graph.edges:
-        lines.append(f"  {ids[citing]} -> {ids[cited]};")
-    lines.append("}")
-    return "\n".join(lines) + "\n"
-
-
-def format_for(suffix: str) -> str | None:
-    """Choose the export format a file suffix asks for.
-
-    :param suffix: the output path's suffix, including the dot.
-    :returns: the format name, or None when the suffix names none.
-    """
-    return _SUFFIXES.get(suffix.lower())
-
-
-def render_graph(graph: Graph, fmt: str) -> str:
-    """Render the graph in the named format.
-
-    :param graph: the citation graph.
-    :param fmt: ``graphml`` or ``dot``.
-    :returns: the document text.
-    :raises ValueError: when the format is not one of :data:`FORMATS`.
-    """
-    if fmt == "graphml":
-        return to_graphml(graph)
-    if fmt == "dot":
-        return to_dot(graph)
-    raise ValueError(f"unknown graph format {fmt!r}; choose from {', '.join(FORMATS)}")

@@ -8,7 +8,6 @@ re-requesting pages Google already served.
 
 from __future__ import annotations
 
-import csv
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -100,23 +99,6 @@ class ResultSink:
         if self._handle is not None:
             self._handle.close()
             self._handle = None
-
-    def export_csv(self, csv_path: Path) -> int:
-        """Write the collected JSONL records to ``csv_path``.
-
-        :param csv_path: destination CSV file, overwritten if present.
-        :returns: number of data rows written.
-        """
-        rows: list[dict[str, Any]] = []
-        if self.path.exists():
-            with self.path.open(encoding="utf-8") as source:
-                rows = [json.loads(line) for line in source if line.strip()]
-        csv_path.parent.mkdir(parents=True, exist_ok=True)
-        with csv_path.open("w", encoding="utf-8", newline="") as target:
-            writer = csv.DictWriter(target, fieldnames=list(CSV_COLUMNS), extrasaction="ignore")
-            writer.writeheader()
-            writer.writerows(rows)
-        return len(rows)
 
 
 @dataclass(slots=True)

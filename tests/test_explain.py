@@ -59,9 +59,9 @@ def test_a_plain_run_is_described_without_any_concern() -> None:
 def test_the_files_a_run_will_touch_are_named_with_create_or_append(tmp_path: Path) -> None:
     (tmp_path / "out").mkdir()
     (tmp_path / "out" / "results.jsonl").write_text("", encoding="utf-8")
-    lines = _explained(["-q", "x", "--csv", "out/x.csv"])
+    lines = _explained(["-q", "x", "--bibtex", "out/x.bib"])
     assert "appending to records: out/results.jsonl" in lines
-    assert "creating csv: out/x.csv" in lines
+    assert "creating bibtex: out/x.bib" in lines
     assert "creating resume state: out/state.json" in lines
     assert not [line for line in lines if "author profiles" in line]  # no --author was given
 
@@ -112,8 +112,8 @@ def test_contradictory_years_are_caught_before_a_request_is_sent() -> None:
 
 
 def test_two_outputs_pointed_at_one_file_are_caught() -> None:
-    concerns = _concerns(["-q", "x", "--csv", "out/results.jsonl"])
-    assert any("--csv and --out write to the same file" in line for line in concerns)
+    concerns = _concerns(["-q", "x", "--bibtex", "out/results.jsonl"])
+    assert any("--bibtex and --out write to the same file" in line for line in concerns)
 
 
 def test_a_rhythm_faster_than_the_default_is_warned_about() -> None:

@@ -43,6 +43,5 @@ locale = "en-US"
 
 [output]
 out = "out/gnn.jsonl"
-csv = "out/gnn.csv"
 state = "out/state.json"
 challenge-log = "out/challenges.jsonl"

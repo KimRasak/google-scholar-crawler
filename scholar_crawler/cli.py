@@ -184,7 +184,6 @@ def build_parser() -> argparse.ArgumentParser:
         "output", "where the run writes; records are appended page by page, so nothing is lost"
     )
     output.add_argument("-o", "--out", type=Path, default=Path("out/results.jsonl"), help="JSONL output path")
-    output.add_argument("--csv", type=Path, help="also export collected records to this CSV path")
     output.add_argument("--state", type=Path, default=Path("out/state.json"), help="resume-state path")
     output.add_argument(
         "--challenge-log",
@@ -238,9 +237,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="IANA timezone (default: America/Los_Angeles)",
     )
     browser.add_argument("--proxy", help="proxy server URL")
-    browser.add_argument(
-        "--slow-mo", type=float, default=0.0, help="ms delay per browser action (default: 0)"
-    )
 
     pace = parser.add_argument_group(
         "pacing and handoff",
@@ -406,7 +402,6 @@ def _browser_options(args: argparse.Namespace) -> BrowserOptions:
         locale=args.locale,
         timezone=args.timezone,
         proxy_server=args.proxy,
-        slow_mo=args.slow_mo,
     )
 
 
@@ -628,7 +623,6 @@ def _document(ran: _Ran) -> dict[str, object]:
         files = {
             "records": ran.outputs.sink.path,
             "state": ran.outputs.state.path,
-            "csv": ran.outputs.csv_path,
             "bibtex": ran.outputs.bibtex.path if ran.outputs.bibtex is not None else None,
             "profiles": ran.outputs.profiles.path if ran.outputs.profiles.written else None,
         }
@@ -719,7 +713,6 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
         state=args.state,
         profiles=args.profiles_out,
         bibtex=args.bibtex,
-        csv=args.csv,
     )
     if outputs.bibtex is not None and authors:
         print(

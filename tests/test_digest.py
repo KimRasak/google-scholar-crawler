@@ -148,7 +148,7 @@ def test_quiet_prints_only_what_was_written(tmp_path: Path, capsys: pytest.Captu
 def test_quiet_without_an_output_file_is_refused(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["a.jsonl", "--quiet"]) == 1
     printed = capsys.readouterr().out
-    assert "--quiet needs --out, --csv, --bibtex, --report, --refresh-list or --graph" in printed
+    assert "--quiet needs --out, --csv, --bibtex, --report or --refresh-list" in printed
 
 
 def test_parser_defaults() -> None:
@@ -166,8 +166,8 @@ def test_group_table_is_printed_on_request(tmp_path: Path, capsys: pytest.Captur
             _record(cluster_id="c", authors="G Hinton", cited_by_count=900),
         ],
     )
-    assert main([str(path), "--group-by", "author", "--min-group-size", "2"]) == 0
+    assert main([str(path), "--group-by", "author"]) == 0
     printed = capsys.readouterr().out
     assert "by author" in printed
-    assert "Y Bengio" in printed
-    assert "G Hinton" not in printed.split("by author")[1]  # only groups of two or more
+    grouped = printed.split("by author")[1]
+    assert "Y Bengio" in grouped and "G Hinton" in grouped

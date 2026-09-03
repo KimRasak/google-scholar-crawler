@@ -91,7 +91,7 @@ On failure the document carries `"error": {"kind", "message", "next_steps"}`. Br
 | `timeout`, `reset` | transient; the run already retried, so retry later at a slower pace |
 | `http_error` | Scholar answered with an error status; the message carries it |
 | `browser_closed` | the window was closed mid-run; rerun with `--resume` |
-| `usage`, `bad_inputs`, `no_records`, `missing_since`, `unreadable_input`, `unknown_graph_format` | fix the command; the reason is on stderr |
+| `usage`, `bad_inputs`, `no_records`, `missing_since`, `unreadable_input` | fix the command; the reason is on stderr |
 | `unsupported_mode` | that flag prints a report, so run it without `--json` |
 | `interrupted` | Ctrl+C; whatever was collected is already on disk |
 | `runtime_error`, `unknown` | unexpected; read `message`, and `--dump-html` keeps the page that caused it |

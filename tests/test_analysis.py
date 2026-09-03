@@ -106,16 +106,6 @@ def test_groups_rank_by_citations_and_report_medians() -> None:
     assert top.best == (300, "A paper")
 
 
-def test_small_groups_can_be_hidden() -> None:
-    records = [
-        _record(cluster_id="a", venue="Nature"),
-        _record(cluster_id="b", venue="Nature"),
-        _record(cluster_id="c", venue="Science"),
-    ]
-    assert [group.label for group in group_records(records, "venue", min_size=2)] == ["Nature"]
-    assert group_records(records, "venue", min_size=4) == []
-
-
 def test_rendered_groups_align_and_report_a_remainder() -> None:
     records = [_record(cluster_id=f"c{index}", venue=f"V{index}") for index in range(4)]
     lines = render_groups(group_records(records, "venue"), "venue", limit=2)

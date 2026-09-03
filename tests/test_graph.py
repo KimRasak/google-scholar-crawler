@@ -2,26 +2,17 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import Any
-from xml.etree import ElementTree
-
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scholar_crawler.digest import main  # noqa: E402
 from scholar_crawler.graph import (  # noqa: E402
     build_graph,
     cited_target,
     citing_works_id,
-    format_for,
-    render_graph,
     render_network,
-    to_dot,
-    to_graphml,
 )
 
 
@@ -140,83 +131,3 @@ def test_a_collection_without_citation_listings_says_so_instead_of_drawing_nothi
         "no citation edges in 2 records: edges come from --cites listings, "
         "which this collection has none of"
     ]
-
-
-def test_graphml_is_well_formed_and_carries_the_node_attributes() -> None:
-    seed = _record("seed", cited_by_url="?cites=111", year=2017, cited_by_count=41135)
-    citing = _record("citing", query="cites:111", extra={"follow_depth": 1})
-    document = to_graphml(build_graph([seed, citing]))
-    root = ElementTree.fromstring(document)
-    namespace = "{http://graphml.graphdrawing.org/xmlns}"
-    nodes = root.findall(f"{namespace}graph/{namespace}node")
-    edges = root.findall(f"{namespace}graph/{namespace}edge")
-    assert len(nodes) == 2
-    assert len(edges) == 1
-    labels = {
-        node.find(f'{namespace}data[@key="d0"]').text for node in nodes  # type: ignore[union-attr]
-    }
-    assert labels == {"Paper seed", "Paper citing"}
-    assert any(node.find(f'{namespace}data[@key="d2"]') is not None for node in nodes)
-
-
-def test_graphml_escapes_a_title_that_would_break_the_xml() -> None:
-    hostile = _record("x", title='A <b>bold</b> & "quoted" title')
-    document = to_graphml(build_graph([hostile]))
-    root = ElementTree.fromstring(document)  # would raise on unescaped markup
-    namespace = "{http://graphml.graphdrawing.org/xmlns}"
-    label = root.find(f"{namespace}graph/{namespace}node/{namespace}data")
-    assert label is not None and label.text == 'A <b>bold</b> & "quoted" title'
-
-
-def test_dot_quotes_labels_and_marks_uncollected_works() -> None:
-    citing = _record("citing", query="cites:999", title='Attention is all you "need"')
-    document = to_dot(build_graph([citing]))
-    assert document.startswith("digraph citations {")
-    assert 'label="Attention is all you \\"need\\" (2020)"' in document
-    assert "style=dashed" in document  # the uncollected target
-    assert "n0 -> n1;" in document
-
-
-def test_the_format_is_taken_from_the_suffix_and_named_formats_are_the_only_ones() -> None:
-    assert format_for(".graphml") == "graphml"
-    assert format_for(".DOT") == "dot"
-    assert format_for(".txt") is None
-    with pytest.raises(ValueError, match="unknown graph format"):
-        render_graph(build_graph([]), "svg")
-
-
-def test_the_digest_exports_a_graph_and_reports_the_network(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    source = tmp_path / "records.jsonl"
-    seed = _record("seed", cited_by_url="?cites=111")
-    citing = _record("citing", query="cites:111")
-    source.write_text("".join(json.dumps(r) + "\n" for r in (seed, citing)), encoding="utf-8")
-    destination = tmp_path / "nested" / "graph.graphml"
-
-    assert main([str(source), "--network", "--graph", str(destination)]) == 0
-    printed = capsys.readouterr().out
-    assert "2 records and 0 uncollected works, 1 edges" in printed
-    assert f"[out] 2 nodes and 1 edges as graphml -> {destination}" in printed
-    ElementTree.fromstring(destination.read_text(encoding="utf-8"))
-
-
-def test_an_unknown_graph_suffix_is_refused_with_the_way_to_fix_it(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    source = tmp_path / "records.jsonl"
-    source.write_text(json.dumps(_record("a")) + "\n", encoding="utf-8")
-    assert main([str(source), "--graph", str(tmp_path / "graph.txt")]) == 1
-    printed = capsys.readouterr().out
-    assert "cannot tell the format of graph.txt" in printed
-    assert "--graph-format" in printed
-
-
-def test_the_graph_format_flag_overrides_the_suffix(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    source = tmp_path / "records.jsonl"
-    source.write_text(json.dumps(_record("a")) + "\n", encoding="utf-8")
-    destination = tmp_path / "graph.txt"
-    assert main([str(source), "--graph", str(destination), "--graph-format", "dot"]) == 0
-    assert destination.read_text(encoding="utf-8").startswith("digraph citations {")

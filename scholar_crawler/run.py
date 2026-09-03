@@ -204,14 +204,12 @@ class Outputs:
     :param state: resume cursor store.
     :param profiles: author-profile store.
     :param bibtex: BibTeX writer, when export was asked for.
-    :param csv_path: CSV destination written when the run ends, when asked for.
     """
 
     sink: ResultSink
     state: StateStore
     profiles: ProfileStore
     bibtex: BibtexSink | None
-    csv_path: Path | None = None
 
     @classmethod
     def open_for(
@@ -221,7 +219,6 @@ class Outputs:
         state: Path,
         profiles: Path,
         bibtex: Path | None = None,
-        csv: Path | None = None,
     ) -> Outputs:
         """Open every output file a run writes.
 
@@ -229,7 +226,6 @@ class Outputs:
         :param state: resume-cursor file.
         :param profiles: author-profile file.
         :param bibtex: ``.bib`` destination, when BibTeX export was asked for.
-        :param csv: CSV destination written once the run ends, when asked for.
         :returns: the opened outputs.
         """
         sink = ResultSink(out)
@@ -241,13 +237,7 @@ class Outputs:
         entries = BibtexSink(bibtex) if bibtex else None
         if entries is not None:
             entries.open()
-        return cls(
-            sink=sink,
-            state=cursors,
-            profiles=store,
-            bibtex=entries,
-            csv_path=csv,
-        )
+        return cls(sink=sink, state=cursors, profiles=store, bibtex=entries)
 
     def close_and_report(self, crawler: ScholarCrawler | None) -> None:
         """Close every file and print what was written.
@@ -258,8 +248,6 @@ class Outputs:
         :param crawler: the crawler that ran, or None when the browser never opened.
         """
         self.sink.close()
-        if self.csv_path:
-            print(f"[out] {self.sink.export_csv(self.csv_path)} rows -> {self.csv_path}", flush=True)
         print(
             f"[out] {self.sink.written} new records "
             f"({self.sink.skipped} duplicates skipped) -> {self.sink.path}",

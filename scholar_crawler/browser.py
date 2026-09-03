@@ -33,7 +33,6 @@ class BrowserOptions:
     :param locale: browser locale sent as ``Accept-Language``.
     :param timezone: IANA timezone reported to pages.
     :param proxy_server: optional proxy URL, e.g. ``http://127.0.0.1:8080``.
-    :param slow_mo: milliseconds of artificial delay per Playwright action.
     """
 
     user_data_dir: Path
@@ -42,7 +41,6 @@ class BrowserOptions:
     locale: str = "en-US"
     timezone: str = "America/Los_Angeles"
     proxy_server: str | None = None
-    slow_mo: float = 0.0
 
 
 @contextmanager
@@ -60,7 +58,6 @@ def browser_session(options: BrowserOptions) -> Iterator[tuple[BrowserContext, P
             channel=options.channel,
             locale=options.locale,
             timezone_id=options.timezone,
-            slow_mo=options.slow_mo,
             viewport={"width": 1280, "height": 900},
             proxy={"server": options.proxy_server} if options.proxy_server else None,
             args=["--disable-blink-features=AutomationControlled"],

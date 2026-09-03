@@ -28,7 +28,6 @@ TOOL_KINDS: tuple[str, ...] = (
     "missing_since",
     "no_records",
     "runtime_error",
-    "unknown_graph_format",
     "unreadable_input",
     "unsupported_mode",
     "usage",

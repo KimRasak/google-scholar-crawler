@@ -84,7 +84,6 @@ def _outputs(tmp_path: Path) -> Outputs:
         out=tmp_path / "results.jsonl",
         state=tmp_path / "state.json",
         profiles=tmp_path / "profiles.jsonl",
-        csv=tmp_path / "results.csv",
     )
 
 
@@ -114,7 +113,6 @@ def test_a_crawl_pages_through_a_site_and_writes_what_it_found(page: Page, tmp_p
     assert [record["page_start"] for record in records[:2]] == [0, 0]
     assert records[10]["page_start"] == 10
     assert all(record["query"] == "graph attention" for record in records)
-    assert (tmp_path / "results.csv").read_text(encoding="utf-8").count("\n") == 21  # header + rows
 
     state = StateStore(tmp_path / "state.json")
     state.load()
