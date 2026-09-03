@@ -241,7 +241,27 @@ scholar-digest out/*.jsonl -o out/all.jsonl --csv out/all.csv
 scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.jsonl
 ```
 
-默认打印一份概览：记录数、被引总数、已带 BibTeX 键的条数、只有引用信息的条数、年份分布、引文层级分布、出现最多的期刊/会议，以及被引最高的几条。
+不带写文件参数时只打印一份概览：
+
+```sh
+$ scholar-digest out/all.jsonl
+[in] 38 records from 1 file(s), 3 duplicates merged, 0 filtered out
+  records          38
+  citations        104392 total
+  bibtex keys      7
+  citation-only    2
+  unknown year     1
+  years            2024:3, 2023:9, 2022:7, 2021:6, 2020:5, 2019:4, 2018:3
+  graph levels     L0:20, L1:18
+  venues              6  Advances in neural information processing systems
+                      4  ICLR
+                      3  arXiv preprint
+  most cited        41135  2018  Graph attention networks
+                     8204  2019  Heterogeneous graph attention network
+                     3205  2019  Kgat: Knowledge graph attention network for recommendation
+```
+
+`graph levels` 只在集合里真的有 `--follow-cites` 抓来的记录时出现（`L0` 是直接搜到的，`L1` 是它们的被引），`citation-only` 是 Scholar 上只有引用信息、没有页面的那些。
 
 同一篇论文在多份文件里重复时，保留被引数更高（也就是更新）的那条，字段更全的那条优先，`extra` 里的 `bibtex_key` 不会丢，`follow_depth` 取最浅的一层。
 
@@ -834,7 +854,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 496 个用例，全部离线
+python3 -m pytest -q     # 505 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -849,14 +869,15 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **给程序的输出**：JSON 文档的固定键、失败词表、stdout/stderr 分工，以及 AGENTS.md 与词表逐词一致
 - **离线工具**：合并去重、过滤、统计、分组、书目生成、判旧与重抓清单、文献库差异
 - **配置与界面**：设置文件的等价与报错、两条命令的参数表（分组、说明、默认值）、两份 README 的链接与模块清单
-- **文档里的命令**：两份 README 与 AGENTS.md 里的每一条 `scholar-crawler`/`scholar-digest` 命令，凡是不发请求的都在临时目录里真跑一遍（读取的文件由测试自己造），文档里贴出的 `-> https://…` 也逐字比对；剩下的必须在测试里登记「为什么离线跑不了」（发请求抓取、`--self-check` 一次请求、`--install-browser` 要下载、`--rehearse-handoff` 要人）。新加一条命令逃不掉这两条中的任何一条
+- **文档里的命令**：两份 README 与 AGENTS.md 里的每一条 `scholar-crawler`/`scholar-digest` 命令，凡是不发请求的都在临时目录里真跑一遍（读取的文件由测试自己造）；剩下的必须在测试里登记「为什么离线跑不了」（发请求抓取、`--self-check` 一次请求、`--install-browser` 要下载、`--rehearse-handoff` 要人）。新加一条命令逃不掉这两条中的任何一条
+- **文档里贴出的输出**：`--recipes` 与 `--dry-run` 的输出只由命令行决定（不看机器、不看数据），所以文档里贴的每一行都逐字、按顺序比对；`--doctor` 与 `scholar-digest` 概览这类值会变的报告，比对的是标签列（`browser`、`profile`、`citation-only`、`graph levels`……），改名或删掉一项就会让文档变红；此外文档里出现的每个 `[标签]` 都必须是工具真的会打印的通道
 
 ### 检查守卫是否真在守
 
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 55 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 58 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

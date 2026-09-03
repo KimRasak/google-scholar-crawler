@@ -28,6 +28,8 @@ from tests.fixtures import RESULT_PAGE_HTML  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = (ROOT / "README.md", ROOT / "README.en.md", ROOT / "AGENTS.md")
 SHELL = re.compile(r"```sh\n(.*?)```", re.DOTALL)
+ANY_BLOCK = re.compile(r"```[a-z]*\n(.*?)```", re.DOTALL)
+PACKAGE = ROOT / "scholar_crawler"
 
 OFFLINE_MODES = ("--recipes", "--doctor", "--dry-run", "--show-state", "--forget")
 """Crawler modes that collect nothing, so a test can run them for real."""
@@ -56,25 +58,41 @@ WRITTEN_BY = (
 """Flags whose value is a file the command writes, so it must not be seeded."""
 
 
-def _documented() -> dict[str, list[str]]:
+def _documented() -> dict[str, list[list[str]]]:
     """Collect every documented command and the output printed under it.
 
-    :returns: command mapped to the lines the READMEs show it printing.
+    A command sits at the start of its line, after an optional ``$`` prompt. An indented one is
+    part of the output above it — ``--recipes`` prints commands, and they are not run twice.
+
+    The Chinese README and its English mirror show the same commands, so a command maps to one
+    block of output per place it appears, never to the two concatenated.
+
+    :returns: command mapped to its blocks of documented output, comments and elisions out.
     """
-    found: dict[str, list[str]] = {}
+    found: dict[str, list[list[str]]] = {}
     for path in DOCS:
         for block in SHELL.findall(path.read_text(encoding="utf-8")):
             current = ""
             for raw in block.replace("\\\n", " ").splitlines():
+                indented = raw.startswith((" ", "\t"))
                 line = raw.strip()
                 stripped = line[2:].strip() if line.startswith("$ ") else line
                 command = stripped.split("#", 1)[0].strip()
-                if command.startswith(("scholar-crawler", "scholar-digest")):
+                if not indented and command.startswith(("scholar-crawler", "scholar-digest")):
                     current = command
-                    found.setdefault(command, [])
-                elif current and line:
-                    found[current].append(line)
+                    found.setdefault(command, []).append([])
+                elif current and line and not line.startswith("#") and line.strip(".…"):
+                    found[current][-1].append(raw.rstrip())
     return found
+
+
+def _lines(command: str) -> list[str]:
+    """Collect every documented output line for a command, across the places it appears.
+
+    :param command: the documented command.
+    :returns: the lines, in document order.
+    """
+    return [line for block in _documented()[command] for line in block]
 
 
 def _reason(command: str) -> str:
@@ -95,10 +113,15 @@ def _reason(command: str) -> str:
 def _records() -> list[dict[str, object]]:
     """Build the records a seeded input file holds.
 
+    The last record is marked as pulled in by ``--follow-cites``, so a seeded collection has the
+    two citation-graph levels a real one has and reports every line the documentation shows.
+
     :returns: the fixture page's records as dictionaries.
     """
     page = parse_result_page(RESULT_PAGE_HTML, query="graph attention networks")
-    return [result.to_dict() for result in page.results]
+    records = [result.to_dict() for result in page.results]
+    records[-1]["extra"] = {**(records[-1].get("extra") or {}), "follow_depth": 1}
+    return records
 
 
 def _write(target: Path) -> None:
@@ -168,9 +191,70 @@ def test_every_offline_command_in_the_documentation_runs(
     assert printed.strip(), f"{command} printed nothing"
 
     # A stale URL in the docs gets copied into a browser and quietly searches for something else.
-    for line in _documented()[command]:
-        if " -> https://" in line:
-            assert line in printed, f"{command} no longer prints: {line}"
+    for block in _documented()[command]:
+        for line in block:
+            if " -> https://" in line:
+                assert line in printed, f"{command} no longer prints: {line}"
+
+
+PURE = ("--recipes", "--dry-run")
+"""Modes whose output is a function of the command line alone, so the docs can pin it exactly."""
+
+LABEL = re.compile(r"^\s*(?:\[\w+\]\s*)?(?:[+!x]\s+)?([a-z][a-z_ -]{2,})\s{2,}")
+"""The label column of a report line: the name, before the value it is padded away from."""
+
+PINNED = sorted(command for command in OFFLINE if any(mode in command for mode in PURE))
+LABELLED = sorted(
+    command for command in OFFLINE if any(LABEL.match(line) for line in _lines(command))
+)
+
+
+@pytest.mark.parametrize("command", PINNED)
+def test_a_pure_mode_prints_exactly_what_the_docs_show(
+    command: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # --recipes and --dry-run answer from the command line alone: no requests, no files, no
+    # machine. Their sample output can therefore be compared line for line, which is the only
+    # part of the documentation that cannot go stale unnoticed.
+    monkeypatch.chdir(tmp_path)
+    crawler_main(_seed(tmp_path, shlex.split(command)[1:]))
+    printed = capsys.readouterr().out.splitlines()
+
+    for block in _documented()[command]:
+        at = 0
+        for line in block:
+            assert line in printed[at:], f"{command} stopped printing, or reordered:\n{line}"
+            at = printed.index(line, at) + 1
+
+
+@pytest.mark.parametrize("command", LABELLED)
+def test_the_report_labels_in_the_docs_are_the_labels_the_tool_prints(
+    command: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Report values depend on the machine and on the data, so only the label column can be
+    # compared — and a renamed or dropped label is exactly what leaves a sample output lying.
+    monkeypatch.chdir(tmp_path)
+    argv = _seed(tmp_path, shlex.split(command)[1:])
+    (crawler_main if command.startswith("scholar-crawler") else digest_main)(argv)
+    printed = capsys.readouterr().out
+    real = {match.group(1).strip() for match in map(LABEL.match, printed.splitlines()) if match}
+
+    documented = {match.group(1).strip() for match in map(LABEL.match, _lines(command)) if match}
+    assert documented <= real, f"{command} no longer reports: {sorted(documented - real)}"
+
+
+def test_every_tag_the_docs_show_is_a_tag_the_tool_emits() -> None:
+    # Sample output is quoted in prose blocks the tests above never run; a renamed channel would
+    # leave them describing a tool that no longer exists.
+    sources = "\n".join(path.read_text(encoding="utf-8") for path in sorted(PACKAGE.glob("*.py")))
+    emitted = set(re.findall(r'"\[([a-z_]+)\]', sources))
+    shown = set()
+    for path in DOCS:
+        for block in ANY_BLOCK.findall(path.read_text(encoding="utf-8")):
+            shown.update(re.findall(r"^\s*\[([a-z_]+)\]", block, re.MULTILINE))
+
+    assert len(shown) >= 10, f"the docs show almost no sample output: {sorted(shown)}"
+    assert shown <= emitted, f"the docs show tags the tool never prints: {sorted(shown - emitted)}"
 
 
 def test_every_documented_command_is_either_run_here_or_explained() -> None:

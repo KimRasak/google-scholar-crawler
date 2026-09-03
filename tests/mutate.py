@@ -302,6 +302,27 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "a pure mode prints exactly what the docs show",
+        "scholar_crawler/plan.py",
+        'lines.append(f"total: up to {self.total_loads} page loads for {self.total_records} records")',
+        'lines.append(f"total: {self.total_loads} page loads for {self.total_records} records")',
+        "tests/test_documented_commands.py",
+    ),
+    Mutation(
+        "a renamed report label leaves the docs lying",
+        "scholar_crawler/analysis.py",
+        'f"citation-only    {summary.citation_only}",',
+        'f"citations only   {summary.citation_only}",',
+        "tests/test_documented_commands.py",
+    ),
+    Mutation(
+        "a documented output channel still exists",
+        "scholar_crawler/run.py",
+        'print(f"[audit] {line}", flush=True)',
+        'print(f"[check] {line}", flush=True)',
+        "tests/test_documented_commands.py",
+    ),
+    Mutation(
         "the skipped-file list names each file once",
         "scholar_crawler/digest.py",
         "    written = list(dict.fromkeys(path for path in (args.out, args.since) if path is not None))",

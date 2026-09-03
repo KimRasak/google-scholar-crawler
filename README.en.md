@@ -241,7 +241,27 @@ scholar-digest out/*.jsonl -o out/all.jsonl --csv out/all.csv
 scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.jsonl
 ```
 
-By default it prints an overview: record count, total citations, how many already carry a BibTeX key, citation-only records, the year distribution, the citation-graph level distribution, the most frequent venues, and the most-cited records.
+Given no file to write, it prints an overview and stops:
+
+```sh
+$ scholar-digest out/all.jsonl
+[in] 38 records from 1 file(s), 3 duplicates merged, 0 filtered out
+  records          38
+  citations        104392 total
+  bibtex keys      7
+  citation-only    2
+  unknown year     1
+  years            2024:3, 2023:9, 2022:7, 2021:6, 2020:5, 2019:4, 2018:3
+  graph levels     L0:20, L1:18
+  venues              6  Advances in neural information processing systems
+                      4  ICLR
+                      3  arXiv preprint
+  most cited        41135  2018  Graph attention networks
+                     8204  2019  Heterogeneous graph attention network
+                     3205  2019  Kgat: Knowledge graph attention network for recommendation
+```
+
+`graph levels` appears only when the collection really holds records pulled in by `--follow-cites` (`L0` is what the search returned, `L1` their citing works), and `citation-only` counts the records Scholar lists with a citation but no page of their own.
 
 When the same work appears in several files, the higher citation count wins as the fresher observation, the fuller record wins ties, `extra.bibtex_key` survives, and `follow_depth` keeps the shallowest level.
 
@@ -837,7 +857,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 496 tests, fully offline
+python3 -m pytest -q     # 505 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -854,7 +874,8 @@ Grouped by what they cover; read `tests/` for the detail:
 - **Output for programs**: the document's fixed keys, the failure vocabulary, the stdout/stderr split, and AGENTS.md matching that vocabulary word for word
 - **Offline tools**: merging, filtering, summaries, grouping, bibliography synthesis, staleness and refresh lists, collection deltas
 - **Configuration and interface**: settings-file equivalence and errors, both parsers (groups, help, defaults), and both READMEs' links and module lists
-- **The commands in the documentation**: every `scholar-crawler`/`scholar-digest` command in both READMEs and AGENTS.md — each one that sends no request is actually run in a scratch directory (the test creates whatever files it reads), and any `-> https://…` printed in the docs is compared verbatim; the rest must be registered in the test with the reason it cannot run offline (it crawls, `--self-check` costs one request, `--install-browser` downloads, `--rehearse-handoff` needs a person). A new command escapes neither branch
+- **The commands in the documentation**: every `scholar-crawler`/`scholar-digest` command in both READMEs and AGENTS.md — each one that sends no request is actually run in a scratch directory (the test creates whatever files it reads); the rest must be registered in the test with the reason it cannot run offline (it crawls, `--self-check` costs one request, `--install-browser` downloads, `--rehearse-handoff` needs a person). A new command escapes neither branch
+- **The output the documentation shows**: `--recipes` and `--dry-run` answer from the command line alone — no machine, no data — so every line quoted for them is compared verbatim and in order; for reports whose values vary (`--doctor`, the `scholar-digest` overview) the label column is compared instead (`browser`, `profile`, `citation-only`, `graph levels`, …), so renaming or dropping one turns the docs red; and every `[tag]` shown anywhere in the docs must be a channel the tool really prints
 
 ### Checking that the guards guard
 
@@ -863,7 +884,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 55 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 58 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
