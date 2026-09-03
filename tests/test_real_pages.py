@@ -16,6 +16,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from bs4 import BeautifulSoup  # noqa: E402
+
+from scholar_crawler.challenge import RESULTS_SELECTOR  # noqa: E402
 from scholar_crawler.parser import (  # noqa: E402
     bibtex_key,
     bibtex_link,
@@ -24,9 +27,21 @@ from scholar_crawler.parser import (  # noqa: E402
     parse_result_page,
 )
 from scholar_crawler.selfcheck import check_page, report  # noqa: E402
+from tests.fixtures import EMPTY_PAGE_HTML  # noqa: E402
 from tests.sanitize import sanitize  # noqa: E402
 
 PAGES = Path(__file__).parent / "pages"
+
+RESULTS_SELECTOR_HOMES = {
+    "div.gs_r.gs_or.gs_scl": "results.html",
+    "div#gs_res_ccl_mid": "results.html",
+    "#gsc_a_b": "author.html",
+    "#gsc_prf_in": "author.html",
+    # The "did not match any articles" box: a real page with no hits is not a challenge, and
+    # no captured fixture is empty, so the hand-written EMPTY_PAGE_HTML stands in for it.
+    "div.gs_med": None,
+}
+"""Which captured page each part of :data:`RESULTS_SELECTOR` is expected to match."""
 
 
 def _read(name: str) -> str:
@@ -125,3 +140,14 @@ def test_sanitizing_leaves_plain_links_alone() -> None:
     cleaned = sanitize('<a href="/scholar?cites=123&amp;hl=en">cited by</a>')
     assert "cites=123" in cleaned
     assert "hl=en" in cleaned
+
+
+def test_every_part_of_the_results_selector_still_matches_a_page() -> None:
+    # A page is read as a challenge when nothing here matches, so a selector that silently
+    # stops matching Scholar's markup turns every ordinary page into a takeover prompt.
+    parts = [part.strip() for part in RESULTS_SELECTOR.split(",")]
+    assert set(parts) == set(RESULTS_SELECTOR_HOMES), "a new selector part needs a page to prove it"
+    for part, page in RESULTS_SELECTOR_HOMES.items():
+        html = EMPTY_PAGE_HTML if page is None else _read(page)
+        where = page or "an empty result page"
+        assert BeautifulSoup(html, "lxml").select(part), f"{part} matches nothing in {where}"

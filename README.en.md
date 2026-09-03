@@ -813,7 +813,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 439 tests, fully offline
+python3 -m pytest -q     # 440 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 

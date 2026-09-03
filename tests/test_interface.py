@@ -59,13 +59,18 @@ def test_a_shared_flag_takes_the_same_kind_of_value_in_both_commands(option: str
 @pytest.mark.parametrize("option", SHARED)
 def test_a_shared_flag_is_explained_in_both_commands(option: str) -> None:
     for name, action in (("crawler", CRAWLER[option]), ("digest", DIGEST[option])):
-        assert action.help, f"{option} has no help in the {name}"
+        assert action.help and action.help != argparse.SUPPRESS, f"{option} is unexplained in {name}"
 
 
 @pytest.mark.parametrize("parser", [crawler_parser(), digest_parser()], ids=["crawler", "digest"])
 def test_every_flag_is_explained(parser: argparse.ArgumentParser) -> None:
+    # argparse.SUPPRESS is a truthy string, so "has help" is not enough: a suppressed flag
+    # exists, accepts a value, and appears nowhere in --help.
+    rendered = parser.format_help()
     for option, action in _options(parser).items():
         assert action.help, f"{option} has no help text"
+        assert action.help != argparse.SUPPRESS, f"{option} hides itself from --help"
+        assert option in rendered, f"{option} never appears in --help"
 
 
 @pytest.mark.parametrize("parser", [crawler_parser(), digest_parser()], ids=["crawler", "digest"])

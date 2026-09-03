@@ -810,7 +810,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 439 个用例，全部离线
+python3 -m pytest -q     # 440 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
