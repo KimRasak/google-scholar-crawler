@@ -19,6 +19,9 @@ from importlib import metadata
 from itertools import takewhile
 from pathlib import Path
 
+from .config import tomllib
+from .machine import version
+
 MINIMUM_PYTHON = (3, 10)
 """The floor declared in pyproject.toml."""
 
@@ -200,18 +203,19 @@ PROBE = (
     "with sync_playwright() as playwright:\n"
     "    print(playwright.chromium.executable_path)\n"
 )
-"""Script that asks Playwright where its Chromium is; see :func:`check_bundled_chromium`."""
+"""Script that asks Playwright where its Chromium is; see :func:`_bundled_chromium`."""
 
 
-def check_bundled_chromium() -> Finding:
-    """Check that Playwright's own Chromium has been downloaded.
+def _bundled_chromium() -> tuple[bool, str, str]:
+    """Ask Playwright whether its own Chromium has been downloaded.
 
     The question is answered in a child process because reading the path starts Playwright's
     driver, and a driver session that never launches a browser prints asyncio teardown noise on
     some versions (1.62 does). Keeping only the child's stdout means the first command a new
     user runs reports one clean line either way.
 
-    :returns: the finding.
+    :returns: whether the download is present, a phrase describing where it is or what is
+        missing, and the command that would fix it.
     """
     probe = subprocess.run(  # noqa: S603 - fixed script, no user input
         [sys.executable, "-c", PROBE],
@@ -221,51 +225,65 @@ def check_bundled_chromium() -> Finding:
     )
     reported = probe.stdout.strip().splitlines()
     if probe.returncode != 0 or not reported:
+        if "ModuleNotFoundError" in probe.stderr:
+            return False, "playwright is not installed", INSTALL_COMMAND
         detail = next(
             (line for line in reversed(probe.stderr.strip().splitlines()) if line.strip()),
             "no output",
         )
-        if "ModuleNotFoundError" in probe.stderr:
-            return Finding(
-                "bundled chromium", Status.FAIL, "playwright is not installed", INSTALL_COMMAND
-            )
-        return Finding(
-            "bundled chromium",
-            Status.FAIL,
-            f"playwright cannot report a browser: {detail}",
-            BROWSER_COMMAND,
-        )
+        return False, f"playwright cannot report a browser: {detail}", BROWSER_COMMAND
     executable = Path(reported[-1])
     if executable.exists():
-        return Finding("bundled chromium", Status.OK, str(executable))
-    return Finding(
-        "bundled chromium",
-        Status.FAIL,
-        f"not downloaded (expected at {executable})",
-        BROWSER_COMMAND,
-    )
+        return True, f"bundled Chromium at {executable}", ""
+    return False, f"bundled Chromium not downloaded (expected at {executable})", BROWSER_COMMAND
 
 
-def check_channel(channel: str | None) -> Finding:
-    """Check the installed browser the run is configured to drive.
+def _channel_path(channel: str) -> str | None:
+    """Locate an installed browser channel.
 
-    :param channel: the channel a run would use, or None for bundled Chromium.
-    :returns: the finding.
+    :param channel: channel name such as ``chrome`` or ``msedge``.
+    :returns: the path a run would launch, or None when the channel is not installed.
     """
-    if not channel:
-        return Finding("browser channel", Status.OK, "bundled Chromium (no channel requested)")
     for candidate in CHROME_PATHS.get(channel, ()):
         if Path(candidate).exists():
-            return Finding("browser channel", Status.OK, f"{channel} at {candidate}")
+            return candidate
     for command in CHROME_COMMANDS.get(channel, ()):
-        found = shutil.which(command)
-        if found:
-            return Finding("browser channel", Status.OK, f"{channel} at {found}")
+        if found := shutil.which(command):
+            return found
+    return None
+
+
+def check_browser(channel: str | None) -> Finding:
+    """Check the browser this run would drive, which is the only one that has to exist.
+
+    A run launches the requested channel, so a missing bundled Chromium costs nothing while
+    Chrome is installed — and downloading it would not fix a missing channel either. Reporting
+    the two as separate requirements told a caller to spend 150 MB on a working setup, and made
+    ``--doctor`` exit 1 on a machine where a crawl runs.
+
+    :param channel: the channel a run would use, or None for the bundled Chromium.
+    :returns: the finding, naming the browser that will be launched.
+    """
+    downloaded, bundled, fix = _bundled_chromium()
+    if not channel:
+        if downloaded:
+            return Finding("browser", Status.OK, f"{bundled} (no channel requested)")
+        return Finding("browser", Status.FAIL, bundled, fix)
+    if found := _channel_path(channel):
+        spare = "bundled Chromium is also available" if downloaded else "no bundled Chromium as a spare"
+        return Finding("browser", Status.OK, f"{channel} at {found}; {spare}")
+    if downloaded:
+        return Finding(
+            "browser",
+            Status.FAIL,
+            f"{channel} was not found in the usual places, though {bundled} is ready",
+            f"install {channel}, or run with --channel '' to drive the bundled Chromium",
+        )
     return Finding(
-        "browser channel",
-        Status.WARN,
-        f"{channel} was not found in the usual places",
-        f"install {channel}, or run with --channel '' to use the bundled Chromium",
+        "browser",
+        Status.FAIL,
+        f"{channel} was not found in the usual places, and {bundled}",
+        f"install {channel}, or {fix} and run with --channel ''",
     )
 
 
@@ -345,6 +363,44 @@ def check_profile(profile: Path) -> Finding:
     )
 
 
+def check_version() -> Finding:
+    """Compare the version pip recorded with the version of the code being run.
+
+    An editable install keeps the metadata written when it was installed, so after a ``git
+    pull`` the tool can report a version it is not running — which then reaches every ``--json``
+    document and every bug report.
+
+    :returns: the finding, naming both versions when they disagree.
+    """
+    installed = version()
+    source = _source_version()
+    if source is None or installed == source:
+        return Finding("version", Status.OK, installed)
+    return Finding(
+        "version",
+        Status.WARN,
+        f"pip recorded {installed} but this checkout is {source}",
+        f"{INSTALL_COMMAND} again so --version and --json report {source}",
+    )
+
+
+def _source_version() -> str | None:
+    """Read the version from the ``pyproject.toml`` next to the package, when there is one.
+
+    :returns: the declared version, or None when the package was installed without its sources
+        or the file cannot be parsed.
+    """
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    if tomllib is None or not pyproject.exists():
+        return None
+    try:
+        declared = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError):
+        return None
+    project = declared.get("project")
+    return project.get("version") if isinstance(project, dict) else None
+
+
 def diagnose_environment(
     *, profile: Path, out: Path, state: Path, channel: str | None
 ) -> list[Finding]:
@@ -356,11 +412,10 @@ def diagnose_environment(
     :param channel: browser channel a run would drive.
     :returns: the findings, in the order they are worth reading.
     """
-    findings = [check_python()]
+    findings = [check_python(), check_version()]
     findings.extend(check_module(requirement) for requirement in REQUIREMENTS)
     findings.append(check_toml_reader())
-    findings.append(check_bundled_chromium())
-    findings.append(check_channel(channel))
+    findings.append(check_browser(channel))
     findings.append(check_profile(profile))
     findings.append(check_writable("output", out, kind="file"))
     if state.parent != out.parent:

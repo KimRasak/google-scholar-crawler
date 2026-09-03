@@ -147,16 +147,16 @@ def test_resume_without_a_stored_cursor_says_it_starts_over() -> None:
     assert any("holds no cursor for these targets" in line for line in concerns)
 
 
-def test_a_stored_cursor_without_resume_says_the_work_is_repeated(tmp_path: Path) -> None:
-    args = build_parser().parse_args(["-q", "x"])
+def test_a_stored_cursor_without_resume_is_left_to_the_run_to_report(tmp_path: Path) -> None:
+    # Every run prints it now, with or without --explain, so repeating it here would say the
+    # same thing twice in one command.
+    args = build_parser().parse_args(["-q", "x", "--state", str(tmp_path / "state.json")])
     listings, _authors = build_targets(args)
-    state = StateStore(tmp_path / "out" / "state.json")
-    state.load()
+    state = StateStore(tmp_path / "state.json")
     state.record(listings[0].signature(), 30)
 
-    concerns = _concerns(["-q", "x"])
-    assert any("already have a cursor" in line for line in concerns)
-    assert any("starts from the beginning again" in line for line in concerns)
+    concerns = _concerns(["-q", "x", "--state", str(tmp_path / "state.json")])
+    assert not any("cursor" in line for line in concerns)
 
 
 def test_start_loses_to_a_stored_cursor(tmp_path: Path) -> None:

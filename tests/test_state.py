@@ -20,7 +20,7 @@ from scholar_crawler.models import (  # noqa: E402
     SearchRequest,
     describe_signature,
 )
-from scholar_crawler.run import crawl_listing  # noqa: E402
+from scholar_crawler.run import crawl_listing, report_ignored_progress  # noqa: E402
 from scholar_crawler.storage import ResultSink, StateEntry, StateStore  # noqa: E402
 
 
@@ -193,3 +193,31 @@ def test_a_record_cap_does_not_mark_a_target_finished(tmp_path: Path) -> None:
     entry = _run_capped_listing(tmp_path).entries()[0]
     assert (entry.exhausted, entry.next_start) == (False, 2)
     assert "next offset 2" in entry.describe()
+
+
+def test_a_rerun_without_resume_is_told_what_it_will_redo(tmp_path: Path) -> None:
+    # Repeating a command without --resume refetches offset 0 and writes nothing new, spending
+    # the one scarce resource: a request Scholar could answer with a challenge.
+    store = _store(tmp_path)
+    listing = SearchRequest(query="attention is all you need", language="en")
+    fresh = SearchRequest(query="never crawled", language="en")
+    targets = [(listing.label, listing.signature()), (fresh.label, fresh.signature())]
+
+    lines = report_ignored_progress(store, targets, resume=False)
+    assert len(lines) == 1, "only targets with recorded progress are worth a line"
+    assert "'attention is all you need' already reached offset 30" in lines[0]
+    assert "--resume" in lines[0] and str(store.path) in lines[0]
+    assert report_ignored_progress(store, targets, resume=True) == []
+
+
+def test_the_rerun_notice_reaches_the_terminal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    state = tmp_path / "state.json"
+    StateStore(state).record(SearchRequest(query="graph neural networks", language="en").signature(), 20)
+    exit_code = main(
+        ["-q", "graph neural networks", "--dry-run", "--state", str(state), "-o", str(tmp_path / "o.jsonl")]
+    )
+    printed = capsys.readouterr().out
+    assert exit_code == 0
+    assert "[state] 'graph neural networks' already reached offset 20" in printed

@@ -10,17 +10,25 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scholar_crawler import doctor as doctor_module  # noqa: E402
+
+PYPROJECT_VERSION = next(
+    line.split('"')[1]
+    for line in (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text().splitlines()
+    if line.startswith("version = ")
+)
+"""The one place the version is declared, read without a TOML parser."""
 from scholar_crawler.cli import main  # noqa: E402
 from scholar_crawler.doctor import (  # noqa: E402
     REQUIREMENTS,
     Requirement,
     Status,
-    check_bundled_chromium,
-    check_channel,
+    check_browser,
     check_module,
     check_profile,
     check_python,
     check_toml_reader,
+    check_version,
     check_writable,
     diagnose_environment,
     render_environment,
@@ -60,15 +68,15 @@ def test_a_too_old_library_is_a_failure_not_a_warning() -> None:
 
 
 def test_no_channel_means_the_bundled_chromium_is_what_runs() -> None:
-    finding = check_channel(None)
+    finding = check_browser(None)
     assert finding.status is Status.OK
     assert "bundled Chromium" in finding.detail
     assert not finding.fix
 
 
-def test_an_uninstalled_channel_is_a_warning_with_a_way_out() -> None:
-    finding = check_channel("nosuchbrowser")
-    assert finding.status is Status.WARN  # the bundled Chromium still works
+def test_an_uninstalled_channel_stops_the_run_that_would_launch_it() -> None:
+    finding = check_browser("nosuchbrowser")
+    assert finding.status is Status.FAIL, "the run launches the channel, so it has to exist"
     assert "was not found" in finding.detail
     assert "--channel ''" in finding.fix
 
@@ -137,15 +145,18 @@ def test_the_full_check_covers_every_prerequisite(tmp_path: Path) -> None:
         channel="chrome",
     )
     names = [finding.name for finding in findings]
-    assert names[:6] == [
+    assert names == [
         "python",
+        "version",
         "playwright",
         "bs4",
         "lxml",
         "settings files",
-        "bundled chromium",
+        "browser",
+        "profile",
+        "output",
+        "state",
     ]
-    assert names[6:] == ["browser channel", "profile", "output", "state"]
     assert _named(findings, "python").status is Status.OK
 
 
@@ -187,8 +198,9 @@ def test_the_browser_probe_keeps_only_the_path_the_child_printed(
         )
 
     monkeypatch.setattr(subprocess, "run", _noisy)
-    finding = check_bundled_chromium()
-    assert (finding.status, finding.detail) == (Status.OK, str(browser))
+    finding = check_browser(None)
+    assert finding.status is Status.OK
+    assert finding.detail == f"bundled Chromium at {browser} (no channel requested)"
 
 
 def test_a_browser_that_was_never_downloaded_says_how_to_get_it(
@@ -198,9 +210,27 @@ def test_a_browser_that_was_never_downloaded_says_how_to_get_it(
         return subprocess.CompletedProcess(command, 0, stdout=f"{tmp_path / 'nope'}\n", stderr="")
 
     monkeypatch.setattr(subprocess, "run", _absent)
-    finding = check_bundled_chromium()
+    finding = check_browser(None)
     assert finding.status is Status.FAIL
     assert finding.fix == "scholar-crawler --install-browser"
+
+
+def test_a_missing_download_is_not_a_problem_when_the_channel_is_installed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A run launches Chrome, so the 150 MB download it never opens must not fail --doctor;
+    # a crawl was verified to work in exactly this state.
+    def _absent(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout=f"{tmp_path / 'nope'}\n", stderr="")
+
+    chrome = tmp_path / "Google Chrome"
+    chrome.write_text("", encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", _absent)
+    monkeypatch.setattr(doctor_module, "CHROME_PATHS", {"chrome": (str(chrome),)})
+    finding = check_browser("chrome")
+    assert finding.status is Status.OK
+    assert "no bundled Chromium as a spare" in finding.detail
+    assert not finding.fix
 
 
 def test_a_probe_that_cannot_import_playwright_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -210,7 +240,7 @@ def test_a_probe_that_cannot_import_playwright_says_so(monkeypatch: pytest.Monke
         )
 
     monkeypatch.setattr(subprocess, "run", _missing)
-    finding = check_bundled_chromium()
+    finding = check_browser(None)
     assert finding.detail == "playwright is not installed"
     assert finding.fix == "pip install -e ."
 
@@ -224,7 +254,7 @@ def test_a_probe_that_fails_for_another_reason_keeps_the_last_error_line(
         )
 
     monkeypatch.setattr(subprocess, "run", _broken)
-    assert "driver refused to start" in check_bundled_chromium().detail
+    assert "driver refused to start" in check_browser(None).detail
 
 
 def test_the_toml_reader_is_checked_before_a_config_run_needs_it() -> None:
@@ -252,5 +282,27 @@ def test_doctor_reports_through_the_cli_and_sends_no_request(
     printed = capsys.readouterr().out
     assert exit_code == 0  # this machine runs the tests, so nothing is broken here
     assert "[doctor] + python" in printed
-    assert "[doctor] + bundled chromium" in printed
+    assert "[doctor] + browser" in printed
     assert not (tmp_path / "out").exists()
+
+
+def test_an_editable_install_is_told_when_its_metadata_went_stale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # pip writes the version once; after a git pull the tool can report a version it is not
+    # running, and that number goes into every --json document and every bug report.
+    monkeypatch.setattr(doctor_module, "version", lambda: "0.1.0")
+    monkeypatch.setattr(doctor_module, "_source_version", lambda: "0.2.0")
+    finding = check_version()
+    assert finding.status is Status.WARN
+    assert finding.detail == "pip recorded 0.1.0 but this checkout is 0.2.0"
+    assert "pip install -e ." in finding.fix
+
+    monkeypatch.setattr(doctor_module, "_source_version", lambda: "0.1.0")
+    assert check_version().status is Status.OK
+    monkeypatch.setattr(doctor_module, "_source_version", lambda: None)
+    assert check_version().status is Status.OK, "an install without sources cannot be compared"
+
+
+def test_the_version_in_the_sources_is_the_one_pyproject_declares() -> None:
+    assert doctor_module._source_version() == PYPROJECT_VERSION

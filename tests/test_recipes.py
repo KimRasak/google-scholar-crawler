@@ -78,7 +78,7 @@ def test_the_doctor_recipe_runs_as_written(
         assert main(shlex.split(recipe.command)[1:]) == 0
         printed = capsys.readouterr().out
         assert "[doctor] + python" in printed
-        assert "[doctor] + bundled chromium" in printed
+        assert "[doctor] + browser" in printed
 
 
 def test_the_explain_recipe_runs_as_written(

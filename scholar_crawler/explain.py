@@ -211,7 +211,8 @@ def _resume_concerns(
     :param args: parsed arguments.
     :param listings: keyword and citation listings.
     :param authors: author profiles.
-    :returns: concerns about resuming, or the absence of it.
+    :returns: concerns about resuming, or the absence of it. A stored cursor that this run
+        ignores is reported by the run itself, so it is not repeated here.
     """
     state = StateStore(args.state)
     state.load()
@@ -234,14 +235,6 @@ def _resume_concerns(
                 Level.WARN,
                 f"--start {args.start} is ignored for the {len(stored)} target(s) that have a "
                 "stored cursor; --resume wins",
-            )
-        ]
-    if stored and not args.resume:
-        return [
-            Concern(
-                Level.WARN,
-                f"{len(stored)} of the given target(s) already have a cursor in {args.state}; "
-                "without --resume, collection starts from the beginning again",
             )
         ]
     return []

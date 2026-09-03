@@ -13,7 +13,7 @@ The code never tries to solve, bypass or hide a verification challenge. Verifica
 
 ```sh
 pipx install git+https://github.com/KimRasak/google-scholar-crawler   # or pip install
-scholar-crawler --install-browser                                     # downloads Chromium once
+scholar-crawler --install-browser                                     # only if Chrome is missing
 ```
 
 **2. Collect once** (one request, about five seconds, in a real Chrome window)
@@ -37,7 +37,7 @@ One record per line in `out/rag.jsonl`, carrying everything a Scholar result car
  "cluster_id":"...","link":"...","query":"retrieval augmented generation survey"}
 ```
 
-`out/state.json` appears alongside it — the resume cursor, so `--resume` continues from here next time. To see what a collection looks like, digest it without sending anything:
+`out/state.json` appears alongside it — the resume cursor, so `--resume` continues from here next time. Forgetting it costs nothing: running the same target again opens with `[state] ... already reached offset 10`. To see what a collection looks like, digest it without sending anything:
 
 ```sh
 scholar-digest out/rag.jsonl                # size, years, venues, the most cited
@@ -102,6 +102,8 @@ Detection uses the URL (`/sorry/`, `consent.google.`, `accounts.google.com`), DO
 
 `pipx install git+https://github.com/KimRasak/google-scholar-crawler` then `scholar-crawler --install-browser` is the whole install (see [Three steps](#three-steps)). The second command runs Playwright's download through the current interpreter, so the browser lands in the right place whether the tool sits in a pipx environment, a venv, or the system Python. It is the one step a new user cannot guess, which is why it is a command rather than a paragraph.
 
+On a machine that already has Chrome you can skip it: the default `--channel chrome` drives the system browser, and the 150 MB Chromium is never opened. `--doctor` checks only the browser this run would launch, so it passes on such a machine.
+
 To change the code, install from a checkout:
 
 ```sh
@@ -118,12 +120,12 @@ Check the machine first; this sends no request:
 ```sh
 $ scholar-crawler --doctor
 [doctor] + python                 3.13.5 at /opt/miniconda3/bin/python3
+[doctor] + version                0.2.0
 [doctor] + playwright             1.60.0
 [doctor] + bs4                    4.14.3
 [doctor] + lxml                   6.1.0
 [doctor] + settings files         tomllib (stdlib) reads --config files
-[doctor] + bundled chromium       /Users/you/Library/Caches/ms-playwright/chromium-1223/...
-[doctor] + browser channel        chrome at /Applications/Google Chrome.app/...
+[doctor] + browser                chrome at /Applications/Google Chrome.app/...; bundled Chromium is also available
 [doctor] ! profile                .scholar-profile holds no cookies yet, so the first challenge will need a human
 [doctor] + output                 out is writable
 [doctor] nothing is broken; these are worth knowing:
@@ -636,7 +638,7 @@ What it catches (`warn` means a flag does not do what it looks like; `note` mean
 - values that amount to doing no work, such as `--pages 0` or `--max-handoffs 0`;
 - delays shorter than the default 4–11s, and `--cooldown-every 0` removing the long pause;
 - `--no-learn-from-history` when the takeover log actually holds history (silent when it does not);
-- `--resume` with no cursor for these targets, which really means starting over; the reverse, a stored cursor without `--resume`, which recollects what is already on disk; and `--resume` together with `--start`, where the cursor wins;
+- `--resume` with no cursor for these targets, which really means starting over, and `--resume` together with `--start`, where the cursor wins (a stored cursor without `--resume` needs no `--explain`: every run says so before it starts);
 - two output flags pointed at one file;
 - `--bibtex` with `--author` costing three page loads per record, `--dump-html` writing pages that carry session material to disk, `--proxy` addresses being challenged more, and a `--host` other than the default.
 
@@ -813,7 +815,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 447 tests, fully offline
+python3 -m pytest -q     # 452 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -836,7 +838,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 35 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 39 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

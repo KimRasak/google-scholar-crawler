@@ -4,16 +4,18 @@ This file is for an AI agent (or any script) that collects papers with this tool
 [README.md](README.md); it is long because it explains why. This one is short because a caller
 only needs the interface.
 
-## Install (two commands)
+## Install
 
 ```sh
 pipx install git+https://github.com/KimRasak/google-scholar-crawler   # or: pip install .
-scholar-crawler --install-browser                                     # downloads Chromium once
-scholar-crawler --doctor                                              # optional: verify
+scholar-crawler --doctor                                              # says what is missing
+scholar-crawler --install-browser                                     # only if --doctor asks
 ```
 
-`--install-browser` runs Playwright's download inside the environment the tool landed in, so it
-works under `pipx`, a venv, or a plain `pip install`.
+Runs drive the browser named by `--channel`, `chrome` by default, so a machine with Chrome
+installed needs no download. `--install-browser` runs Playwright's download inside the
+environment the tool landed in, so it works under `pipx`, a venv, or a plain `pip install`.
+`--doctor` exits 1 only when the browser this run would launch is absent.
 
 ## The one rule you cannot code around
 

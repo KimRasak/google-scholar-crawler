@@ -13,7 +13,7 @@
 
 ```sh
 pipx install git+https://github.com/KimRasak/google-scholar-crawler   # 或 pip install
-scholar-crawler --install-browser                                     # 下载 Playwright 用的 Chromium
+scholar-crawler --install-browser                                     # 没装 Chrome 才需要
 ```
 
 **二、抓一次**（一次请求，约 5 秒，会弹出一个真实的 Chrome 窗口）
@@ -37,7 +37,7 @@ $ scholar-crawler -q "retrieval augmented generation survey" -p 1 -o out/rag.jso
  "cluster_id":"...","link":"...","query":"retrieval augmented generation survey"}
 ```
 
-同时出现 `out/state.json`（断点，下次加 `--resume` 就接着抓）。想看看一份集合长什么样，接着跑一条不发请求的汇总：
+同时出现 `out/state.json`（断点，下次加 `--resume` 就接着抓；忘了加也不会白跑——同一个目标再来一次时，开头那行 `[state] ... already reached offset 10` 会先告诉你）。想看看一份集合长什么样，接着跑一条不发请求的汇总：
 
 ```sh
 scholar-digest out/rag.jsonl                # 规模、年份、期刊、被引最高的几篇
@@ -102,6 +102,8 @@ scholar-digest out/rag.jsonl --report out/report.md   # 写成一份可读的 Ma
 
 `pipx install git+https://github.com/KimRasak/google-scholar-crawler` 之后 `scholar-crawler --install-browser`，两条就够（见[三步跑起来](#三步跑起来)）。第二条用当前解释器去执行 Playwright 的下载，所以无论装在 pipx 的独立环境、venv 还是全局，浏览器都落在对的地方——这一步是新装用户唯一猜不到的动作，所以它是一个命令而不是一段说明。
 
+本机已装 Chrome 的话这条可以省掉：默认 `--channel chrome` 驱动的就是系统 Chrome，那 150 MB 的 Chromium 一次也不会被打开。`--doctor` 只检查这次运行真正要启动的那个浏览器，所以在这种机器上它会直接放行。
+
 想改代码就从源码装：
 
 ```sh
@@ -118,12 +120,12 @@ scholar-crawler --install-browser
 ```sh
 $ scholar-crawler --doctor
 [doctor] + python                 3.13.5 at /opt/miniconda3/bin/python3
+[doctor] + version                0.2.0
 [doctor] + playwright             1.60.0
 [doctor] + bs4                    4.14.3
 [doctor] + lxml                   6.1.0
 [doctor] + settings files         tomllib (stdlib) reads --config files
-[doctor] + bundled chromium       /Users/you/Library/Caches/ms-playwright/chromium-1223/...
-[doctor] + browser channel        chrome at /Applications/Google Chrome.app/...
+[doctor] + browser                chrome at /Applications/Google Chrome.app/...; bundled Chromium is also available
 [doctor] ! profile                .scholar-profile holds no cookies yet, so the first challenge will need a human
 [doctor] + output                 out is writable
 [doctor] nothing is broken; these are worth knowing:
@@ -632,7 +634,7 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --exp
 - `--pages 0`、`--max-handoffs 0` 这类等于「不干活」的值；
 - 延迟比默认的 4–11 秒更短、`--cooldown-every 0` 去掉长暂停；
 - `--no-learn-from-history`，且接管记录里确实有历史（没有历史就不提）；
-- `--resume` 但断点里没有这些目标 → 其实是从头开始；反过来，断点里有而没写 `--resume` → 已经抓过的会再抓一遍；`--resume` 与 `--start` 同时给 → 断点赢；
+- `--resume` 但断点里没有这些目标 → 其实是从头开始；`--resume` 与 `--start` 同时给 → 断点赢（「断点里有而没写 `--resume`」不必等 `--explain`，任何一次运行开始前都会说）；
 - 两个输出参数指向同一个文件；
 - `--bibtex` 配 `--author` 每条要三次页面加载；`--dump-html` 会把含会话信息的页面写到磁盘；`--proxy` 的机房 IP 更容易被拦；`--host` 不是默认站点。
 
@@ -810,7 +812,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 447 个用例，全部离线
+python3 -m pytest -q     # 452 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -831,7 +833,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 35 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 39 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

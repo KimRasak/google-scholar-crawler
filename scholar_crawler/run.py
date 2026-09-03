@@ -90,6 +90,31 @@ def crawl_listing(
     return collected
 
 
+def report_ignored_progress(
+    state: StateStore, requests: list[tuple[str, str]], *, resume: bool
+) -> list[str]:
+    """Name the targets whose recorded progress this run is about to ignore.
+
+    Running the same command twice without ``--resume`` refetches offset 0 and writes nothing
+    new, spending the one resource that matters: a request Scholar might answer with a
+    challenge. The state file already knows where each target stopped, so the run says so
+    before spending anything.
+
+    :param state: the loaded resume store.
+    :param requests: label and signature of every seed target.
+    :param resume: whether ``--resume`` was passed, in which case the offsets are used.
+    :returns: one line per target with recorded progress, empty when resuming or starting fresh.
+    """
+    if resume:
+        return []
+    return [
+        f"{label!r} already reached offset {offset} in {state.path}; "
+        "add --resume to continue there, or --state elsewhere to start over"
+        for label, signature in requests
+        if (offset := state.next_start(signature)) > 0
+    ]
+
+
 def export_bibtex(
     crawler: ScholarCrawler,
     results: list[ScholarResult],

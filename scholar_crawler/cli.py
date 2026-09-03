@@ -26,8 +26,8 @@ from .modes import (
 )
 from .plan import RunPlan, plan_run
 from .recipes import getting_started, render
-from .run import CrawlLimits, Outputs, RunOutcome, crawl
-from .storage import ChallengeLog
+from .run import CrawlLimits, Outputs, RunOutcome, crawl, report_ignored_progress
+from .storage import ChallengeLog, StateStore
 from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
 
 
@@ -667,6 +667,22 @@ def _plan_section(plan: RunPlan) -> dict[str, object]:
     }
 
 
+def _ignored_progress(
+    args: argparse.Namespace, listings: list[SearchRequest], authors: list[AuthorRequest]
+) -> list[str]:
+    """Read the state file to see whether this run repeats work it already did.
+
+    :param args: parsed arguments.
+    :param listings: seed keyword, citation and version listings.
+    :param authors: seed author profiles.
+    :returns: one line per target whose recorded offset this run ignores.
+    """
+    state = StateStore(args.state)
+    state.load()
+    targets = [(request.label, request.signature()) for request in (*listings, *authors)]
+    return report_ignored_progress(state, targets, resume=args.resume)
+
+
 def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> _Ran:
     """Run whichever mode the arguments describe.
 
@@ -708,6 +724,8 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
         if not args.dry_run:
             print("[explain] nothing was requested; drop --explain to start", flush=True)
             return _Ran(0)
+    for line in _ignored_progress(args, listings, authors):
+        print(f"[state] {line}", flush=True)
     if args.dry_run:
         plan = _plan_of(args, listings, authors, follow, pacing)
         for line in plan.render():

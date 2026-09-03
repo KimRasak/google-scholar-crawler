@@ -18,7 +18,7 @@ from pathlib import Path
 from .browser import Session, browser_session
 from .challenge import ChallengeUnattended
 from .crawler import ScholarCrawler
-from .doctor import Status, check_bundled_chromium, diagnose_environment, render_environment
+from .doctor import Status, check_browser, diagnose_environment, render_environment
 from .models import SearchRequest
 from .rehearsal import rehearse
 from .selfcheck import check_page, report
@@ -52,7 +52,7 @@ def install_browser() -> int:
             file=sys.stderr,
         )
         return 1
-    finding = check_bundled_chromium()
+    finding = check_browser(None)
     print(f"[install] {finding.describe()}", flush=True)
     if finding.status is Status.FAIL:
         return 1
