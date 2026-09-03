@@ -19,7 +19,7 @@ from pathlib import Path
 
 from .browser import BrowserOptions
 from .config import Sources
-from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
+from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing, delay_span
 from .expand import FollowPolicy
 from .models import AuthorRequest, SearchRequest
 from .storage import ChallengeLog, StateStore, profiles_beside
@@ -130,7 +130,7 @@ def _rhythm(pacing: Pacing) -> list[str]:
     :param pacing: the resolved pacing.
     :returns: the lines describing delays, pauses and timeouts.
     """
-    lines = [f"waiting {pacing.min_delay:g}–{pacing.max_delay:g}s between page loads"]
+    lines = [f"waiting {delay_span(pacing.min_delay, pacing.max_delay)} between page loads"]
     if pacing.cooldown_every:
         lines.append(
             f"pausing {pacing.cooldown_seconds:g}s every {pacing.cooldown_every} loads, "
@@ -270,7 +270,7 @@ def _pacing_concerns(args: argparse.Namespace, pacing: Pacing) -> list[Concern]:
         concerns.append(
             Concern(
                 Level.WARN,
-                f"{pacing.min_delay:g}–{pacing.max_delay:g}s is faster than the default "
+                f"{delay_span(pacing.min_delay, pacing.max_delay)} is faster than the default "
                 f"{DEFAULT_MIN_DELAY:g}–{DEFAULT_MAX_DELAY:g}s, which invites challenges",
             )
         )

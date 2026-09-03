@@ -302,6 +302,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "the bill quotes the rhythm the run will use",
+        "scholar_crawler/plan.py",
+        '        detail = f"{delay_span(self.pacing.min_delay, self.pacing.max_delay)} between requests"',
+        '        detail = f"{self.pacing.min_delay:.0f}-{self.pacing.max_delay:.0f}s between requests"',
+        "tests/test_history.py tests/test_end_to_end.py",
+    ),
+    Mutation(
+        "the takeover log names the target, not the offset",
+        "scholar_crawler/crawler.py",
+        "            dump_tag=str(start),\n            target=describe_signature(request.signature()),",
+        "            dump_tag=str(start),\n            target=str(start),",
+        "tests/test_challenge_log.py tests/test_end_to_end.py",
+    ),
+    Mutation(
         "the browser clock agrees with the language it asks for",
         "scholar_crawler/cli.py",
         "        timezone=args.timezone or timezone_for(args.lang),",

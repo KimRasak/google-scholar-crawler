@@ -158,8 +158,10 @@ def test_a_run_starts_slower_after_previous_blocks(
     log = _log_with(tmp_path / "challenges.jsonl", _block(10), _block(12, consecutive=2))
     printed = _dry_run(["-q", "x", "--challenge-log", str(log)], capsys)
     assert "2 previous blocks" in printed
-    assert "starting at 6.8-18.7s (x1.7)" in printed
-    assert "at 7-19s between requests" in printed
+    assert "starting at 6.8–18.7s (x1.7)" in printed
+    # The bill quotes the rhythm the run will use, to the same numbers the advice gave: rounding
+    # 18.7 down to 19 (or 16.5 down to 16) prints a pace that is not the one in effect.
+    assert "at 6.8–18.7s between requests" in printed
 
 
 def test_delays_passed_by_hand_are_never_widened(
@@ -171,7 +173,7 @@ def test_delays_passed_by_hand_are_never_widened(
     )
     assert "2 previous blocks" in printed
     assert "keeping the delays you passed" in printed
-    assert "at 8-20s between requests" in printed
+    assert "at 8–20s between requests" in printed
     assert "starting at" not in printed
 
 
@@ -181,7 +183,7 @@ def test_learning_can_be_turned_off(tmp_path: Path, capsys: pytest.CaptureFixtur
         ["-q", "x", "--challenge-log", str(log), "--no-learn-from-history"], capsys
     )
     assert "previous blocks" not in printed
-    assert f"at {DEFAULT_MIN_DELAY:.0f}-{DEFAULT_MAX_DELAY:.0f}s between requests" in printed
+    assert f"at {DEFAULT_MIN_DELAY:g}–{DEFAULT_MAX_DELAY:g}s between requests" in printed
 
 
 def test_an_empty_log_leaves_the_defaults_alone(
@@ -189,4 +191,4 @@ def test_an_empty_log_leaves_the_defaults_alone(
 ) -> None:
     printed = _dry_run(["-q", "x", "--challenge-log", str(tmp_path / "absent.jsonl")], capsys)
     assert "[pace]" not in printed
-    assert "at 4-11s between requests" in printed
+    assert "at 4–11s between requests" in printed

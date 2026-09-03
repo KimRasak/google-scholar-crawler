@@ -23,7 +23,7 @@ $ scholar-crawler -q "retrieval augmented generation survey" -p 1 -o out/rag.jso
 [query] 'retrieval augmented generation survey' from offset 0
 [page] offset=0 parsed=10 new=10 total=~548000
 [out] 10 new records (0 duplicates skipped) -> out/rag.jsonl
-[run] 1 request in 5s, 0 takeovers, 0 navigation retries, delay now 4.0-11.0s
+[run] 1 request in 5s, 0 takeovers, 0 navigation retries, delay now 4–11s
 ```
 
 **3. See what you got**
@@ -61,7 +61,7 @@ Google showing a verification page mid-crawl is normal, and this whole tool is b
 [handoff] the page is now a sign_in: account sign-in wall
 [handoff] still waiting; 60s left before the run gives up and stops with whatever it collected
 [handoff] cleared after 128s — resuming automated crawl.
-[pace] backing off to 6.4-17.6s between pages
+[pace] backing off to 6.4–17.6s between pages
 ```
 
 You have exactly one job: clear the challenge in the window that just came to the front, then press nothing. The details exist because the person it waits for has usually stepped away:
@@ -533,7 +533,7 @@ Running `--audit` afterwards finds spoiled data, but by then the pages have been
 
 ```
 [out] 40 new records (0 duplicates skipped) -> out/results.jsonl
-[run] 5 requests in 1m, 0 takeovers, 0 navigation retries, delay now 4.0-11.0s
+[run] 5 requests in 1m, 0 takeovers, 0 navigation retries, delay now 4–11s
 [audit] 1 field(s) parsed badly for a large share of this run's records — Scholar's layout may have changed
 [audit]   venue_looks_like_pages: 16 of 40 records (40%) — venue is a volume, issue or page range, so venue grouping is wrong
 [audit]       e.g. 521 (7553), 436-444 | Deep learning
@@ -569,11 +569,11 @@ $ scholar-crawler --show-state
 [state] 3 targets in out/state.json (1 finished)
 [state]   attention is all you need [en] — next offset 30, 2026-09-02 10:45:51 UTC
 [handoff] 2 takeovers in out/challenges.jsonl (captcha x2)
-[handoff]   2026-09-02T12:26:23+00:00  captcha -> unattended, waited 6s (on request 11, loading 20)
+[handoff]   2026-09-02T12:26:23+00:00  captcha -> unattended, waited 6s (on request 11, loading attention is all you need [en])
 [handoff]     matched form#captcha-form at about:blank
 ```
 
-Each record carries 10 fields: the time `at`, the kind `kind` (`captcha`, `rate_limit`, `consent`), what the detector matched `reason`, the redacted URL `url`, which request of the run was blocked `request_index` (counting the blocked one), whether challenges arrived back to back and which one this was `consecutive`, how long it waited for a human `waited`, the target being fetched `target`, which kinds the window showed while they worked `saw` (`became sign_in`), and how it ended `outcome` — `resolved` (solved, crawling continued), `unattended` (`--headless` refusal or the wait timed out), `budget` (`--max-handoffs` exhausted), `interrupted` (Ctrl+C) or `rehearsed` (a drill).
+Each record carries 10 fields: the time `at`, the kind `kind` (`captcha`, `rate_limit`, `consent`), what the detector matched `reason`, the redacted URL `url`, which request of the run was blocked `request_index` (counting the blocked one), whether challenges arrived back to back and which one this was `consecutive`, how long it waited for a human `waited`, the target being fetched `target` (spelled the way `--show-state` spells a resume target: `graph attention [en]`, `cluster:99`, `author:xxx`, `bibtex:<card id>`), which kinds the window showed while they worked `saw` (`became sign_in`), and how it ended `outcome` — `resolved` (solved, crawling continued), `unattended` (`--headless` refusal or the wait timed out), `budget` (`--max-handoffs` exhausted), `interrupted` (Ctrl+C) or `rehearsed` (a drill).
 
 That answers the questions that actually matter afterwards: at which request the block arrived, whether solving one was immediately followed by another (the pacing is still too fast), or whether nobody was at the keyboard.
 
@@ -593,7 +593,7 @@ Getting blocked once should not stay in that one run. By default every start-up 
 
 ```
 $ scholar-crawler -q "graph attention networks" -p 5
-[pace] 3 previous blocks (captcha x2, rate_limit x1); typically at request 14; 1 arrived back to back; last 2026-09-02T12:37:20+00:00; starting at 6.8-18.7s (x1.7)
+[pace] 3 previous blocks (captcha x2, rate_limit x1); typically at request 14; 1 arrived back to back; last 2026-09-02T12:37:20+00:00; starting at 6.8–18.7s (x1.7)
 ```
 
 The rules are deliberately conservative, and they **only ever widen the delays** — history can prove a rhythm was too fast, but no history proves a faster one is safe:
@@ -695,7 +695,7 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry
 [plan] seed targets: 3 page loads, up to 30 records
 [plan] bibtex export: up to 60 page loads
 [plan] total: up to 63 page loads for 30 records
-[plan] estimated 20 min at 4-11s between requests plus 6 cooldowns of 90s
+[plan] estimated 20 min at 4–11s between requests plus 6 cooldowns of 90s
 [plan] nothing was requested; drop --dry-run to start
 ```
 
@@ -723,7 +723,7 @@ $ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
 [plan] citation expansion: up to 8 listings, 24 page loads, up to 240 records
 [plan] bibtex export: up to 600 page loads
 [plan] total: up to 630 page loads for 300 records
-[plan] estimated 3.4 h at 4-11s between requests plus 63 cooldowns of 90s
+[plan] estimated 3.4 h at 4–11s between requests plus 63 cooldowns of 90s
 [plan] nothing was requested; drop --dry-run to start
 ```
 
@@ -845,7 +845,7 @@ The flow is the one a real challenge triggers: the page is detected as a challen
 Every run ends with a one-line summary — after a normal finish, a Ctrl+C, or a failure alike:
 
 ```
-[run] 12 requests in 3.4 min (3.5/min), 1 takeover (captcha x1), 0 navigation retries, delay now 6.4-17.6s
+[run] 12 requests in 3.4 min (3.5/min), 1 takeover (captcha x1), 0 navigation retries, delay now 6.4–17.6s
 ```
 
 The request count includes cite popups and BibTeX exports, takeovers are broken down by kind, and `delay now` is the rhythm after any backoff — noticeably above your starting values means this run was challenged and the address or the pacing needs to be more conservative. Runs shorter than 30 seconds report seconds instead of a rate, which would mostly measure start-up.
@@ -881,7 +881,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 533 tests, fully offline
+python3 -m pytest -q     # 534 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -908,7 +908,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 71 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 73 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

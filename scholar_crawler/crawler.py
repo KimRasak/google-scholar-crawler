@@ -16,7 +16,14 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
 from .challenge import RESULTS_SELECTOR, Challenge, ChallengeUnattended, HumanHandoff, detect_challenge
 from .diagnose import CrawlFailure, diagnose_challenge_loop, diagnose_navigation, diagnose_page
-from .models import AuthorPage, AuthorRequest, PageResult, ScholarResult, SearchRequest
+from .models import (
+    AuthorPage,
+    AuthorRequest,
+    PageResult,
+    ScholarResult,
+    SearchRequest,
+    describe_signature,
+)
 from .parser import bibtex_link, parse_author_page, parse_bibtex, parse_result_page
 from .storage import ChallengeLog
 from .urls import (
@@ -77,8 +84,21 @@ class RunStats:
             f"{self.requests} request{plural} {spent}, "
             f"{self.handoffs} takeover{'' if self.handoffs == 1 else 's'}{kinds}, "
             f"{self.navigation_retries} navigation retries, "
-            f"delay now {self.min_delay:.1f}-{self.max_delay:.1f}s"
+            f"delay now {delay_span(self.min_delay, self.max_delay)}"
         )
+
+
+def delay_span(min_delay: float, max_delay: float) -> str:
+    """Spell a delay range the one way every line spells it.
+
+    The same pair of numbers used to be printed three ways, and the shortest of them rounded
+    16.5 down to 16 — a rhythm the run does not use.
+
+    :param min_delay: lower bound in seconds.
+    :param max_delay: upper bound in seconds.
+    :returns: the range, e.g. ``6–16.5s``.
+    """
+    return f"{min_delay:g}–{max_delay:g}s"
 
 
 DEFAULT_MIN_DELAY = 4.0
@@ -150,7 +170,7 @@ class Pacing:
             self.min_delay *= self.backoff_factor
             self.max_delay *= self.backoff_factor
             print(
-                f"[pace] backing off to {self.min_delay:.1f}-{self.max_delay:.1f}s between pages",
+                f"[pace] backing off to {delay_span(self.min_delay, self.max_delay)} between pages",
                 flush=True,
             )
         if consecutive > 1 and self.challenge_cooldown:
@@ -211,7 +231,11 @@ class ScholarCrawler:
         :raises CrawlFailure: when the page never loads or carries no Scholar content.
         :raises RuntimeError: when the handoff budget is exhausted.
         """
-        html = self._load(search_url(request, start=start, host=self._host), str(start))
+        html = self._load(
+            search_url(request, start=start, host=self._host),
+            dump_tag=str(start),
+            target=describe_signature(request.signature()),
+        )
         return parse_result_page(html, query=request.label, start=start)
 
     def fetch_author_page(self, request: AuthorRequest, cstart: int) -> AuthorPage:
@@ -224,7 +248,9 @@ class ScholarCrawler:
         :raises RuntimeError: when the handoff budget is exhausted.
         """
         url = author_url(request, cstart=cstart, host=self._host, page_size=AUTHOR_PAGE_SIZE)
-        html = self._load(url, f"author-{cstart}")
+        html = self._load(
+            url, dump_tag=f"author-{cstart}", target=describe_signature(request.signature())
+        )
         return parse_author_page(html, user_id=request.user_id, cstart=cstart)
 
     def search(
@@ -309,15 +335,18 @@ class ScholarCrawler:
             return None
         popup = self._try_load(
             cite_url(card_id, host=self._host, language=language),
-            f"cite-{card_id}",
-            CITE_POPUP_SELECTOR,
+            dump_tag=f"cite-{card_id}",
+            target=f"bibtex:{card_id}",
+            content_selector=CITE_POPUP_SELECTOR,
         )
         if popup is None:
             return None
         export_url = absolute(bibtex_link(popup), self._host)
         if export_url is None:
             return None
-        body = self._try_load(export_url, f"bib-{card_id}", "pre")
+        body = self._try_load(
+            export_url, dump_tag=f"bib-{card_id}", target=f"bibtex:{card_id}", content_selector="pre"
+        )
         return parse_bibtex(body) if body is not None else None
 
     def _resolve_card_id(self, result: ScholarResult, language: str | None) -> str | None:
@@ -338,7 +367,11 @@ class ScholarCrawler:
         except ValueError:  # a citing-works link Scholar rendered without an id
             return None
         request = SearchRequest(cluster=cluster, language=language)
-        html = self._load(search_url(request, host=self._host), f"cluster-{cluster}")
+        html = self._load(
+            search_url(request, host=self._host),
+            dump_tag=f"cluster-{cluster}",
+            target=describe_signature(request.signature()),
+        )
         if html is None:
             return None
         cards = parse_result_page(html, query=request.label).results
@@ -364,7 +397,9 @@ class ScholarCrawler:
         self._pacing.sleep_before_request(self.request_count)
         self.request_count += 1
 
-    def _load(self, url: str, tag: str, content_selector: str = RESULTS_SELECTOR) -> str:
+    def _load(
+        self, url: str, *, dump_tag: str, target: str, content_selector: str = RESULTS_SELECTOR
+    ) -> str:
         """Navigate to ``url`` and return its HTML once no challenge stands in the way.
 
         A page carrying none of the expected markers stops the run: a zero-hit listing still
@@ -372,13 +407,16 @@ class ScholarCrawler:
         them is a page this tool cannot read, and continuing would report it as no results.
 
         :param url: absolute Scholar URL.
-        :param tag: short label used in dump filenames.
+        :param dump_tag: short, filename-safe label for dumped HTML.
+        :param target: what is being fetched, as the takeover log names it.
         :param content_selector: selectors proving the loaded page carries content.
         :returns: the page HTML.
         :raises CrawlFailure: when the page cannot be obtained or cannot be understood.
         :raises RuntimeError: when the handoff budget is exhausted.
         """
-        html = self._try_load(url, tag, content_selector)
+        html = self._try_load(
+            url, dump_tag=dump_tag, target=target, content_selector=content_selector
+        )
         if html is None:
             raise CrawlFailure(
                 diagnose_page(
@@ -387,14 +425,15 @@ class ScholarCrawler:
             )
         return html
 
-    def _try_load(self, url: str, tag: str, content_selector: str) -> str | None:
+    def _try_load(self, url: str, *, dump_tag: str, target: str, content_selector: str) -> str | None:
         """Navigate to ``url``, allowing the expected content to be absent.
 
         Used for pages Scholar legitimately may not have, such as the cite popup of a record
         it exposes no citation export for.
 
         :param url: absolute Scholar URL.
-        :param tag: short label used in dump filenames.
+        :param dump_tag: short, filename-safe label for dumped HTML.
+        :param target: what is being fetched, as the takeover log names it.
         :param content_selector: selectors proving the loaded page carries content.
         :returns: page HTML, or None when the page carries none of that content.
         :raises CrawlFailure: when the page cannot be obtained at all.
@@ -406,29 +445,30 @@ class ScholarCrawler:
                 continue
             challenge = detect_challenge(self._page)
             if challenge is not None:
-                self._hand_over(challenge, tag)
+                self._hand_over(challenge, dump_tag=dump_tag, target=target)
                 continue
             if self._page.locator(content_selector).count() == 0:
-                self._last_dump = self._dump(f"empty-{tag}")
+                self._last_dump = self._dump(f"empty-{dump_tag}")
                 return None
             self.consecutive_handoffs = 0
             self._humanize()
-            self._dump(f"page-{tag}")
+            self._dump(f"page-{dump_tag}")
             return self._page.content()
         raise CrawlFailure(diagnose_challenge_loop(url, 3))
 
-    def _hand_over(self, challenge: Challenge, tag: str) -> None:
+    def _hand_over(self, challenge: Challenge, *, dump_tag: str, target: str) -> None:
         """Hand the browser to the human, recording what happened either way.
 
         A challenge is rare and happens while the human is busy solving it, so the outcome
         is written to the log before it can be lost with the terminal scrollback.
 
         :param challenge: the detected challenge.
-        :param tag: short label of the request that was being loaded.
+        :param dump_tag: filename-safe label for the dumped challenge page.
+        :param target: what was being fetched when the challenge appeared.
         :raises RuntimeError: when the takeover budget is exhausted.
         :raises ChallengeUnattended: when no human can act on the challenge.
         """
-        self._dump(f"challenge-{challenge.kind.value}-{tag}")
+        self._dump(f"challenge-{challenge.kind.value}-{dump_tag}")
         self.handoff_count += 1
         self.consecutive_handoffs += 1
         kind = challenge.kind.value
@@ -451,16 +491,16 @@ class ScholarCrawler:
             outcome = "interrupted"
             raise
         finally:
-            self._record_challenge(challenge, tag, time.monotonic() - started, outcome, saw)
+            self._record_challenge(challenge, target, time.monotonic() - started, outcome, saw)
         self._pacing.after_handoff(self.consecutive_handoffs)
 
     def _record_challenge(
-        self, challenge: Challenge, tag: str, waited: float, outcome: str, saw: tuple[str, ...]
+        self, challenge: Challenge, target: str, waited: float, outcome: str, saw: tuple[str, ...]
     ) -> None:
         """Append one takeover to the challenge log, when logging is enabled.
 
         :param challenge: the challenge that was handed over.
-        :param tag: short label of the request that was being loaded.
+        :param target: what was being fetched when the challenge appeared.
         :param waited: seconds spent waiting for the human.
         :param outcome: how the takeover ended.
         :param saw: challenge kinds the window showed while the human worked.
@@ -475,7 +515,7 @@ class ScholarCrawler:
             consecutive=self.consecutive_handoffs,
             waited=waited,
             outcome=outcome,
-            target=tag,
+            target=target,
             saw=saw,
         )
         print(f"[handoff] recorded -> {self._challenge_log.path}: {entry.describe()}", flush=True)

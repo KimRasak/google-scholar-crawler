@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from statistics import median
 
+from .crawler import delay_span
 from .storage import ChallengeRecord
 
 CROWDED = 30
@@ -136,7 +137,7 @@ class Advice:
             return f"{self.history.describe()}; keeping the current rhythm"
         return (
             f"{self.history.describe()}; starting at "
-            f"{self.min_delay:.1f}-{self.max_delay:.1f}s (x{self.factor:.1f})"
+            f"{delay_span(self.min_delay, self.max_delay)} (x{self.factor:.1f})"
         )
 
 

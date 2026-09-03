@@ -150,7 +150,9 @@ def test_a_takeover_during_a_crawl_is_recorded(
     assert len(entries) == 1
     assert (entries[0].kind, entries[0].outcome) == ("captcha", "resolved")
     assert entries[0].consecutive == 1
-    assert entries[0].target == "10"
+    # The log names the target that was blocked, not the offset within it: "10" told a reader
+    # nothing about which listing Scholar stopped.
+    assert entries[0].target == "transformer"
     assert entries[0].request_index == 1  # the challenged load itself
     assert "TOKEN12345678" not in entries[0].url
 

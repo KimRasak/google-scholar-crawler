@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .crawler import Pacing
+from .crawler import Pacing, delay_span
 from .expand import FollowPolicy
 from .models import AuthorRequest, SearchRequest
 from .urls import AUTHOR_PAGE_SIZE, RESULTS_PER_PAGE, author_url, search_url
@@ -90,7 +90,7 @@ class RunPlan:
             duration = f"{self.seconds / 60:.0f} min"
         else:
             duration = f"{self.seconds:.0f}s"
-        detail = f"{self.pacing.min_delay:.0f}-{self.pacing.max_delay:.0f}s between requests"
+        detail = f"{delay_span(self.pacing.min_delay, self.pacing.max_delay)} between requests"
         if self.cooldowns:
             detail += f" plus {self.cooldowns} cooldowns of {self.pacing.cooldown_seconds:.0f}s"
         lines.append(f"estimated {duration} at {detail}")

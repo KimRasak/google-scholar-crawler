@@ -98,7 +98,7 @@ def test_cooldowns_and_hours_appear_in_the_estimate() -> None:
     rendered = plan.render()
     assert any("30 page loads" in line for line in rendered)
     assert any("cooldowns of 90s" in line for line in rendered)
-    assert any(" min at 4-11s" in line for line in rendered)
+    assert any(" min at 4–11s" in line for line in rendered)
 
     long_plan = _plan(
         [SearchRequest(query="a")], pages=5, follow=FollowPolicy(depth=2, breadth=8), bibtex=True

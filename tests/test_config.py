@@ -214,7 +214,7 @@ def test_a_run_driven_by_a_file_plans_the_file_values(
     assert "max_delay, min_delay, pages, query" in printed
     assert "[config]" not in printed, "the detail replaces the one-line summary"
     assert "graph attention" in printed
-    assert "9-21s between requests" in printed
+    assert "9–21s between requests" in printed
 
 
 def test_a_broken_file_stops_the_command_with_a_usage_error(

@@ -165,7 +165,7 @@ def test_a_challenge_hands_over_and_the_crawl_finishes(page: Page, tmp_path: Pat
     assert takeovers["kind"] == "captcha"
     assert takeovers["outcome"] == "resolved"
     assert takeovers["saw"] == ["captcha"]
-    assert takeovers["target"] == "10"
+    assert takeovers["target"] == "graph attention"
     # The logged URL keeps what explains the takeover and redacts everything else, so the
     # log stays safe to keep and share.
     assert "q=graph+attention" in takeovers["url"] and "start=10" in takeovers["url"]
@@ -372,6 +372,59 @@ def test_a_timezone_given_on_the_command_line_wins_over_the_language(
     assert main(["-q", "x", "-p", "1", "--lang", "de", "--dry-run"]) == 0
     derived = capsys.readouterr().out
     assert "Accept-Language de and reports its clock in Europe/Berlin (matching" in derived
+
+
+def test_a_drill_teaches_nothing_but_a_real_block_slows_the_next_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The one thing this tool carries across runs is what Scholar did to this profile. The chain
+    # is: a run is blocked -> the takeover log records it -> the next run starts slower. A
+    # rehearsal writes to the same log and must stay out of that, or a drill would teach the tool
+    # a lesson Scholar never gave it.
+    log = tmp_path / "challenges.jsonl"
+    common = [
+        "--headless",
+        "--channel",
+        "",
+        "--profile",
+        str(tmp_path / "profile"),
+        "--challenge-log",
+        str(log),
+        "-o",
+        str(tmp_path / "results.jsonl"),
+        "--state",
+        str(tmp_path / "state.json"),
+    ]
+
+    assert main(["--rehearse-handoff", *common]) == 0
+    drill = json.loads(log.read_text(encoding="utf-8").splitlines()[0])
+    assert drill["target"] == "rehearsal"
+    capsys.readouterr()
+
+    assert main(["-q", "x", "-p", "1", "--dry-run", "--challenge-log", str(log)]) == 0
+    after_drill = capsys.readouterr().out
+    assert "[pace]" not in after_drill, "a rehearsal is not evidence about Scholar"
+    assert "waiting 4–11s between page loads" in after_drill
+
+    for _ in range(2):
+        # A fresh site each time: the fake challenges an offset once, as Scholar would not.
+        with serving(FakeScholar(pages=2, challenge_at=(0,))) as host:
+            assert main(["-q", "graph attention", "-p", "1", "--host", host, *common]) == 1
+        blocked = capsys.readouterr()
+        assert "[stop] captcha at" in blocked.err
+    entries = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert len(entries) == 3
+    # Named the way --show-state names a resume target, so one vocabulary describes both. It used
+    # to be the offset within the listing, which said nothing about what Scholar stopped.
+    assert entries[1]["target"] == "graph attention [en]"
+
+    assert main(["-q", "x", "-p", "1", "--dry-run", "--challenge-log", str(log)]) == 0
+    after_block = capsys.readouterr().out
+    assert "2 previous blocks (captcha x2)" in after_block
+    assert "starting at 6–16.5s (x1.5)" in after_block
+    # The advice, the explanation and the bill quote one rhythm, not three roundings of it.
+    assert "waiting 6–16.5s between page loads" in after_block
+    assert "at 6–16.5s between requests" in after_block
 
 
 TAKEOVER_KEYS = {

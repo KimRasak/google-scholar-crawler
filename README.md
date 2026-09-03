@@ -23,7 +23,7 @@ $ scholar-crawler -q "retrieval augmented generation survey" -p 1 -o out/rag.jso
 [query] 'retrieval augmented generation survey' from offset 0
 [page] offset=0 parsed=10 new=10 total=~548000
 [out] 10 new records (0 duplicates skipped) -> out/rag.jsonl
-[run] 1 request in 5s, 0 takeovers, 0 navigation retries, delay now 4.0-11.0s
+[run] 1 request in 5s, 0 takeovers, 0 navigation retries, delay now 4–11s
 ```
 
 **三、看拿到了什么**
@@ -61,7 +61,7 @@ scholar-digest out/rag.jsonl --report out/report.md   # 写成一份可读的 Ma
 [handoff] the page is now a sign_in: account sign-in wall
 [handoff] still waiting; 60s left before the run gives up and stops with whatever it collected
 [handoff] cleared after 128s — resuming automated crawl.
-[pace] backing off to 6.4-17.6s between pages
+[pace] backing off to 6.4–17.6s between pages
 ```
 
 你要做的只有一件事：在弹到最前面的那个窗口里把验证做完，然后什么都不用按。几个为「人离开了一会儿」准备的细节：
@@ -530,7 +530,7 @@ $ scholar-digest out/clean.jsonl --audit
 
 ```
 [out] 40 new records (0 duplicates skipped) -> out/results.jsonl
-[run] 5 requests in 1m, 0 takeovers, 0 navigation retries, delay now 4.0-11.0s
+[run] 5 requests in 1m, 0 takeovers, 0 navigation retries, delay now 4–11s
 [audit] 1 field(s) parsed badly for a large share of this run's records — Scholar's layout may have changed
 [audit]   venue_looks_like_pages: 16 of 40 records (40%) — venue is a volume, issue or page range, so venue grouping is wrong
 [audit]       e.g. 521 (7553), 436-444 | Deep learning
@@ -566,11 +566,11 @@ $ scholar-crawler --show-state
 [state] 3 targets in out/state.json (1 finished)
 [state]   attention is all you need [en] — next offset 30, 2026-09-02 10:45:51 UTC
 [handoff] 2 takeovers in out/challenges.jsonl (captcha x2)
-[handoff]   2026-09-02T12:26:23+00:00  captcha -> unattended, waited 6s (on request 11, loading 20)
+[handoff]   2026-09-02T12:26:23+00:00  captcha -> unattended, waited 6s (on request 11, loading attention is all you need [en])
 [handoff]     matched form#captcha-form at about:blank
 ```
 
-一条记录有 10 个字段：时间 `at`、类型 `kind`（`captcha`/`rate_limit`/`consent`）、检测器命中的是什么 `reason`、被拦在哪个 URL（`url`，已脱敏）、这轮的第几次请求被拦 `request_index`（算上被拦这一次）、是否连续被拦 `consecutive`（第几次）、等了人多久 `waited`、被拦时正在取哪个目标 `target`、等待期间页面依次变成过哪些验证类型 `saw`（`became sign_in`）、以及结局 `outcome`——`resolved`（人解完了，继续抓）、`unattended`（`--headless` 拒绝或等待超时）、`budget`（用满 `--max-handoffs` 停机）、`interrupted`（Ctrl+C）、`rehearsed`（演练）。
+一条记录有 10 个字段：时间 `at`、类型 `kind`（`captcha`/`rate_limit`/`consent`）、检测器命中的是什么 `reason`、被拦在哪个 URL（`url`，已脱敏）、这轮的第几次请求被拦 `request_index`（算上被拦这一次）、是否连续被拦 `consecutive`（第几次）、等了人多久 `waited`、被拦时正在取哪个目标 `target`（和 `--show-state` 里断点目标同一种写法，如 `graph attention [en]`、`cluster:99`、`author:xxx`、`bibtex:<card id>`）、等待期间页面依次变成过哪些验证类型 `saw`（`became sign_in`）、以及结局 `outcome`——`resolved`（人解完了，继续抓）、`unattended`（`--headless` 拒绝或等待超时）、`budget`（用满 `--max-handoffs` 停机）、`interrupted`（Ctrl+C）、`rehearsed`（演练）。
 
 有了这些，事后能回答真正要紧的问题：是抓到第几次请求被拦的、是不是解完一次又立刻被拦（说明当前节奏还是太快）、还是根本没人在电脑前。
 
@@ -590,7 +590,7 @@ $ scholar-crawler --show-state
 
 ```
 $ scholar-crawler -q "graph attention networks" -p 5
-[pace] 3 previous blocks (captcha x2, rate_limit x1); typically at request 14; 1 arrived back to back; last 2026-09-02T12:37:20+00:00; starting at 6.8-18.7s (x1.7)
+[pace] 3 previous blocks (captcha x2, rate_limit x1); typically at request 14; 1 arrived back to back; last 2026-09-02T12:37:20+00:00; starting at 6.8–18.7s (x1.7)
 ```
 
 规则刻意保守，而且**只会放慢，不会加快**——历史能证明某个节奏太快，但没有任何历史能证明更快的节奏是安全的：
@@ -691,7 +691,7 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry
 [plan] seed targets: 3 page loads, up to 30 records
 [plan] bibtex export: up to 60 page loads
 [plan] total: up to 63 page loads for 30 records
-[plan] estimated 20 min at 4-11s between requests plus 6 cooldowns of 90s
+[plan] estimated 20 min at 4–11s between requests plus 6 cooldowns of 90s
 [plan] nothing was requested; drop --dry-run to start
 ```
 
@@ -719,7 +719,7 @@ $ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
 [plan] citation expansion: up to 8 listings, 24 page loads, up to 240 records
 [plan] bibtex export: up to 600 page loads
 [plan] total: up to 630 page loads for 300 records
-[plan] estimated 3.4 h at 4-11s between requests plus 63 cooldowns of 90s
+[plan] estimated 3.4 h at 4–11s between requests plus 63 cooldowns of 90s
 [plan] nothing was requested; drop --dry-run to start
 ```
 
@@ -842,7 +842,7 @@ scholar-crawler --rehearse-handoff
 每轮结束（正常结束、Ctrl+C 中断、出错退出都一样）会打印一行运行摘要：
 
 ```
-[run] 12 requests in 3.4 min (3.5/min), 1 takeover (captcha x1), 0 navigation retries, delay now 6.4-17.6s
+[run] 12 requests in 3.4 min (3.5/min), 1 takeover (captcha x1), 0 navigation retries, delay now 6.4–17.6s
 ```
 
 请求数含 cite 弹窗与 BibTeX 导出；接管次数按类型分列；`delay now` 是退避之后的当前节奏——如果它明显比初始值大，说明这轮被拦过，当前 IP 或节奏需要更保守。运行不到 30 秒时只报秒数，不报速率，因为那时的速率主要反映启动开销。
@@ -878,7 +878,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 533 个用例，全部离线
+python3 -m pytest -q     # 534 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -901,7 +901,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 71 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 73 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```
