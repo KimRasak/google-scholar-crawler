@@ -302,6 +302,27 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "markdown punctuation in a title is escaped",
+        "scholar_crawler/report.py",
+        'MARKDOWN_SPECIALS = "\\\\`*_[]<>|"',
+        'MARKDOWN_SPECIALS = "|"',
+        "tests/test_report.py",
+    ),
+    Mutation(
+        "a link destination survives a bare parenthesis",
+        "scholar_crawler/report.py",
+        'return f"[{title}](<{link}>)" if isinstance(link, str) and link else title',
+        'return f"[{title}]({link})" if isinstance(link, str) and link else title',
+        "tests/test_report.py",
+    ),
+    Mutation(
+        "the silent latex specials are escaped",
+        "scholar_crawler/bibsynth.py",
+        '    "^": r"\\textasciicircum{}",',
+        '    "^": "^",',
+        "tests/test_bibsynth.py",
+    ),
+    Mutation(
         "a bad argument vector still answers with a document",
         "scholar_crawler/machine.py",
         "    if not as_json:",

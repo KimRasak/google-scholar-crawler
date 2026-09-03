@@ -31,8 +31,20 @@ TITLE_STOPWORDS = frozenset(
 PROCEEDINGS = re.compile(r"\b(proceedings|conference|workshop|symposium|congress|meeting)\b", re.I)
 """Venue words that make a record a conference paper rather than a journal article."""
 
-ESCAPES = {"&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#", "_": r"\_"}
-"""LaTeX special characters escaped inside field values."""
+ESCAPES = {
+    "&": r"\&",
+    "%": r"\%",
+    "$": r"\$",
+    "#": r"\#",
+    "_": r"\_",
+    "^": r"\textasciicircum{}",
+    "~": r"\textasciitilde{}",
+}
+"""LaTeX special characters escaped inside field values.
+
+``^`` and ``~`` are the two that do not announce themselves: outside math mode ``^`` stops the
+LaTeX run, and ``~`` silently becomes a non-breaking space in the printed title.
+"""
 
 DANGLING_ARXIV = re.compile(r"\s+arxiv$", re.IGNORECASE)
 """What is left of ``arXiv preprint arXiv:1234.5678`` once Scholar truncates the identifier."""

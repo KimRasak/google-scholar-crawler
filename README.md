@@ -301,7 +301,7 @@ scholar-digest out/all.jsonl --min-citations 500 --bibtex out/refs.bib
 
 也就是说：作者名只有 Scholar 显示的缩写、被它截断的作者列表补 `and others`、arXiv 编号可能缺失；换来的是零请求，外加原始链接与被引数。要精确条目就在抓取时导；要一份能直接用的书目、又不想再等几小时，就离线生成。
 
-其他细节：已经在抓取时导出过的记录会沿用同一个 key（两份文件指同一篇论文时名字一致）；`Veličković` 这类会正确转写成 `velickovic`（`ł`、`ø`、`ß`、`æ` 也都处理）；key 撞车时追加 `a`、`b`；venue 里出现 Proceedings/Conference/Workshop 的记为 `@inproceedings` 并用 `booktitle`，没有 venue 的记为 `@misc`；题名用双花括号包住，避免某些样式把大小写压平；`&`、`%`、`_` 等会转义。没有题名的记录会被跳过并计数。
+其他细节：已经在抓取时导出过的记录会沿用同一个 key（两份文件指同一篇论文时名字一致）；`Veličković` 这类会正确转写成 `velickovic`（`ł`、`ø`、`ß`、`æ` 也都处理）；key 撞车时追加 `a`、`b`；venue 里出现 Proceedings/Conference/Workshop 的记为 `@inproceedings` 并用 `booktitle`，没有 venue 的记为 `@misc`；题名用双花括号包住，避免某些样式把大小写压平；`&`、`%`、`$`、`#`、`_` 会转义，`^` 与 `~` 也会——前者在正文模式下直接让 LaTeX 报错，后者会悄悄变成一个不换行空格。没有题名的记录会被跳过并计数。
 
 ### 出一份可读的综述：`--report`
 
@@ -348,6 +348,8 @@ from what Scholar showed when the records were collected; nothing was re-fetched
 ```
 
 报告开头写明「所有数字都来自抓取当时 Scholar 显示的内容，生成报告没有重新请求」，避免读者把它当成实时数据。
+
+标题里的 Markdown 记号会被转义：`*SEM 2021`、`C*-algebras`、`[Re] ...`、`word2vec_extended` 这些是真实存在的题名，不转义的话渲染器会把它们变成斜体、代码块或断掉的链接——报告里就出现了一个从没被抓到过的题名。链接的目标网址用尖括号包住（`[题名](<网址>)`），因为 Scholar 的网址里带括号和逗号，不包会让链接提前结束。
 
 ### 看清集合内部谁引用谁：`--network`
 
@@ -812,7 +814,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 458 个用例，全部离线
+python3 -m pytest -q     # 461 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -833,7 +835,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 41 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 44 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```
@@ -841,6 +843,8 @@ python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 它会修改源文件再改回来，所以别在有未保存改动的树上跑。有测试没抓住的项会在最后列出来，退出码 1。改完必须清掉 `__pycache__`：把 `0.2` 换成 `0.6` 这类改动字节数不变，而恢复往往发生在同一秒内，Python 会认为旧的 `.pyc` 仍然有效，于是下一次跑读到的是错的字节码——好测试看着像坏的，坏测试看着像好的。
 
 这批清单是几轮审计攒出来的，一共抓出八处真实漏洞：`--min-citations` 的边界是偶然正确的、判旧清单的长度没人管、「崩溃不丢数据」全靠一个没人检查的 `flush()`、`argparse.SUPPRESS` 能骗过「每个旗标都有说明」、结果页选择器没人保证还认得 Scholar、`as_sdt=0` 是 `as_sdt=0,5` 的子串所以专利开关反了也没人管、终端响铃那一行本身从没被执行过、以及体检告警的比例阈值只有数量阈值在起作用。
+
+交付物则拿本项目之外的解析器验过一遍——`bibtexparser` 读 `refs.bib`、`markdown-it-py` 渲染 `report.md`、标准库 `csv` 回读 `rows.csv`，用的是真抓下来的 10 条 `C*-algebras` 记录：条目全部解析、key 不重复、10 个题名在渲染后一字不差、CSV 往返一致。这两个包**不是**本项目的依赖，只是审计时临时装的；跑一次的命令是 `pip install bibtexparser markdown-it-py`。这样验出的两处问题（题名里的 Markdown 记号、BibTeX 里的 `^` 与 `~`）现在都有离线测试守着。
 
 两条方法论也是踩出来的，现在写进了工具本身：破坏点必须在文件里**只出现一次**（否则可能改到 docstring 里，得出「测试无效」的假结论），且破坏必须真的落到文件上——文本对不上时 `audit()` 直接报错，而不是安静地跑一遍全绿的测试。前一条由 `check_table()` 强制，并由一条测试在 CI 里跑（审计本身会改源文件，不能进测试套件）。
 

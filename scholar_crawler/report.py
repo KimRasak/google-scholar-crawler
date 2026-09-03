@@ -23,6 +23,25 @@ BAR_WIDTH = 28
 """Blocks the busiest year gets; every other year is scaled against it."""
 
 
+MARKDOWN_SPECIALS = "\\`*_[]<>|"
+"""Characters a Markdown reader would act on instead of printing.
+
+Paper titles really carry them: ``*SEM 2021``, ``C*-algebras``, ``[Re] reproducibility``,
+``word2vec_extended``. Unescaped, the renderer turns them into emphasis, code spans or broken
+links, so the report shows a title the crawl never collected.
+"""
+
+
+def _counted(count: int, noun: str) -> str:
+    """Write a count with its noun in the right number.
+
+    :param count: how many.
+    :param noun: the singular noun.
+    :returns: the phrase, pluralized by adding ``s`` when the count is not one.
+    """
+    return f"{count:,} {noun}" if count == 1 else f"{count:,} {noun}s"
+
+
 def _cell(text: str | None, *, limit: int = 120) -> str:
     """Make text safe for a Markdown table cell.
 
@@ -34,7 +53,7 @@ def _cell(text: str | None, *, limit: int = 120) -> str:
         return "—"
     flattened = " ".join(text.split())
     shortened = flattened if len(flattened) <= limit else flattened[: limit - 1].rstrip() + "…"
-    return shortened.replace("|", "\\|")
+    return "".join(f"\\{char}" if char in MARKDOWN_SPECIALS else char for char in shortened)
 
 
 def _link(record: Record, *, limit: int = 120) -> str:
@@ -46,7 +65,9 @@ def _link(record: Record, *, limit: int = 120) -> str:
     """
     title = _cell(record.get("title"), limit=limit)
     link = record.get("link")
-    return f"[{title}]({link})" if isinstance(link, str) and link else title
+    # Scholar URLs carry parentheses and commas, which end an inline link early unless the
+    # destination is wrapped in angle brackets.
+    return f"[{title}](<{link}>)" if isinstance(link, str) and link else title
 
 
 def _years(records: list[Record]) -> list[tuple[int, int]]:
@@ -102,12 +123,14 @@ def _at_a_glance(records: list[Record]) -> list[str]:
     }
     authors = {first_author(record) for record in records} - {None}
     return [
-        f"- **{summary.records} records**, {summary.citations:,} citations in total",
+        f"- **{_counted(summary.records, 'record')}**, {summary.citations:,} citations in total",
         f"- published **{span}**"
         + (f", {summary.unknown_year} without a year" if summary.unknown_year else ""),
-        f"- **{len(venues)} venues**, **{len(authors)} first authors**",
-        f"- {summary.with_bibtex} records carry a BibTeX key, "
-        f"{summary.citation_only} are citation-only entries Scholar has no page for",
+        f"- **{_counted(len(venues), 'venue')}**, **{_counted(len(authors), 'first author')}**",
+        f"- {_counted(summary.with_bibtex, 'record')} carry a BibTeX key, "
+        f"{summary.citation_only} "
+        + ("is" if summary.citation_only == 1 else "are")
+        + " citation-only, which Scholar has no page for",
     ]
 
 

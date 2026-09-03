@@ -89,7 +89,7 @@ def test_the_most_cited_table_links_titles_that_have_a_destination() -> None:
     assert len(rows) == 5  # header, separator, three works
     assert "118,913" in rows[2] and "Deep learning" in rows[2]
     assert "[Deep learning](" not in rows[2]  # this record carries no link
-    assert "[Graph attention networks](https://arxiv.org/abs/1710.10903)" in rows[3]
+    assert "[Graph attention networks](<https://arxiv.org/abs/1710.10903>)" in rows[3]
 
 
 def test_groups_are_tabulated_by_venue_and_by_first_author() -> None:
@@ -160,3 +160,27 @@ def test_a_report_is_output_enough_for_quiet(tmp_path: Path, capsys: pytest.Capt
     source.write_text(json.dumps(CORPUS[0]) + "\n", encoding="utf-8")
     assert main([str(source), "--quiet"]) == 1  # nothing to write at all
     assert "--quiet needs --out" in capsys.readouterr().out
+
+
+def test_a_title_made_of_markdown_punctuation_still_reads_as_a_title() -> None:
+    # Real titles carry these: *SEM 2021, C*-algebras, [Re] reproducibility, word2vec_extended.
+    # Unescaped, a reader turns them into emphasis, code spans or links, and the report then
+    # shows a title nobody collected.
+    hostile = _record(
+        title="*SEM: [Re] C*-algebras & word2vec_extended `code` <tag> | pipe",
+        link="https://example.org/paper?q=(open",
+        cited_by_count=9,
+    )
+    row = next(
+        line
+        for line in _section(build_report([hostile], top=1), "Most cited works (top 1)").splitlines()
+        if line.startswith("| 9 ")
+    )
+    assert r"\*SEM: \[Re\] C\*-algebras & word2vec\_extended \`code\` \<tag\> \| pipe" in row
+    assert "(<https://example.org/paper?q=(open>)" in row, "a bare paren would end the link early"
+
+
+def test_one_of_something_is_not_written_as_plural() -> None:
+    glance = _section(build_report([_record(venue="Nature", authors="A Author")]), "At a glance")
+    assert "**1 record**" in glance
+    assert "**1 venue**, **1 first author**" in glance

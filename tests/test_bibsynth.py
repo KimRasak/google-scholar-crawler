@@ -112,6 +112,13 @@ def test_latex_specials_and_braces_are_neutralized() -> None:
     assert "url" not in entry
 
 
+def test_the_two_silent_latex_specials_are_escaped_too() -> None:
+    # ^ stops a LaTeX run outside math mode, and ~ quietly becomes a non-breaking space, so a
+    # title like "O(n^2) scaling ~ a note" either fails to compile or prints wrong.
+    entry = synthesize_entry(_record(title="O(n^2) scaling ~ 50 GB", link=None), "k")
+    assert r"O(n\textasciicircum{}2) scaling \textasciitilde{} 50 GB" in entry
+
+
 def test_a_conference_paper_uses_booktitle() -> None:
     entry = synthesize_entry(_record(venue="Proceedings of NeurIPS"), "k")
     assert entry.startswith("@inproceedings{")

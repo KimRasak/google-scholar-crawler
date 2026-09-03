@@ -301,7 +301,7 @@ These are reconstructions, not Scholar's own export, and the difference is worth
 
 So: author names keep Scholar's initials, a list Scholar truncated gains `and others`, and the arXiv identifier may be missing — in exchange for zero requests, plus the original link and the citation count. Export during the crawl when you need exact entries; build offline when you want a usable bibliography without waiting hours again.
 
-Details: a record exported during the crawl reuses its key, so both files name the same work identically; `Veličković` transliterates to `velickovic` (`ł`, `ø`, `ß`, `æ` are handled too); colliding keys gain `a`, `b`, …; a venue mentioning Proceedings, Conference or Workshop becomes `@inproceedings` with `booktitle`, and a record without a venue becomes `@misc`; titles are double-braced so a style cannot flatten their capitalization; `&`, `%` and `_` are escaped. Records without a title are skipped and counted.
+Details: a record exported during the crawl reuses its key, so both files name the same work identically; `Veličković` transliterates to `velickovic` (`ł`, `ø`, `ß`, `æ` are handled too); colliding keys gain `a`, `b`, …; a venue mentioning Proceedings, Conference or Workshop becomes `@inproceedings` with `booktitle`, and a record without a venue becomes `@misc`; titles are double-braced so a style cannot flatten their capitalization; `&`, `%`, `$`, `#` and `_` are escaped, and so are `^` and `~` — the first stops a LaTeX run outside math mode, the second quietly becomes a non-breaking space. Records without a title are skipped and counted.
 
 ### A readable overview: `--report`
 
@@ -348,6 +348,8 @@ from what Scholar showed when the records were collected; nothing was re-fetched
 ```
 
 The report opens by saying that every number comes from what Scholar showed when the records were collected and that nothing was re-fetched, so nobody mistakes it for live data.
+
+Markdown punctuation in a title is escaped. `*SEM 2021`, `C*-algebras`, `[Re] ...` and `word2vec_extended` are real titles, and unescaped a renderer turns them into emphasis, code spans or broken links — the report then shows a title nobody collected. Link destinations are wrapped in angle brackets (`[title](<url>)`) because Scholar URLs carry parentheses and commas, which would end the link early.
 
 ### Who cites whom inside the collection: `--network`
 
@@ -815,7 +817,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 458 tests, fully offline
+python3 -m pytest -q     # 461 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -838,7 +840,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 41 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 44 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
@@ -856,6 +858,14 @@ staleness list, "a crash never loses collected data" rested on a `flush()` no te
 selector still matches a Scholar page, `as_sdt=0` is a substring of `as_sdt=0,5` so the patent
 switch could invert unnoticed, the terminal bell's own line was never executed, and only the
 count threshold behind an audit alarm was doing any work.
+
+The deliverables were checked with parsers from outside this project: `bibtexparser` read
+`refs.bib`, `markdown-it-py` rendered `report.md`, and the stdlib `csv` module read `rows.csv`
+back — over 10 real `C*-algebras` records. Every entry parsed, no key repeated, all 10 titles
+came through the renderer verbatim, and the CSV round-tripped. Those two packages are **not**
+dependencies of this project; they were installed for the audit alone
+(`pip install bibtexparser markdown-it-py`). The two defects that check found — Markdown
+punctuation in titles, and `^` and `~` in BibTeX — are now held by offline tests.
 
 Two rules came out of the same exercise and now live in the tool: a mutation must match
 exactly once in its file — otherwise it lands in a docstring and reports a hole that does not
