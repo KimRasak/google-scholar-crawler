@@ -67,10 +67,15 @@ def test_the_navigation_table_covers_the_situations_a_user_arrives_with() -> Non
     english = READMES[1].read_text(encoding="utf-8")
     assert "## 从哪读起" in chinese
     assert "## Where to start" in english
-    # One row per situation, and each row must send the reader somewhere.
+    # One row per situation, and each row must send the reader somewhere. The separator row is
+    # dropped by shape, not by looking for "---", which also appears inside anchors.
     for text, heading in ((chinese, "## 从哪读起"), (english, "## Where to start")):
         section = text.split(heading, 1)[1].split("\n## ", 1)[0]
-        rows = [line for line in section.splitlines() if line.startswith("| ") and "---" not in line]
+        rows = [
+            line
+            for line in section.splitlines()
+            if line.startswith("| ") and set(line) - set("| -")
+        ]
         assert len(rows) >= 7, heading
         assert all(LINK.search(row) for row in rows[1:]), heading
 

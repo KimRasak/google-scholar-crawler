@@ -79,11 +79,10 @@ Expect one takeover on the very first run, because the profile has no cookies ye
 | Your situation | Sections to read |
 | --- | --- |
 | First time | [Three steps](#three-steps) → [What a block looks like](#what-a-block-looks-like) |
-| Collecting a batch | [More commands](#more-commands) → [Settings files](#settings-files---config) → [Reading the command back](#reading-the-command-back---explain) → [Counting the cost first](#counting-the-cost-first---dry-run) → [Options](#options) → [Output](#output) |
-| Using what you collected | [A readable overview](#a-readable-overview---report) → [Building a bibliography offline](#building-a-bibliography-offline) → [Grouping](#grouping) |
-| Getting blocked | [What a block looks like](#what-a-block-looks-like) → [The takeover log](#the-takeover-log) → [Learning to slow down across runs](#learning-to-slow-down-across-runs) → [Getting challenged less](#getting-challenged-less) → [Rehearsing the human takeover](#rehearsing-the-human-takeover) |
-| It stopped with an error | [Failures in plain words](#failures-in-plain-words) → [Self-check](#self-check) |
-| Parsing looks wrong | [Self-check](#self-check) → [Real-structure regression fixtures](#real-structure-regression-fixtures) → `--dump-html` |
+| Collecting a batch | [More commands](#more-commands) → [Counting the cost first](#counting-the-cost-first---dry-run) → [Options](#options) |
+| Using what you collected | [Digesting collected results](#digesting-collected-results-no-requests) → [A readable overview](#a-readable-overview---report) → [Building a bibliography offline](#building-a-bibliography-offline) |
+| Blocked too often | [What a block looks like](#what-a-block-looks-like) → [Getting challenged less](#getting-challenged-less) → [The takeover log](#the-takeover-log) |
+| It stopped, or parsing looks wrong | [Failures in plain words](#failures-in-plain-words) → [Self-check](#self-check) → `--dump-html` |
 | Interrupted run | [Reviewing and resetting resume state](#reviewing-and-resetting-resume-state) → `--resume` |
 | Driving it from an agent | [Calling it from a program](#calling-it-from-a-program---json) → [AGENTS.md](AGENTS.md) (the whole interface on one page) |
 | Changing the code | [Development](#development) → [Layout](#layout) → [How it works](#how-it-works) |
@@ -662,26 +661,6 @@ $ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
 
 Every number is an upper bound: listings that run out of results and expansions with nothing left to expand cost less. Bad arguments still fail under `--dry-run`, so it doubles as an argument check.
 
-## Real-structure regression fixtures
-
-`tests/pages/` holds sanitized copies of four pages the crawler really loaded: a result page, an author profile, a cite popup and a BibTeX export. Hand-written fixtures prove the parser's logic but not that it still fits Scholar's real markup; these do, entirely offline — the result page runs all ten `--self-check` checks.
-
-`tests/sanitize.py` does the sanitizing on one rule: keep every bit of structure, drop every credential. It removes `<script>`, `<style>` and `<iframe>`, points image `src` at `about:blank`, replaces signed and session parameters (`scisig`, `xsrf`, `scisdr`, `usg`, …) with `REDACTED` both in plain URLs and nested inside encoded parameters such as `continue=`, blanks xsrf values in hidden inputs, rewrites `Verified email at ...` to `example.edu`, and trims repeated cards to a few. Class names, `data-cid`, `cites=`/`cluster=` links and markers like `scisf=4` are left exactly as Scholar served them. A dedicated test scans all four files for leftover scripts and un-redacted long tokens.
-
-Refresh the fixtures when Scholar changes its layout:
-
-```sh
-scholar-crawler -q "graph attention networks" -p 1 -n 2 --bibtex out/x.bib \
-    --dump-html out/dump -o out/d.jsonl
-python3 -m tests.sanitize out/dump/<result-page>.html tests/pages/results.html 6
-```
-
-### End-to-end tests: a local fake Scholar
-
-Unit tests feed HTML strings to the parser and `--self-check` needs the real network; neither covers the path that matters most: a **real browser** navigating real URLs, tripping a challenge, resuming after a takeover and writing the files correctly. `tests/fakescholar.py` serves a fake Scholar on loopback with `http.server`, answering only `/scholar` and `/citations`, and can be told to answer a given offset with a challenge page the first time it is asked. The stand-in human in the tests clears it the way a person does — reload the page, the challenge is gone, the crawl continues.
-
-Behaviour that used to be verified once against the real Scholar now runs on every CI job: paging to the page budget and not one page further, all 20 records on disk, a cursor at 40, challenge → takeover → the same offset refetched → nothing lost, `resolved` in the takeover log with a redacted URL, `--resume` continuing from 20 to 40, an author profile and its header stored, clean data raising no audit alarm, and — when headless refuses the takeover — the 10 records already collected still on disk, exit code 1, and the cursor left at 10.
-
 ## Self-check
 
 When results come back empty and you suspect a Scholar layout change, spend one request on the self-check:
@@ -849,6 +828,26 @@ Every test is offline (no network). Grouped by what they cover; read `tests/` fo
 - **Output for programs**: the document's fixed keys, the failure vocabulary, the stdout/stderr split, and AGENTS.md matching that vocabulary word for word
 - **Offline tools**: merging, filtering, summaries, grouping, bibliography synthesis, staleness and refresh lists, collection deltas
 - **Configuration and interface**: settings-file equivalence and errors, both parsers (groups, help, defaults), and both READMEs' links and module lists
+
+### Real-structure regression fixtures
+
+`tests/pages/` holds sanitized copies of four pages the crawler really loaded: a result page, an author profile, a cite popup and a BibTeX export. Hand-written fixtures prove the parser's logic but not that it still fits Scholar's real markup; these do, entirely offline — the result page runs all ten `--self-check` checks.
+
+`tests/sanitize.py` does the sanitizing on one rule: keep every bit of structure, drop every credential. It removes `<script>`, `<style>` and `<iframe>`, points image `src` at `about:blank`, replaces signed and session parameters (`scisig`, `xsrf`, `scisdr`, `usg`, …) with `REDACTED` both in plain URLs and nested inside encoded parameters such as `continue=`, blanks xsrf values in hidden inputs, rewrites `Verified email at ...` to `example.edu`, and trims repeated cards to a few. Class names, `data-cid`, `cites=`/`cluster=` links and markers like `scisf=4` are left exactly as Scholar served them. A dedicated test scans all four files for leftover scripts and un-redacted long tokens.
+
+Refresh the fixtures when Scholar changes its layout:
+
+```sh
+scholar-crawler -q "graph attention networks" -p 1 -n 2 --bibtex out/x.bib \
+    --dump-html out/dump -o out/d.jsonl
+python3 -m tests.sanitize out/dump/<result-page>.html tests/pages/results.html 6
+```
+
+### End-to-end tests: a local fake Scholar
+
+Unit tests feed HTML strings to the parser and `--self-check` needs the real network; neither covers the path that matters most: a **real browser** navigating real URLs, tripping a challenge, resuming after a takeover and writing the files correctly. `tests/fakescholar.py` serves a fake Scholar on loopback with `http.server`, answering only `/scholar` and `/citations`, and can be told to answer a given offset with a challenge page the first time it is asked. The stand-in human in the tests clears it the way a person does — reload the page, the challenge is gone, the crawl continues.
+
+Behaviour that used to be verified once against the real Scholar now runs on every CI job: paging to the page budget and not one page further, all 20 records on disk, a cursor at 40, challenge → takeover → the same offset refetched → nothing lost, `resolved` in the takeover log with a redacted URL, `--resume` continuing from 20 to 40, an author profile and its header stored, clean data raising no audit alarm, and — when headless refuses the takeover — the 10 records already collected still on disk, exit code 1, and the cursor left at 10.
 
 ## Compliance
 

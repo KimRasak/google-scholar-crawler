@@ -79,14 +79,13 @@ scholar-digest out/rag.jsonl --report out/report.md   # 写成一份可读的 Ma
 | 你的情况 | 读这几节 |
 | --- | --- |
 | 第一次用 | [三步跑起来](#三步跑起来) → [被拦时会发生什么](#被拦时会发生什么) |
-| 想抓一批数据 | [更多用法](#更多用法) → [把常用参数写进文件：`--config`](#把常用参数写进文件--config) → [先把命令读回来：`--explain`](#先把命令读回来--explain) → [先算账：`--dry-run`](#先算账--dry-run) → [常用参数](#常用参数) → [输出](#输出) |
-| 抓完了要用数据 | [出一份可读的综述](#出一份可读的综述--report) → [离线生成参考文献](#离线生成参考文献) → [分组统计](#分组统计) |
-| 被验证码拦了 | [被拦时会发生什么](#被拦时会发生什么) → [接管记录](#接管记录) → [跨运行学会减速](#跨运行学会减速) → [降低验证频率](#降低验证频率) → [演练人工接管](#演练人工接管) |
-| 程序报错停了 | [出错时给人话](#出错时给人话) → [自检](#自检) |
-| 解析结果不对 | [自检](#自检) → [真实结构回归夹具](#真实结构回归夹具) → `--dump-html` |
+| 要抓一批数据 | [更多用法](#更多用法) → [先算账：`--dry-run`](#先算账--dry-run) → [常用参数](#常用参数) |
+| 抓完了要用数据 | [汇总已抓到的结果](#汇总已抓到的结果不发请求) → [出一份可读的综述](#出一份可读的综述--report) → [离线生成参考文献](#离线生成参考文献) |
+| 老是被验证码拦 | [被拦时会发生什么](#被拦时会发生什么) → [降低验证频率](#降低验证频率) → [接管记录](#接管记录) |
+| 报错停了，或结果不对 | [出错时给人话](#出错时给人话) → [自检](#自检) → `--dump-html` |
 | 中途断了 | [查看与重置断点](#查看与重置断点) → `--resume` |
-| 想改代码 | [开发](#开发) → [结构](#结构) → [工作方式](#工作方式) |
 | 让 AI agent 来调研 | [给程序调用：`--json`](#给程序调用--json) → [AGENTS.md](AGENTS.md)（一页写完的调用约定） |
+| 想改代码 | [开发](#开发) → [结构](#结构) → [工作方式](#工作方式) |
 
 一句话版本：`scholar-crawler --recipes` 会直接给你能用的命令，遇到问题再回来查对应那节。
 
@@ -658,26 +657,6 @@ $ scholar-crawler -q "diffusion models" -q "flow matching" -p 3 \
 
 所有数字都是上限：列表提前抓完、引文网络无可展开时都会更少。目标写错（比如一个入口都没给）在 `--dry-run` 下同样会报错，所以它也能当参数检查用。
 
-## 真实结构回归夹具
-
-`tests/pages/` 里放着四份**真实抓取页面**的脱敏副本（结果页、作者主页、cite 弹窗、BibTeX 导出页）。手写夹具能证明解析逻辑对，但证明不了它还贴合 Scholar 的真实结构；这几份夹具补的就是这块，而且离线跑：结果页那份会把 `--self-check` 的 10 项检查完整跑一遍。
-
-脱敏由 `tests/sanitize.py` 完成，规则是「结构全留，凭证全去」：删掉 `<script>`/`<style>`/`<iframe>`，图片 `src` 换成 `about:blank`，签名与会话参数（`scisig`、`xsrf`、`scisdr`、`usg`…）无论在 URL 里还是嵌在 `continue=` 这类编码参数里都替换成 `REDACTED`，隐藏表单里的 xsrf 值同样替换，`Verified email at ...` 改写成 `example.edu`，重复卡片裁到几条。解析器要用的 class 名、`data-cid`、`cites=`/`cluster=` 链接、`scisf=4` 这类标记一个不动。另有一条测试专门扫这四份文件，确保里面没有 `<script>`、没有未脱敏的长 token。
-
-Scholar 改版时刷新夹具：
-
-```sh
-scholar-crawler -q "graph attention networks" -p 1 -n 2 --bibtex out/x.bib \
-    --dump-html out/dump -o out/d.jsonl
-python3 -m tests.sanitize out/dump/<结果页>.html tests/pages/results.html 6
-```
-
-### 全链路测试：本地假 Scholar
-
-单元测试把 HTML 字符串喂给解析器，`--self-check` 需要真网络，两者都没覆盖最要紧的那条路：**真实浏览器**导航真实 URL、撞上验证页、接管后恢复、把文件写对。`tests/fakescholar.py` 用 `http.server` 在本地回环起一个假 Scholar，只答 `/scholar` 和 `/citations` 两条路径，可以指定某个 offset「第一次被请求时返回验证页」；测试里的替身「人」处理方式和真人一样——把页面重新加载一次，验证消失，抓取继续。
-
-于是这些以前只能在真 Scholar 上验证一次的行为，现在每次 CI 都跑：翻页到页数上限（不多请求一页）、20 条记录都在盘上、断点写到 40、遇验证 → 接管 → 同一 offset 重取 → 一条不丢、接管记录里 `resolved` 与 URL 脱敏、`--resume` 从 20 接着抓到 40、作者主页与档案落盘、干净数据不触发体检报警，以及 headless 下拒绝接管时**已抓到的 10 条仍在盘上**、退出码为 1、断点停在 10；还有一条完全由设置文件描述的运行——查询、页数、host、profile、输出路径全从 TOML 读出，命令行只有 `--config`——抓到同样的 10 条。
-
 ## 自检
 
 先 `--doctor` 确认本机装好了（见[安装](#安装)），再用自检碰网络。怀疑 Scholar 改版、解析结果变空时，先跑一次自检（只发一次请求）：
@@ -846,6 +825,26 @@ ruff check .             # 与 CI 相同的 lint 配置
 - **给程序的输出**：JSON 文档的固定键、失败词表、stdout/stderr 分工，以及 AGENTS.md 与词表逐词一致
 - **离线工具**：合并去重、过滤、统计、分组、书目生成、判旧与重抓清单、文献库差异
 - **配置与界面**：设置文件的等价与报错、两条命令的参数表（分组、说明、默认值）、两份 README 的链接与模块清单
+
+### 真实结构回归夹具
+
+`tests/pages/` 里放着四份**真实抓取页面**的脱敏副本（结果页、作者主页、cite 弹窗、BibTeX 导出页）。手写夹具能证明解析逻辑对，但证明不了它还贴合 Scholar 的真实结构；这几份夹具补的就是这块，而且离线跑：结果页那份会把 `--self-check` 的 10 项检查完整跑一遍。
+
+脱敏由 `tests/sanitize.py` 完成，规则是「结构全留，凭证全去」：删掉 `<script>`/`<style>`/`<iframe>`，图片 `src` 换成 `about:blank`，签名与会话参数（`scisig`、`xsrf`、`scisdr`、`usg`…）无论在 URL 里还是嵌在 `continue=` 这类编码参数里都替换成 `REDACTED`，隐藏表单里的 xsrf 值同样替换，`Verified email at ...` 改写成 `example.edu`，重复卡片裁到几条。解析器要用的 class 名、`data-cid`、`cites=`/`cluster=` 链接、`scisf=4` 这类标记一个不动。另有一条测试专门扫这四份文件，确保里面没有 `<script>`、没有未脱敏的长 token。
+
+Scholar 改版时刷新夹具：
+
+```sh
+scholar-crawler -q "graph attention networks" -p 1 -n 2 --bibtex out/x.bib \
+    --dump-html out/dump -o out/d.jsonl
+python3 -m tests.sanitize out/dump/<结果页>.html tests/pages/results.html 6
+```
+
+### 全链路测试：本地假 Scholar
+
+单元测试把 HTML 字符串喂给解析器，`--self-check` 需要真网络，两者都没覆盖最要紧的那条路：**真实浏览器**导航真实 URL、撞上验证页、接管后恢复、把文件写对。`tests/fakescholar.py` 用 `http.server` 在本地回环起一个假 Scholar，只答 `/scholar` 和 `/citations` 两条路径，可以指定某个 offset「第一次被请求时返回验证页」；测试里的替身「人」处理方式和真人一样——把页面重新加载一次，验证消失，抓取继续。
+
+于是这些以前只能在真 Scholar 上验证一次的行为，现在每次 CI 都跑：翻页到页数上限（不多请求一页）、20 条记录都在盘上、断点写到 40、遇验证 → 接管 → 同一 offset 重取 → 一条不丢、接管记录里 `resolved` 与 URL 脱敏、`--resume` 从 20 接着抓到 40、作者主页与档案落盘、干净数据不触发体检报警，以及 headless 下拒绝接管时**已抓到的 10 条仍在盘上**、退出码为 1、断点停在 10；还有一条完全由设置文件描述的运行——查询、页数、host、profile、输出路径全从 TOML 读出，命令行只有 `--config`——抓到同样的 10 条。
 
 ## 合规
 
