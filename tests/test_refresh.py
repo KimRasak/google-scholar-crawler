@@ -73,6 +73,14 @@ def test_only_records_older_than_the_threshold_are_listed() -> None:
     assert undated(records) == 1
 
 
+def test_the_report_lists_as_many_candidates_as_asked_for() -> None:
+    records = [_record(days_old=100 + index, citations=index + 1) for index in range(6)]
+    listed = [line for line in render_staleness(records, days=30, now=NOW, top=2) if "citations" in line]
+    assert len(listed) == 2, "a longer list than asked for buries the ranking it just computed"
+    full = [line for line in render_staleness(records, days=30, now=NOW) if "citations" in line]
+    assert len(full) == 6, "the default list shows every stale record here"
+
+
 def test_the_most_cited_stale_records_come_first() -> None:
     # Age alone would put the older, barely-cited paper first; its count cannot have moved.
     quiet = _record(days_old=400, citations=2, cluster_id="quiet")

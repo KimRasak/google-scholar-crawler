@@ -107,6 +107,20 @@ def test_filters_apply_together() -> None:
     assert len(filter_records(records, year_high=2016)) == 1
 
 
+def test_the_citation_threshold_keeps_the_records_that_meet_it() -> None:
+    # --min-citations 1 is the documented way to drop the version rows a --cluster listing
+    # brings back, which carry no count at all; a record with exactly one citation must stay.
+    records = [
+        _record(cluster_id="none", cited_by_count=None),
+        _record(cluster_id="zero", cited_by_count=0),
+        _record(cluster_id="one", cited_by_count=1),
+        _record(cluster_id="ten", cited_by_count=10),
+    ]
+    assert [r["cluster_id"] for r in filter_records(records, min_citations=1)] == ["one", "ten"]
+    assert [r["cluster_id"] for r in filter_records(records, min_citations=10)] == ["ten"]
+    assert len(filter_records(records, min_citations=0)) == 4
+
+
 def test_written_files_hold_the_kept_records(tmp_path: Path) -> None:
     records = [_record(), _record(cluster_id="c2", title="B paper")]
     jsonl = tmp_path / "nested" / "merged.jsonl"

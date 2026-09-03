@@ -32,6 +32,19 @@ def test_writes_records_and_skips_duplicates(tmp_path: Path) -> None:
     assert json.loads(lines[0])["title"] == "Attention is all you need"
 
 
+def test_a_record_is_on_disk_before_the_run_ends(tmp_path: Path) -> None:
+    # The promise is that Ctrl+C, a crash or a timed-out takeover never loses what was
+    # already collected, which holds only if each record reaches the file as it is written.
+    results = parse_result_page(RESULT_PAGE_HTML).results
+    sink = _sink(tmp_path)
+    sink.write(results[0])
+    mid_run = (tmp_path / "out" / "results.jsonl").read_text(encoding="utf-8")
+    assert json.loads(mid_run.strip())["title"] == "Attention is all you need"
+    sink.write(results[1])
+    assert len((tmp_path / "out" / "results.jsonl").read_text(encoding="utf-8").strip().splitlines()) == 2
+    sink.close()
+
+
 def test_reopening_dedups_against_existing_file(tmp_path: Path) -> None:
     results = parse_result_page(RESULT_PAGE_HTML).results
     first = _sink(tmp_path)

@@ -202,6 +202,7 @@ def test_bibtex_sink_dedups_by_citation_key(tmp_path: Path) -> None:
     sink = BibtexSink(path)
     sink.open()
     assert sink.write(ENTRY) is True
+    assert path.read_text(encoding="utf-8").count("@") == 1, "an entry must survive a crash mid-run"
     assert sink.write(ENTRY) is False
     sink.write("@book{other1900x, title={Other}}")
     sink.close()
