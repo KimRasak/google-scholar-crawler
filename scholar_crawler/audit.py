@@ -101,6 +101,11 @@ def _authors_truncated(record: Record) -> bool:
     return _text(record, "authors").endswith(TRUNCATION)
 
 
+def _venue_truncated(record: Record) -> bool:
+    venue = _text(record, "venue")
+    return venue.startswith(TRUNCATION) or venue.endswith(TRUNCATION)
+
+
 def _citations_without_link(record: Record) -> bool:
     count = _count(record, "cited_by_count")
     return bool(count) and not _text(record, "cited_by_url")
@@ -179,6 +184,12 @@ CHECKS: tuple[Check, ...] = (
         "warn",
         "venue is a bare hostname: the site column landed in the venue field",
         _venue_is_hostname,
+    ),
+    Check(
+        "venue_truncated",
+        "warn",
+        "Scholar elided the venue, so a bibliography would cite '… on neural networks …'",
+        _venue_truncated,
     ),
     Check(
         "venue_missing",

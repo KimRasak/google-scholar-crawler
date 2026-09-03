@@ -312,6 +312,40 @@ scholar-digest out/*.jsonl --report out/report.md --report-title "图注意力�
 
 包含：一眼看完的规模（记录数、总被引、年份跨度、期刊数、第一作者数）、高被引清单（标题带原始链接）、按期刊/会议与按第一作者的两张分组表（记录数、总被引、中位数、年份跨度、代表作）、逐年分布的文本柱状图（复制粘贴不会坏）、这些记录分别来自哪个查询，最后是一节「这份报告有多可信」——直接复用 `--audit` 的检查结果，把缺失率和可疑字段摊开写。
 
+真实片段（20 条记录，`--report-top 3` 只是为了在这里贴得短一些）：
+
+```markdown
+# 图神经网络综述：初步梳理
+
+Built from 20 records collected with [google-scholar-crawler](...). Every number below comes
+from what Scholar showed when the records were collected; nothing was re-fetched.
+
+## At a glance
+
+- **20 records**, 38,514 citations in total
+- published **2020–2026**
+- **17 venues**, **20 first authors**
+
+## Most cited works (top 3)
+
+| Citations | Year | Work | Venue |
+| --- | --- | --- | --- |
+| 17,842 | 2020 | [A comprehensive survey on graph neural networks](...) | … on neural networks … |
+| 10,569 | 2020 | [Graph neural networks: A review of methods and applications](...) | AI open |
+| 2,576 | 2022 | [Graph neural networks in recommender systems: a survey](...) | ACM computing surveys |
+
+## When it was published
+
+2022  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇ 5
+2023  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇ 5
+2024  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇ 4
+
+## How much of this to trust
+
+| warn | venue truncated | 12 (60%) | Scholar elided the venue, ... |
+| warn | authors truncated | 12 (60%) | Scholar elided the author list, ... |
+```
+
 报告开头写明「所有数字都来自抓取当时 Scholar 显示的内容，生成报告没有重新请求」，避免读者把它当成实时数据。
 
 ### 看清集合内部谁引用谁：`--network`
@@ -407,15 +441,26 @@ Scholar 的结果卡片只有一行灰字承载「作者 - 期刊, 年份 - 站�
 `--audit` 只读本地文件，把「已经抓到的数据有多不可信」量出来：
 
 ```
-$ scholar-digest out/*.jsonl --audit
-  audit of 9 records: 2 checks tripped (0 errors, 2 warnings)
-    warn  authors_truncated              3  33.3%  Scholar elided the author list, so BibTeX gets 'and others'
-        e.g. P Veličković, G Cucurull, A Casanova… | Graph attention networks
-    warn  cluster_id_missing             3  33.3%  no card id, so BibTeX export and citation expansion cannot address this record
-        e.g. <empty> | Generative adversarial nets
+$ scholar-digest out/g.jsonl --audit
+  audit of 20 records: 2 checks tripped (0 errors, 2 warnings)
+    warn  venue_truncated               12  60.0%  Scholar elided the venue, so a bibliography would cite '… on neural networks …'
+        e.g. … on neural networks … | A comprehensive survey on graph neural networks
+        e.g. … Computing Surveys … | Computing graph neural networks: A survey from algo…
+    warn  authors_truncated             12  60.0%  Scholar elided the author list, so BibTeX gets 'and others'
+        e.g. Z Wu, S Pan, F Chen, G Long… | A comprehensive survey on graph neural networks
+        e.g. J Zhou, G Cui, S Hu, Z Zhang, C Yang, Z Liu, L Wang… | Graph neural networks: A review…
 ```
 
-分两档：`error` 是值本身错了（年份不在合理区间、年份在原始灰字里根本没出现过、venue 是卷期页码、venue 里还留着年份、有被引数却没有被引链接、计数为负、标题缺失），`warn` 是缺失或有损（缺 venue/year/作者、作者被截断、venue 是裸域名、标题带 `[PDF]` 标签、没有 card id）。每项给出条数、占比、以及两个真实例子——不是给个总分，而是让你自己判断这批数据能不能用。
+数据干净时它只有一行，不必费神读：
+
+```
+$ scholar-digest out/clean.jsonl --audit
+  audit of 10 records: nothing implausible found
+```
+
+分两档：`error` 是值本身错了（年份不在合理区间、年份在原始灰字里根本没出现过、venue 是卷期页码、venue 里还留着年份、有被引数却没有被引链接、计数为负、标题缺失），`warn` 是缺失或有损（缺 venue/year/作者、作者被截断、**venue 被 Scholar 省略**、venue 是裸域名、标题带 `[PDF]` 标签、没有 card id）。每项给出条数、占比、以及两个真实例子——不是给个总分，而是让你自己判断这批数据能不能用。
+
+上面那份 60% 是真实数字：Scholar 的结果页会把长刊名两头都省掉（`… on neural networks …`），检索页上拿不到完整刊名，导出的 BibTeX 里 `journal` 就会照抄这个省略形式。这不是解析 bug，也没法在本地补全，所以 `--audit` 的责任是把它数清楚、指给你——要正规引用就照着这份清单去手工补，或者用 `--bibtex` 从 Scholar 的 Cite 弹窗拿完整条目（每条多两次页面加载）。
 
 这个功能第一次跑就抓到一个真实缺陷：作者主页解析出的 venue 保留了年份（`Advances in neural information processing systems 27, 2014`），而检索页解析是剥掉年份的。分组统计侥幸没受影响（`normalize_venue` 会切掉卷期尾巴），但 JSONL/CSV 里两种来源的字段不一致，导出的 BibTeX 里 `journal` 也重复带上了年份。现在两个解析路径共用同一个剥离函数。
 
@@ -730,6 +775,7 @@ JSONL 每行一条记录：
 - 一次抓 10 条的页面，开了 `--bibtex` 就是 21 次请求而不是 1 次，整体耗时约慢一个数量级，被验证拦的概率也随之上升。建议配合 `-n` 只对确定要用的结果导出。
 - 这两次加载都走可见窗口的正常导航，因此同样受节奏控制和人工接管保护。不能改用后台 HTTP 请求：Scholar 对浏览器导航之外发起的同样请求直接返回 429。
 - 作者主页的论文条目没有 Scholar 的 `data-cid`，程序会先用它的 cluster 列表把 `data-cid`查出来，所以每条是 3 次加载而不是 2 次；开头会提示一次。
+- 反过来，`scholar-digest --bibtex` 不发请求，用的是已抓到的字段，所以刊名会照抄结果页上的省略形式（`journal = {… on neural networks …}`）。要正式引用就先跑 `--audit` 看 `venue_truncated` 有多少条，再决定是手工补还是花两次加载去拿 Scholar 的原始条目。
 
 ## 演练人工接管
 
@@ -783,7 +829,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 437 个用例，全部离线
+python3 -m pytest -q     # 438 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 

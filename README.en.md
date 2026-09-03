@@ -312,6 +312,40 @@ scholar-digest out/*.jsonl --report out/report.md --report-title "Graph attentio
 
 It contains the size of the collection at a glance (records, total citations, year span, venues, first authors), the most-cited works with their original links, two grouped tables — by venue and by first author, each with records, citations, median, year span and the group's most-cited work — a text bar chart of records per year (which survives copy-paste), which query each record came from, and finally a "how much of this to trust" section that reuses the `--audit` checks to state the missing rates and doubtful fields outright.
 
+A real excerpt (20 records; `--report-top 3` only to keep it short here):
+
+```markdown
+# Graph neural network surveys: a first pass
+
+Built from 20 records collected with [google-scholar-crawler](...). Every number below comes
+from what Scholar showed when the records were collected; nothing was re-fetched.
+
+## At a glance
+
+- **20 records**, 38,514 citations in total
+- published **2020–2026**
+- **17 venues**, **20 first authors**
+
+## Most cited works (top 3)
+
+| Citations | Year | Work | Venue |
+| --- | --- | --- | --- |
+| 17,842 | 2020 | [A comprehensive survey on graph neural networks](...) | … on neural networks … |
+| 10,569 | 2020 | [Graph neural networks: A review of methods and applications](...) | AI open |
+| 2,576 | 2022 | [Graph neural networks in recommender systems: a survey](...) | ACM computing surveys |
+
+## When it was published
+
+2022  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇ 5
+2023  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇ 5
+2024  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇ 4
+
+## How much of this to trust
+
+| warn | venue truncated | 12 (60%) | Scholar elided the venue, ... |
+| warn | authors truncated | 12 (60%) | Scholar elided the author list, ... |
+```
+
 The report opens by saying that every number comes from what Scholar showed when the records were collected and that nothing was re-fetched, so nobody mistakes it for live data.
 
 ### Who cites whom inside the collection: `--network`
@@ -410,15 +444,26 @@ A Scholar card carries one grey line holding "authors - venue, year - site", and
 `--audit` reads local files only and measures how much of what you already collected can be trusted:
 
 ```
-$ scholar-digest out/*.jsonl --audit
-  audit of 9 records: 2 checks tripped (0 errors, 2 warnings)
-    warn  authors_truncated              3  33.3%  Scholar elided the author list, so BibTeX gets 'and others'
-        e.g. P Veličković, G Cucurull, A Casanova… | Graph attention networks
-    warn  cluster_id_missing             3  33.3%  no card id, so BibTeX export and citation expansion cannot address this record
-        e.g. <empty> | Generative adversarial nets
+$ scholar-digest out/g.jsonl --audit
+  audit of 20 records: 2 checks tripped (0 errors, 2 warnings)
+    warn  venue_truncated               12  60.0%  Scholar elided the venue, so a bibliography would cite '… on neural networks …'
+        e.g. … on neural networks … | A comprehensive survey on graph neural networks
+        e.g. … Computing Surveys … | Computing graph neural networks: A survey from algo…
+    warn  authors_truncated             12  60.0%  Scholar elided the author list, so BibTeX gets 'and others'
+        e.g. Z Wu, S Pan, F Chen, G Long… | A comprehensive survey on graph neural networks
+        e.g. J Zhou, G Cui, S Hu, Z Zhang, C Yang, Z Liu, L Wang… | Graph neural networks: A review…
 ```
 
-Two severities: `error` means the value is wrong (an implausible year, a year that appears nowhere in the byline it was read from, a venue that is a volume/issue/page range, a venue that still contains a year, a citation count with no citing-works link, a negative count, a missing title), and `warn` means missing or lossy (no venue/year/authors, a truncated author list, a bare hostname as the venue, a `[PDF]` tag left on the title, no card id). Each finding reports the count, the share and two real examples — not a score, but enough to judge whether the batch is usable.
+A clean set is one line, so there is nothing to read:
+
+```
+$ scholar-digest out/clean.jsonl --audit
+  audit of 10 records: nothing implausible found
+```
+
+Two severities: `error` means the value is wrong (an implausible year, a year that appears nowhere in the byline it was read from, a venue that is a volume/issue/page range, a venue that still contains a year, a citation count with no citing-works link, a negative count, a missing title), and `warn` means missing or lossy (no venue/year/authors, a truncated author list, **a venue Scholar elided**, a bare hostname as the venue, a `[PDF]` tag left on the title, no card id). Each finding reports the count, the share and two real examples — not a score, but enough to judge whether the batch is usable.
+
+That 60% is a real measurement: a Scholar result page elides long venue names from both ends (`… on neural networks …`), the full name is simply not on the page, and an exported BibTeX copies the elided form into `journal`. It is not a parsing bug and cannot be repaired locally, so the audit's job is to count it and point at it — fix those entries by hand from this list, or pass `--bibtex` to take the full entry from Scholar's Cite popup at two extra page loads each.
 
 Its first run found a real defect: the profile parser kept the year inside the venue (`Advances in neural information processing systems 27, 2014`) while the result-page parser stripped it. Grouping happened to be immune (`normalize_venue` cuts the volume tail), but the stored field disagreed between the two sources and the exported BibTeX repeated the year inside `journal`. Both parsing paths now share one stripping function.
 
@@ -733,6 +778,7 @@ Author publications land in the same JSONL (with Scholar's citation id in `extra
 - A 10-result page becomes 21 requests instead of 1, an order of magnitude slower, with a matching rise in challenge risk. Pair it with `-n` and export only what you will cite.
 - Both loads are ordinary navigations in the visible window, so pacing and human takeover cover them. A background HTTP request is not an option: Scholar answers 429 to the same request issued outside the browser's navigation stack.
 - Author-profile publications carry no Scholar `data-cid`, so it is resolved through their cluster listing first: three loads per record instead of two, announced once at the start.
+- `scholar-digest --bibtex`, by contrast, sends nothing and synthesizes entries from stored fields, so a venue keeps the elided form the result page showed (`journal = {… on neural networks …}`). Before citing formally, run `--audit` to see how many records `venue_truncated` covers, then decide between fixing them by hand and spending two loads on Scholar's own entry.
 
 ## Rehearsing the human takeover
 
@@ -786,7 +832,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 437 tests, fully offline
+python3 -m pytest -q     # 438 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 

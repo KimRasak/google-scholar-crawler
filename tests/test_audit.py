@@ -75,6 +75,7 @@ def test_missing_and_lossy_fields_are_warnings_not_errors() -> None:
                 _record(venue=None, year=None, authors=None, cluster_id=None),
                 _record(authors="A Author, B Author…"),
                 _record(venue="nature.com"),
+                _record(venue="… on neural networks …"),
                 _record(title="[PDF] Graph attention networks"),
             ]
         )
@@ -85,7 +86,16 @@ def test_missing_and_lossy_fields_are_warnings_not_errors() -> None:
     assert severities["cluster_id_missing"] == "warn"
     assert severities["authors_truncated"] == "warn"
     assert severities["venue_is_hostname"] == "warn"
+    assert severities["venue_truncated"] == "warn"
     assert severities["title_tagged"] == "warn"
+
+
+def test_a_venue_scholar_elided_is_flagged_at_either_end() -> None:
+    # Scholar elides long venues from both sides on a result page, e.g.
+    # "… IEEE transactions on neural networks …", and a bibliography would cite it verbatim.
+    assert "venue_truncated" in _flagged(_record(venue="… on neural networks …"))
+    assert "venue_truncated" in _flagged(_record(venue="ACM Transactions on …"))
+    assert "venue_truncated" not in _flagged(_record(venue="Journal of Big Data"))
 
 
 def test_a_citation_only_record_is_not_blamed_for_having_no_card_id() -> None:
