@@ -13,6 +13,7 @@ from typing import Any
 
 from .analysis import Group, Summary, group_records, summarize
 from .audit import audit_records
+from .text import counted
 
 Record = dict[str, Any]
 
@@ -33,16 +34,6 @@ Paper titles really carry them: ``*SEM 2021``, ``C*-algebras``, ``[Re] reproduci
 ``word2vec_extended``. Unescaped, the renderer turns them into emphasis, code spans or broken
 links, so the report shows a title the crawl never collected.
 """
-
-
-def _counted(count: int, noun: str) -> str:
-    """Write a count with its noun in the right number.
-
-    :param count: how many.
-    :param noun: the singular noun.
-    :returns: the phrase, pluralized by adding ``s`` when the count is not one.
-    """
-    return f"{count:,} {noun}" if count == 1 else f"{count:,} {noun}s"
 
 
 def _cell(text: str | None, *, limit: int = 120) -> str:
@@ -118,12 +109,12 @@ def _at_a_glance(summary: Summary) -> list[str]:
     years = _years(summary)
     span = f"{years[0][0]}–{years[-1][0]}" if years else "unknown"
     return [
-        f"- **{_counted(summary.records, 'record')}**, {summary.citations:,} citations in total",
+        f"- **{counted(summary.records, 'record')}**, {summary.citations:,} citations in total",
         f"- published **{span}**"
         + (f", {summary.unknown_year} without a year" if summary.unknown_year else ""),
-        f"- **{_counted(summary.venue_count, 'venue')}**, "
-        f"**{_counted(summary.author_count, 'first author')}**",
-        f"- {_counted(summary.with_bibtex, 'record')} carry a BibTeX key, "
+        f"- **{counted(summary.venue_count, 'venue')}**, "
+        f"**{counted(summary.author_count, 'first author')}**",
+        f"- {counted(summary.with_bibtex, 'record')} carry a BibTeX key, "
         f"{summary.citation_only} "
         + ("is" if summary.citation_only == 1 else "are")
         + " citation-only, which Scholar has no page for",

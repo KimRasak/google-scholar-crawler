@@ -13,7 +13,7 @@ from .browser import BrowserOptions, Session, locale_for, timezone_for
 from .challenge import HumanHandoff
 from .config import ConfigError, resolve_settings
 from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
-from .diagnose import Diagnosis, diagnose_unwritable, stop_report
+from .diagnose import CrawlFailure, Diagnosis, diagnose_unwritable, stop_report
 from .expand import FollowPolicy
 from .explain import explain
 from .history import advise
@@ -50,6 +50,7 @@ from .storage import (
     unwritable,
     written_paths,
 )
+from .text import counted
 from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
 
 
@@ -467,7 +468,14 @@ def _resolve_pacing(args: argparse.Namespace) -> Pacing:
     min_delay = args.min_delay if args.min_delay is not None else DEFAULT_MIN_DELAY
     max_delay = args.max_delay if args.max_delay is not None else DEFAULT_MAX_DELAY
     if not args.no_learn_from_history:
-        advice = advise(ChallengeLog(args.challenge_log).entries(), min_delay, max_delay)
+        takeovers, unreadable = ChallengeLog(args.challenge_log).read()
+        if unreadable:
+            print(
+                f"[pace] {counted(unreadable, 'line')} in {args.challenge_log} could not be read, "
+                "so the pace was chosen without them",
+                flush=True,
+            )
+        advice = advise(takeovers, min_delay, max_delay)
         if advice is not None and chosen:
             print(f"[pace] {advice.history.describe()}", flush=True)
             if advice.changes_pacing:
@@ -617,6 +625,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with human_lines_to_stderr(args.json):
             ran = _run(args, argv, given)
+    except CrawlFailure as broken:
+        # A file this run reads, not one it crawls: every mode that opens the state file lands
+        # here, so the answer is the same whether it was a crawl, a dry run or --show-state.
+        print(stop_report(broken.diagnosis), file=sys.stderr)
+        if args.json:
+            emit(_document(_Ran(1, outcome=RunOutcome.stopped_by(broken.diagnosis))))
+        return 1
     except Exception:
         if not args.json:
             raise

@@ -11,6 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scholar_crawler.diagnose import CrawlFailure, Failure  # noqa: E402
 from scholar_crawler.parser import parse_result_page  # noqa: E402
 from scholar_crawler.storage import (  # noqa: E402
     PROBE_NAME,
@@ -75,6 +76,49 @@ def test_state_round_trip(tmp_path: Path) -> None:
     reloaded.load()
     assert reloaded.next_start("sig") == 30
     assert reloaded.next_start("other", default=10) == 10
+
+
+def test_a_cursor_field_of_the_wrong_type_is_read_as_its_type_or_as_absent(tmp_path: Path) -> None:
+    # The state file is JSON a person opens and edits. "10" is a cursor; "no" is not a flag, and
+    # reading it as one (text is true) would report the target finished and skip it entirely.
+    path = tmp_path / "state.json"
+    path.write_text(
+        json.dumps(
+            {
+                "q=x&lang=en": {"next_start": "10", "exhausted": "no", "updated_at": 7},
+                "q=y&lang=en": {"next_start": "soon", "exhausted": True},
+                "q=z&lang=en": "not an object",
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = StateStore(path)
+    state.load()
+    assert state.next_start("q=x&lang=en") == 10
+    assert state.next_start("q=y&lang=en") == 0
+    assert state.next_start("q=z&lang=en", default=-1) == -1, "an entry that is not one is dropped"
+    entries = {entry.signature: entry for entry in state.entries()}
+    assert entries["q=x&lang=en"].exhausted is False, "a target read as finished is never crawled"
+    assert entries["q=x&lang=en"].updated_at == ""
+    assert state.repaired == 3
+
+
+def test_a_state_file_that_is_not_readable_stops_the_run(tmp_path: Path) -> None:
+    # Reading it as empty would re-crawl every target in it, and only the requests spent would
+    # say so. Both spellings of unreadable are the same answer.
+    truncated = tmp_path / "truncated.json"
+    truncated.write_text('{"a": ', encoding="utf-8")
+    with pytest.raises(CrawlFailure) as broken:
+        StateStore(truncated).load()
+    assert broken.value.diagnosis.failure is Failure.STATE_UNREADABLE
+    assert str(truncated) in broken.value.diagnosis.what
+    assert any("move" in step for step in broken.value.diagnosis.next_steps)
+
+    listed = tmp_path / "listed.json"
+    listed.write_text("[1, 2]", encoding="utf-8")
+    with pytest.raises(CrawlFailure) as wrong_shape:
+        StateStore(listed).load()
+    assert "holds a list" in wrong_shape.value.diagnosis.detail
 
 
 def test_the_profile_file_is_named_after_the_records_file() -> None:

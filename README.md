@@ -632,6 +632,12 @@ $ scholar-crawler --forget "attention is all you need [en]" --state out/state.js
 
 `-n/--max-results` 截断的目标不再被记成「已抓完」：那是我们自己决定停的，Scholar 那边还有结果，所以它保持可续抓。
 
+state 文件是 JSON，会被人打开改、被脚本生成、被别的工具动过。所以读它的规则和读记录一致：`"next_start": "10"` 读成 10，`"exhausted": "no"` 这种**不是布尔值**的就当作没写——文本在 Python 里是真，照字面读会把这个目标报成「已抓完」并整个跳过，这是最坏的一种错（工具信心十足地什么都不抓）。被这样读过的条目会计数并在 `--show-state` 里报出来，因为「游标当作没有」意味着那个目标从头开始。
+
+但整份文件读不出来时**不是**这样处理：JSON 截断、或者顶层不是对象，会以 `state_unreadable` 停机（连 `--dry-run` 和 `--show-state` 也一样），因为「当作空的」等于悄悄把每个目标从头抓一遍——这个代价只有花掉的请求会告诉你。下一步就两条：修文件，或者把它挪走再跑（代价明确：里面记的目标从头开始）。
+
+接管日志的处理相反：它是**建议性**的（决定这次跑多慢、给人看历史），所以坏行只是跳过并计数（`[handoff] N line(s) ... could not be read`、`[pace] ... 没算上它们`），不会因为一份日志被手改过就不让你抓。`request_index: "soon"` 这类字段也照同一条规则读——以前它会让 `int()` 抛 `ValueError`，也就是一份被手改的日志能直接把抓取搞崩。
+
 ## 把常用参数写进文件：`--config`
 
 同一个课题断断续续抓几周，每次都要重敲 `--min-delay --max-delay --profile --follow-cites --year-from` 这一长串，敲错一个延迟数字就是一次多余的请求。把这些写进一个 TOML 文件，用 `--config` 带上：
@@ -899,7 +905,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 562 个用例，全部离线
+python3 -m pytest -q     # 565 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -922,7 +928,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 94 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 96 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```
@@ -992,7 +998,7 @@ scholar_crawler/
   storage.py    JSONL 写入、作者主页记录、BibTeX 文件、断点状态；以及「一次运行会写哪些路径」这份唯一清单与路径可写性判断
   config.py     TOML 设置文件：读取校验、与命令行的优先级、来源追溯
   machine.py    给程序看的一份 JSON 文档：字段固定、失败词表、stdout 只放它
-  text.py       终端列宽内的截断：截了就标出来
+  text.py       终端列宽内的截断：截了就标出来；数量与名词的单复数
   cli.py        命令行入口：参数定义、模式分发
   __main__.py   让 python3 -m scholar_crawler 等价于 scholar-crawler
 tests/          离线测试（含 headless Chromium 判定测试）与 mutate.py 守卫审计

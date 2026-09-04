@@ -15,7 +15,16 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from .audit import AuditTally
-from .models import AuthorProfile, ScholarResult, describe_signature, record_key
+from .diagnose import CrawlFailure, diagnose_state
+from .models import (
+    AuthorProfile,
+    ScholarResult,
+    as_flag,
+    as_number,
+    as_text,
+    describe_signature,
+    record_key,
+)
 from .parser import bibtex_key
 from .urls import redact_url
 
@@ -376,11 +385,43 @@ class StateStore:
 
     path: Path
     _data: dict[str, dict[str, Any]] = field(default_factory=dict)
+    repaired: int = 0
 
     def load(self) -> None:
-        """Read the state file, tolerating a missing one."""
-        if self.path.exists():
-            self._data = json.loads(self.path.read_text(encoding="utf-8"))
+        """Read the state file, tolerating a missing one.
+
+        :raises CrawlFailure: when the file exists but is not an object of cursors. Reading it as
+            empty would silently re-crawl every target in it, which costs requests to discover.
+        """
+        if not self.path.exists():
+            return
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as error:
+            raise CrawlFailure(diagnose_state(self.path, str(error))) from error
+        if not isinstance(data, dict):
+            raise CrawlFailure(
+                diagnose_state(self.path, f"the file holds a {type(data).__name__}, not an object")
+            )
+        self._data = {}
+        self.repaired = 0
+        for signature, entry in data.items():
+            if not isinstance(entry, dict):
+                self.repaired += 1
+                continue
+            cursor = as_number(entry.get("next_start"))
+            exhausted = as_flag(entry.get("exhausted"))
+            updated = as_text(entry.get("updated_at"))
+            self.repaired += 1 if (cursor, exhausted, updated) != (
+                entry.get("next_start"),
+                entry.get("exhausted"),
+                entry.get("updated_at"),
+            ) else 0
+            self._data[signature] = {
+                "next_start": cursor or 0,
+                "exhausted": bool(exhausted),
+                "updated_at": updated or "",
+            }
 
     def next_start(self, signature: str, default: int = 0) -> int:
         """Return the next unfetched offset recorded for ``signature``.
@@ -390,7 +431,7 @@ class StateStore:
         :returns: the stored offset, or ``default``.
         """
         entry = self._data.get(signature)
-        return int(entry["next_start"]) if entry else default
+        return int(entry["next_start"]) if entry else default  # read as a number by load()
 
     def record(self, signature: str, next_start: int, *, exhausted: bool = False) -> None:
         """Store progress for ``signature`` and persist the file.
@@ -588,29 +629,44 @@ class ChallengeLog:
 
         :returns: every readable record; unreadable lines are skipped.
         """
+        return self.read()[0]
+
+    def read(self) -> tuple[list[ChallengeRecord], int]:
+        """Read the log back with the count of lines that could not be read.
+
+        The log is a plain JSONL file a person may open, trim or move, and a crawl reads it
+        before its first request to decide how slowly to go. A line that cannot be read is
+        therefore skipped and counted, never guessed at and never a reason to stop.
+
+        :returns: every readable record oldest first, and how many lines were not readable.
+        """
         if not self.path.exists():
-            return []
+            return [], 0
         records = []
+        unreadable = 0
         for line in self.path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
             try:
                 data = json.loads(line)
             except json.JSONDecodeError:
+                unreadable += 1
                 continue
-            if isinstance(data, dict):
-                records.append(
-                    ChallengeRecord(
-                        at=str(data.get("at", "")),
-                        kind=str(data.get("kind", "?")),
-                        url=str(data.get("url", "")),
-                        reason=str(data.get("reason", "")),
-                        request_index=int(data.get("request_index", 0)),
-                        consecutive=int(data.get("consecutive", 1)),
-                        waited=float(data.get("waited", 0.0)),
-                        outcome=str(data.get("outcome", "?")),
-                        target=str(data.get("target", "")),
-                        saw=tuple(str(kind) for kind in data.get("saw") or ()),
-                    )
+            if not isinstance(data, dict):
+                unreadable += 1
+                continue
+            records.append(
+                ChallengeRecord(
+                    at=as_text(data.get("at")) or "",
+                    kind=as_text(data.get("kind")) or "?",
+                    url=as_text(data.get("url")) or "",
+                    reason=as_text(data.get("reason")) or "",
+                    request_index=as_number(data.get("request_index")) or 0,
+                    consecutive=as_number(data.get("consecutive")) or 1,
+                    waited=float(as_number(data.get("waited")) or 0.0),
+                    outcome=as_text(data.get("outcome")) or "?",
+                    target=as_text(data.get("target")) or "",
+                    saw=tuple(as_text(kind) or "?" for kind in data.get("saw") or ()),
                 )
-        return records
+            )
+        return records, unreadable

@@ -30,6 +30,7 @@ class Failure(str, Enum):
     BROWSER_CLOSED = "browser_closed"
     BROWSER_MISSING = "browser_missing"
     PATH_UNWRITABLE = "path_unwritable"
+    STATE_UNREADABLE = "state_unreadable"
     HTTP_ERROR = "http_error"
     RATE_LIMITED = "rate_limited"
     UNKNOWN_LAYOUT = "unknown_layout"
@@ -264,6 +265,29 @@ def diagnose_unwritable(reason: str, flag: str, *, kind: str = "file") -> Diagno
             f"point {flag} at {wanted} this user can write",
             "run scholar-crawler --doctor, which checks every path a run needs",
         ),
+    )
+
+
+def diagnose_state(path: Path, reason: str) -> Diagnosis:
+    """Explain a resume-state file this run cannot read.
+
+    The cursors decide which pages a run skips, so a state file that cannot be read is not
+    something to shrug off: carrying on would silently re-crawl every target from the start and
+    spend the requests to find out. Deleting the file is a legitimate answer, and it is spelled
+    out, because it costs exactly one re-crawl of the targets recorded in it.
+
+    :param path: the ``--state`` path.
+    :param reason: what reading it produced.
+    :returns: the diagnosis for this failure.
+    """
+    return Diagnosis(
+        failure=Failure.STATE_UNREADABLE,
+        what=f"{path} is not a resume-state file this tool can read, so nothing was crawled",
+        next_steps=(
+            f"fix the JSON in {path}, which is one object per target",
+            f"or move {path} aside and rerun: the targets in it start over",
+        ),
+        detail=reason,
     )
 
 

@@ -27,3 +27,13 @@ def clip(text: str, width: int) -> str:
     if len(text) <= width:
         return text
     return text[: width - 1].rstrip() + ELLIPSIS
+
+
+def counted(count: int, noun: str) -> str:
+    """Write a count with its noun in the right number.
+
+    :param count: how many.
+    :param noun: the singular noun, pluralized by adding ``s``.
+    :returns: the phrase, with thousands separated.
+    """
+    return f"{count:,} {noun}" if count == 1 else f"{count:,} {noun}s"

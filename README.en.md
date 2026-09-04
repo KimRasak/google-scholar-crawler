@@ -638,6 +638,12 @@ Each unfinished target is followed by the command that continues it, ready to pa
 
 A target cut short by `-n/--max-results` no longer counts as finished: stopping there was our decision and Scholar still had results, so its cursor stays resumable.
 
+The state file is JSON that people open and edit and other tools write, so its fields are read the way records are: `"next_start": "10"` is a cursor of 10, and `"exhausted": "no"` is **not a flag**, so it is read as absent. Text is true in Python, and reading that one literally reports the target finished and skips it entirely — the worst kind of wrong, a tool confidently collecting nothing. Entries read that way are counted and reported by `--show-state`, because a cursor read as absent means that target starts over.
+
+A file that cannot be read at all is handled the other way: truncated JSON, or a top level that is not an object, stops the command as `state_unreadable` — including `--dry-run` and `--show-state`. Treating it as empty would silently re-crawl every target in it, and only the requests spent would say so. The next steps are the two that exist: fix the file, or move it aside and rerun, which costs exactly the cursors it held.
+
+The takeover log is the opposite case, because it is **advisory** — it sets this run's pace and shows a human what happened before. A line that cannot be read is skipped and counted (`[handoff] N line(s) … could not be read`, and a `[pace]` line saying the pace was chosen without them), never a reason to refuse a crawl. Its fields are read by the same rule: `request_index: "soon"` used to reach `int()` and raise, so a hand-edited log could end a crawl with a traceback.
+
 ## Settings files: `--config`
 
 Collecting one topic over weeks means retyping `--min-delay --max-delay --profile --follow-cites --year-from` every session, and a mistyped delay costs a request. Put those choices in a TOML file and pass it:
@@ -904,7 +910,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 562 tests, fully offline
+python3 -m pytest -q     # 565 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -931,7 +937,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 94 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 96 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
@@ -1021,7 +1027,7 @@ scholar_crawler/
   storage.py    JSONL writer, author profile records, the .bib file, resume state; the one list of paths a run writes, and whether each can be written
   config.py     TOML settings files: reading, validation, precedence, provenance
   machine.py    the JSON document for programs: fixed keys, failure vocabulary, stdout discipline
-  text.py       fitting text to a terminal column, marking every cut
+  text.py       fitting text to a terminal column, marking every cut; a count with its noun
   cli.py        command-line entry point: flag definitions and mode dispatch
   __main__.py   makes python3 -m scholar_crawler equivalent to scholar-crawler
 tests/          offline tests, headless-Chromium detection, and mutate.py's guard audit

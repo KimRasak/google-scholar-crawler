@@ -127,6 +127,24 @@ def test_the_log_redacts_appends_and_reads_back(tmp_path: Path) -> None:
 
 def test_a_missing_log_reads_as_empty(tmp_path: Path) -> None:
     assert ChallengeLog(tmp_path / "absent.jsonl").entries() == []
+    assert ChallengeLog(tmp_path / "absent.jsonl").read() == ([], 0)
+
+
+def test_a_hand_edited_log_is_read_line_by_line_and_never_stops_a_crawl(tmp_path: Path) -> None:
+    # A crawl reads this log before its first request, to decide how slowly to go. It is a plain
+    # file a person may trim or annotate, and no edit in it may cost them the crawl.
+    log = ChallengeLog(tmp_path / "challenges.jsonl")
+    log.path.write_text(
+        '{"at": "2026-01-01T00:00:00+00:00", "kind": "captcha", "request_index": "4"}\n'
+        '{"at": 5, "request_index": "soon", "waited": "long", "saw": [1]}\n'
+        "not json\n[1, 2]\n",
+        encoding="utf-8",
+    )
+    entries, unreadable = log.read()
+    assert unreadable == 2, "a line that is not a record is counted, not guessed at"
+    assert [entry.request_index for entry in entries] == [4, 0]
+    assert entries[1].at == "" and entries[1].waited == 0.0
+    assert entries[1].saw == ("?",), "a kind that is not text is unknown, as elsewhere in this log"
 
 
 def test_a_takeover_during_a_crawl_is_recorded(

@@ -204,6 +204,46 @@ NUMBER_FIELDS = ("year", "cited_by_count", "versions_count", "position", "page_s
 """Record fields every offline tool sorts, sums or compares as numbers."""
 
 
+def as_number(value: Any) -> int | None:
+    """Read a stored value as the number its field is.
+
+    :param value: the value as it was stored.
+    :returns: the number, or None when the value is not one.
+    """
+    if isinstance(value, bool):  # a flag is not a count, however JSON stores it
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        return int(value.strip())
+    return None
+
+
+def as_flag(value: Any) -> bool | None:
+    """Read a stored value as the flag its field is.
+
+    ``"no"`` and ``"false"`` are text, and text is true, so a flag written as anything but a
+    flag is read as absent rather than guessed at: guessing wrong here skips a whole target.
+
+    :param value: the value as it was stored.
+    :returns: the flag, or None when the value is not one.
+    """
+    return value if isinstance(value, bool) else None
+
+
+def as_text(value: Any) -> str | None:
+    """Read a stored value as the text its field is.
+
+    :param value: the value as it was stored.
+    :returns: the text, a list of names joined into one line, or None for anything else.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):  # what another tool would write for a byline, still a byline
+        return ", ".join(str(item) for item in value)
+    return None
+
+
 def readable_record(record: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """Read a stored record's typed fields as their type, or as absent.
 
@@ -219,23 +259,15 @@ def readable_record(record: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """
     fixed = dict(record)
     for field_name in NUMBER_FIELDS:
-        value = fixed.get(field_name)
-        if value is None or isinstance(value, int) and not isinstance(value, bool):
-            continue
-        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
-            fixed[field_name] = int(value.strip())
-        else:
-            fixed[field_name] = None
+        if fixed.get(field_name) is not None:
+            fixed[field_name] = as_number(fixed[field_name])
+    for field_name in ("authors", "byline"):
+        if fixed.get(field_name) is not None:
+            fixed[field_name] = as_text(fixed[field_name])
+    if fixed.get("citation_only") is not None:
+        fixed["citation_only"] = as_flag(fixed["citation_only"])
     if not isinstance(fixed.get("extra"), dict | None):
         fixed["extra"] = None
-    for field_name in ("authors", "byline"):
-        value = fixed.get(field_name)
-        if value is None or isinstance(value, str):
-            continue
-        # A list of names is what another tool would write for a byline, and it is still a byline.
-        fixed[field_name] = ", ".join(str(name) for name in value) if isinstance(value, list) else None
-    if not isinstance(fixed.get("citation_only"), bool | None):
-        fixed["citation_only"] = None
     return fixed, fixed != record
 
 

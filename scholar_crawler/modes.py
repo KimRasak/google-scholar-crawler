@@ -25,6 +25,7 @@ from .recipes import resume_command
 from .rehearsal import rehearse
 from .selfcheck import check_page, report
 from .storage import ChallengeLog, StateStore
+from .text import counted
 
 SELF_CHECK_QUERY = "machine learning"
 """Broad query used by :func:`self_check`: many hits, PDFs, citations and a next page."""
@@ -166,6 +167,12 @@ def show_state(state_path: Path, challenge_log: Path) -> int:
                 print(f"[state]     $ {resume_command(request, state_path)}", flush=True)
     else:
         print(f"[state] nothing stored in {state_path}", flush=True)
+    if state.repaired:
+        print(
+            f"[state] {counted(state.repaired, 'stored cursor')} had a field of the wrong type, "
+            "read as absent: those targets start over",
+            flush=True,
+        )
     show_takeovers(challenge_log)
     return 0
 
@@ -176,7 +183,9 @@ def show_takeovers(path: Path, limit: int = RECENT_TAKEOVERS) -> None:
     :param path: challenge-log path; a missing file prints nothing.
     :param limit: how many of the most recent takeovers to print.
     """
-    takeovers = ChallengeLog(path).entries()
+    takeovers, unreadable = ChallengeLog(path).read()
+    if unreadable:
+        print(f"[handoff] {unreadable} line(s) in {path} could not be read", flush=True)
     if not takeovers:
         return
     kinds = Counter(entry.kind for entry in takeovers)
