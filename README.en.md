@@ -245,7 +245,7 @@ Given no file to write, it prints an overview and stops:
 
 ```sh
 $ scholar-digest out/all.jsonl
-[in] 38 records from 1 file(s), 3 duplicates merged, 0 filtered out
+[in] 38 records from 1 file, 3 duplicates merged, 0 filtered out
   records          38
   citations        104392 total
   bibtex keys      7
@@ -414,7 +414,7 @@ A `--cites X` listing means every record on it cites the work whose citing-works
 ```sh
 $ scholar-digest out/graph.jsonl --network
   38 records and 0 uncollected works, 28 edges
-  10 component(s), largest 11 works; 7 record(s) neither cite nor are cited here
+  10 components, largest 11 works; 7 records with no edge either way
   most cited from inside this collection:
       10 here     41,135 on Scholar  Graph attention networks
        9 here      4,408 on Scholar  Heterogeneous graph attention network
@@ -435,7 +435,7 @@ After a few weeks a topic is a pile of files under `out/`, and remembering which
 
 ```sh
 $ scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl
-[in] 11 records from 2 file(s), 3 duplicates merged, 0 filtered out
+[in] 11 records from 2 files, 3 duplicates merged, 0 filtered out
   ...
   6 works since out/merged.jsonl -> 8 now: 2 new, 0 no longer here, 2 with a new citation count
   citations gained across the works in both: +41
@@ -448,7 +448,7 @@ $ scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl
 [out] 8 records -> out/merged.jsonl
 ```
 
-There is a trap `--collection` exists for: run `scholar-digest out/*.jsonl -o out/merged.jsonl` a second time and the glob **includes the merge it wrote last time**. Deduplication hides the damage, but the "how many files, how many duplicates" line stops meaning anything, and a collection that reads its own output back always looks complete. `--collection` excludes the files this run writes (`-o` and `--since`), which is what `11 records from 2 file(s)` above proves: the folder holds three `.jsonl` files and two were read.
+There is a trap `--collection` exists for: run `scholar-digest out/*.jsonl -o out/merged.jsonl` a second time and the glob **includes the merge it wrote last time**. Deduplication hides the damage, but the "how many files, how many duplicates" line stops meaning anything, and a collection that reads its own output back always looks complete. `--collection` excludes the files this run writes (`-o` and `--since`), which is what `11 records from 2 files` above proves: the folder holds three `.jsonl` files and two were read.
 
 `--since` keys both sides exactly as the crawler deduplicates, so a work stays the same work when its count, venue or snippet changed. The three outcomes mean:
 
@@ -482,7 +482,7 @@ $ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh
   17 of those can be re-listed by id, one page load each; 0 would need their query re-run
     375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network…
     475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks…
-[out] 5 id(s) to re-list -> out/refresh.txt (of 17 records older than 60 days)
+[out] 5 ids to re-list -> out/refresh.txt (of 17 records older than 60 days)
 [out]   $ scholar-crawler --clusters-file out/refresh.txt -p 1
 ```
 
@@ -541,7 +541,7 @@ Running `--audit` afterwards finds spoiled data, but by then the pages have been
 ```
 [out] 40 new records (0 duplicates skipped) -> out/results.jsonl
 [run] 5 requests in 1m, 0 takeovers, 0 navigation retries, delay now 4–11s
-[audit] 1 field(s) parsed badly for a large share of this run's records — Scholar's layout may have changed
+[audit] 1 field parsed badly for a large share of this run's records — Scholar's layout may have changed
 [audit]   venue_looks_like_pages: 16 of 40 records (40%) — venue is a volume, issue or page range, so venue grouping is wrong
 [audit]       e.g. 521 (7553), 436-444 | Deep learning
 [audit] run --self-check to test the parser, or scholar-digest --audit for the details
@@ -642,7 +642,7 @@ The state file is JSON that people open and edit and other tools write, so its f
 
 A file that cannot be read at all is handled the other way: truncated JSON, or a top level that is not an object, stops the command as `state_unreadable` — including `--dry-run` and `--show-state`. Treating it as empty would silently re-crawl every target in it, and only the requests spent would say so. The next steps are the two that exist: fix the file, or move it aside and rerun, which costs exactly the cursors it held.
 
-The takeover log is the opposite case, because it is **advisory** — it sets this run's pace and shows a human what happened before. A line that cannot be read is skipped and counted (`[handoff] N line(s) … could not be read`, and a `[pace]` line saying the pace was chosen without them), never a reason to refuse a crawl. Its fields are read by the same rule: `request_index: "soon"` used to reach `int()` and raise, so a hand-edited log could end a crawl with a traceback.
+The takeover log is the opposite case, because it is **advisory** — it sets this run's pace and shows a human what happened before. A line that cannot be read is skipped and counted (`[handoff] 2 lines … could not be read`, and a `[pace]` line saying the pace was chosen without them), never a reason to refuse a crawl. Its fields are read by the same rule: `request_index: "soon"` used to reach `int()` and raise, so a hand-edited log could end a crawl with a traceback.
 
 ## Settings files: `--config`
 
@@ -662,13 +662,23 @@ scholar-crawler --config scholar.toml -q "another topic" --pages 1
 `--dry-run` names where every value in effect came from, which is what makes "why was the delay 8 seconds?" answerable later:
 
 ```
-[explain] settings file scholar.toml: 5 value(s) in effect
-[explain]   cooldown_every, max_delay, out, profile, query
-[explain]   min_delay came from the command line instead, which wins over the file
-[explain]   pages came from the command line instead, which wins over the file
+$ scholar-crawler --config scholar.toml --min-delay 8 --pages 1 --dry-run
+[explain] settings file scholar.toml: 12 values in effect
+[explain]   challenge_log = out/challenges.jsonl
+[explain]   cooldown_every = 5
+[explain]   max_delay = 20.0
+[explain]   out = out/gnn.jsonl
+[explain]   profile = .scholar-profile
+[explain]   query = graph attention networks, graph transformer
+[explain]   year_from = 2020
+[explain]   ...
+[explain]   min_delay came from the command line instead of the file's 8.0, which is how precedence works
+[explain]   pages came from the command line instead of the file's 2, which is how precedence works
 ```
 
-An ordinary run prints one line instead: `[config] 5 setting(s) from scholar.toml, 2 overridden by flags`.
+Every line carries its value, not just the key: someone checking a file needs to know whether this run used 8 or 20, and they already know which keys they wrote. An overridden setting names the file's value too — one rule of precedence is only checkable when both values are on the page. Values are spelled the way the file spells them (`false`, not `False`; `out/gnn.jsonl`, not `PosixPath('out/gnn.jsonl')`), because what the reader has to recognise is their own file.
+
+An ordinary run prints one line instead: `[config] 12 settings from scholar.toml, 2 overridden by flags`.
 
 How a file is written:
 
@@ -697,12 +707,12 @@ There are more than fifty flags, and a wrong combination rarely fails — it qui
 
 ```sh
 $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry-run
-[explain] crawling 1 listing(s)
+[explain] crawling 1 listing
 [explain]   target: graph attention networks
-[explain] up to 3 page(s) per listing, 10 records a page
+[explain] up to 3 pages per listing, 10 records a page
 [explain] waiting 4–11s between page loads
 [explain] pausing 90s every 10 loads, and giving up on a page after 45s
-[explain] on a challenge: the window is brought to you, waiting up to 600s for you to clear it, up to 5 time(s) this run
+[explain] on a challenge: the window is brought to you, waiting up to 600s for you to clear it, up to 5 times this run
 [explain] after each takeover the delays widen by x1.6
 [explain] the window sends Accept-Language en-US and reports its clock in America/Los_Angeles (matching the language)
 [explain] creating records: out/results.jsonl
@@ -910,7 +920,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 565 tests, fully offline
+python3 -m pytest -q     # 566 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -937,7 +947,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 96 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 98 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

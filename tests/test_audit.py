@@ -257,5 +257,5 @@ def test_a_run_reports_the_alarm_after_its_output(tmp_path: Path, capsys: pytest
     outputs.close_and_report(None)
     printed = capsys.readouterr().out
     assert "[out] 5 new records" in printed
-    assert "[audit] 1 field(s) parsed badly" in printed
+    assert "[audit] 1 field parsed badly" in printed
     assert "venue_looks_like_pages: 5 of 5 records (100%)" in printed

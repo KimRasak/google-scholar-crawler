@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from .text import TRUNCATION, clip
+from .text import TRUNCATION, clip, counted
 
 Record = dict[str, Any]
 
@@ -411,7 +411,7 @@ class AuditTally:
         if not alarms:
             return []
         lines = [
-            f"{len(alarms)} field(s) parsed badly for a large share of this run's records — "
+            f"{counted(len(alarms), 'field')} parsed badly for a large share of this run's records — "
             "Scholar's layout may have changed"
         ]
         for finding in alarms:

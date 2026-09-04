@@ -61,9 +61,9 @@ def test_the_explanation_reads_back_what_the_window_will_claim_to_be() -> None:
 
 def test_a_plain_run_is_described_without_any_concern() -> None:
     lines = _explained(["-q", "graph attention networks", "-p", "3"])
-    assert "crawling 1 listing(s)" in lines
+    assert "crawling 1 listing" in lines
     assert "  target: graph attention networks" in lines
-    assert "up to 3 page(s) per listing, 10 records a page" in lines
+    assert "up to 3 pages per listing, 10 records a page" in lines
     assert f"waiting {DEFAULT_MIN_DELAY:g}–{DEFAULT_MAX_DELAY:g}s between page loads" in lines
     assert not [line for line in lines if line.startswith(("warn:", "note:"))]
 
@@ -136,12 +136,12 @@ def test_filters_and_expansion_are_spelled_out() -> None:
     assert "sorted by date" in filters
     assert "review articles only" in filters
     assert "interface language zh-CN" in filters
-    assert any("following citations 1 level(s) deep, expanding the 3 most-cited" in line for line in lines)
+    assert any("following citations 1 level deep, expanding the 3 most-cited" in line for line in lines)
 
 
 def test_the_takeover_policy_is_described_both_ways() -> None:
     headed = _explained(["-q", "x", "--handoff-timeout", "300", "--max-handoffs", "2"])
-    assert any("waiting up to 300s for you to clear it, up to 2 time(s)" in line for line in headed)
+    assert any("waiting up to 300s for you to clear it, up to 2 times" in line for line in headed)
 
     forever = _explained(["-q", "x", "--handoff-timeout", "0"])
     assert any("waiting forever" in line for line in forever)
@@ -187,7 +187,7 @@ def test_ignoring_the_takeover_history_is_only_warned_when_there_is_history(tmp_
         encoding="utf-8",
     )
     concerns = _concerns(["-q", "x", "--no-learn-from-history"])
-    assert any("ignores 1 recorded takeover(s)" in line for line in concerns)
+    assert any("ignores 1 recorded takeover" in line for line in concerns)
 
 
 def test_resume_without_a_stored_cursor_says_it_starts_over() -> None:
@@ -248,7 +248,7 @@ def test_one_mode_reads_the_command_back_and_costs_it(capsys: pytest.CaptureFixt
     # targets, and each answers half of "should I start this run?".
     assert main(["-q", "graph attention networks", "-p", "2", "--dry-run"]) == 0
     printed = capsys.readouterr().out
-    assert "[explain] crawling 1 listing(s)" in printed, "what the command means"
+    assert "[explain] crawling 1 listing" in printed, "what the command means"
     assert "[explain] creating records: out/results.jsonl" in printed, "which files it touches"
     assert "[plan] total:" in printed, "what it would cost"
     assert "[plan] nothing was requested; drop --dry-run to start" in printed

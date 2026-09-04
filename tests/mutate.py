@@ -189,6 +189,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         OFFLINE,
     ),
     Mutation(
+        "a settings file names its own fix, not the recipe list",
+        "scholar_crawler/cli.py",
+        "        steps = settings_advice(args.config, checked=args.dry_run)",
+        "        steps = ()",
+        "tests/test_config.py",
+    ),
+    Mutation(
+        "the origins block shows the value, not only the key",
+        "scholar_crawler/config.py",
+        '        lines.extend(f"  {key} = {_shown(self.values[key])}" for key in applied)',
+        '        lines.append("  " + ", ".join(applied))',
+        "tests/test_config.py",
+    ),
+    Mutation(
         "an unreadable state file stops the run",
         "scholar_crawler/storage.py",
         "            raise CrawlFailure(diagnose_state(self.path, str(error))) from error",

@@ -11,7 +11,7 @@ from traceback import format_exception_only
 
 from .browser import BrowserOptions, Session, locale_for, timezone_for
 from .challenge import HumanHandoff
-from .config import ConfigError, resolve_settings
+from .config import ConfigError, resolve_settings, settings_advice
 from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
 from .diagnose import CrawlFailure, Diagnosis, diagnose_unwritable, stop_report
 from .expand import FollowPolicy
@@ -582,6 +582,7 @@ class _Ran:
     :param plan: the estimate a ``--dry-run`` produced, or None when a crawl ran.
     :param reason: why the command was refused, for a caller that reads only the document.
     :param challenges: the takeover log this run would have written to.
+    :param next_steps: what to do about a refusal, when the general advice would be wrong.
     """
 
     exit_code: int
@@ -590,6 +591,7 @@ class _Ran:
     plan: RunPlan | None = None
     reason: str | None = None
     challenges: Path | None = None
+    next_steps: tuple[str, ...] = ()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -715,7 +717,7 @@ def _document(ran: _Ran) -> dict[str, object]:
         error = failure(
             "usage",
             ran.reason or "the command did not describe a run",
-            ("scholar-crawler --recipes prints commands that work",),
+            ran.next_steps or ("scholar-crawler --recipes prints commands that work",),
         )
     return document(
         tool="scholar-crawler",
@@ -814,8 +816,13 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
     try:
         sources = resolve_settings(args, build_parser(), argv)
     except ConfigError as error:
+        # The file is the thing to fix, so the advice names it. Pointing at --recipes here, as
+        # the general refusal does, would send a reader to a list of commands they typed right.
+        steps = settings_advice(args.config, checked=args.dry_run)
         print(f"error: {error}", file=sys.stderr)
-        return _Ran(1, reason=str(error))
+        for step in steps:
+            print(f"error: try: {step}", file=sys.stderr)
+        return _Ran(1, reason=str(error), next_steps=steps)
     summary = sources.summary()
     if summary is not None and not args.dry_run:
         print(f"[config] {summary}", flush=True)

@@ -168,7 +168,7 @@ def test_end_to_end_run_merges_filters_and_writes(
     code = main([str(first), str(second), "-o", str(out), "--min-citations", "5", "--top", "1"])
     printed = capsys.readouterr().out
     assert code == 0
-    assert "3 records from 2 file(s), 1 duplicates merged, 1 filtered out" in printed
+    assert "3 records from 2 files, 1 duplicates merged, 1 filtered out" in printed
     assert "records          1" in printed
     stored = [json.loads(line) for line in out.read_text().splitlines()]
     assert [record["cited_by_count"] for record in stored] == [99]

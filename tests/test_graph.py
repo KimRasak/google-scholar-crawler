@@ -113,7 +113,7 @@ def test_the_network_report_names_the_hubs_and_the_records_standing_alone() -> N
     alone = _record("alone")
     lines = render_network(build_graph([seed, *citing, alone]))
     assert lines[0].startswith("5 records and 0 uncollected works, 3 edges")
-    assert "1 record(s) neither cite nor are cited here" in lines[1]
+    assert "1 record with no edge either way" in lines[1]
     assert any("3 here" in line and "40,000 on Scholar" in line for line in lines)
 
 

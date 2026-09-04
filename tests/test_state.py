@@ -151,7 +151,7 @@ def test_forget_from_the_command_line(tmp_path: Path, capsys: pytest.CaptureFixt
     path = str(tmp_path / "state.json")
     assert main(["--forget", "cites=123456", "--state", path]) == 0
     printed = capsys.readouterr().out
-    assert "dropped 1 target(s)" in printed
+    assert "dropped 1 target" in printed
     assert "crawled from the start again" in printed
     assert main(["--forget", "cites=123456", "--state", path]) == 0
     missed = capsys.readouterr().out
@@ -173,7 +173,7 @@ def test_a_target_can_be_forgotten_by_the_name_show_state_printed(
 
     assert main(["--forget", "attention is all you need [en]", "--state", path]) == 0
     printed = capsys.readouterr().out
-    assert "dropped 1 target(s)" in printed
+    assert "dropped 1 target" in printed
     assert main(["--show-state", "--state", path]) == 0
     assert "attention is all you need" not in capsys.readouterr().out
 

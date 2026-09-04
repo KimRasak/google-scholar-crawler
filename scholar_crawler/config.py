@@ -17,6 +17,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from .text import counted
+
 try:  # 3.11+ ships the reader; older versions need the backport
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - exercised only on 3.10
@@ -64,11 +66,13 @@ class Sources:
     :param path: the settings file that was read, when one was.
     :param origins: origin per argument name.
     :param overridden: keys the file set and the command line then overrode.
+    :param values: what the file asked for, per key it set, including the overridden ones.
     """
 
     path: Path | None = None
     origins: dict[str, Origin] = field(default_factory=dict)
     overridden: tuple[str, ...] = ()
+    values: dict[str, Any] = field(default_factory=dict)
 
     def of(self, key: str) -> Origin:
         """Report where one setting came from.
@@ -93,7 +97,7 @@ class Sources:
         if self.path is None:
             return None
         beaten = f", {len(self.overridden)} overridden by flags" if self.overridden else ""
-        return f"{len(self.from_file())} setting(s) from {self.path}{beaten}"
+        return f"{counted(len(self.from_file()), 'setting')} from {self.path}{beaten}"
 
     def describe(self) -> list[str]:
         """Explain what the file contributed, if anything.
@@ -103,14 +107,54 @@ class Sources:
         if self.path is None:
             return []
         applied = self.from_file()
-        lines = [f"settings file {self.path}: {len(applied)} value(s) in effect"]
-        if applied:
-            lines.append("  " + ", ".join(applied))
+        lines = [f"settings file {self.path}: {counted(len(applied), 'value')} in effect"]
+        # The value is the point of the block: a reader checking a file wants to see what it
+        # chose, not only which keys it named.
+        lines.extend(f"  {key} = {_shown(self.values[key])}" for key in applied)
         for key in self.overridden:
-            lines.append(f"  {key} came from the command line instead, which wins over the file")
+            lines.append(
+                f"  {key} came from the command line instead of the file's "
+                f"{_shown(self.values[key])}, which is how precedence works"
+            )
         if not applied and not self.overridden:
             lines.append("  the file set nothing this run uses")
         return lines
+
+
+def _shown(value: Any) -> str:
+    """Write a value in effect the way its file spells it.
+
+    The reader is checking a file against a run, so ``true`` and ``out/gnn.jsonl`` are what they
+    have to recognise — not ``True`` and ``PosixPath('out/gnn.jsonl')``, which are Python's
+    spellings of the same choices.
+
+    :param value: the value the file asked for, after this option's own conversion.
+    :returns: the value as one readable string.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list | tuple):
+        return ", ".join(_shown(item) for item in value)
+    return str(value)
+
+
+def settings_advice(path: Path | None, *, checked: bool) -> tuple[str, ...]:
+    """Say what to do about a settings file this tool refused.
+
+    The refusal message already names the file, the key and what the key wants, so the advice
+    adds the two things it cannot: where to fix it, and how to check the fix for free. A command
+    that is already a dry run is told nothing about ``--dry-run``: advice a reader can see they
+    followed reads as if the tool were not listening.
+
+    :param path: the ``--config`` path, which is always set when a settings file was refused.
+    :param checked: whether this command was already a dry run.
+    :returns: concrete actions, most useful first.
+    """
+    named = path if path is not None else Path("the settings file")
+    fix = f"edit {named}: one setting per line, named like the long flag without its dashes"
+    if checked:
+        return (fix,)
+    return (fix, "add --dry-run to the same command to recheck the file without spending a request")
 
 
 def _normalize(key: str) -> str:
@@ -288,7 +332,12 @@ def apply_settings(
             continue
         setattr(args, key, value)
         origins[key] = Origin.FILE
-    return Sources(path=path, origins=origins, overridden=tuple(sorted(overridden)))
+    return Sources(
+        path=path,
+        origins=origins,
+        overridden=tuple(sorted(overridden)),
+        values=dict(settings),
+    )
 
 
 def resolve_settings(

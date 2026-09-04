@@ -156,7 +156,7 @@ def test_a_digest_over_a_folder_skips_the_merge_it_is_writing(
     code = main(["--collection", str(tmp_path), "--since", str(merged), "-o", str(merged)])
     assert code == 0
     printed = capsys.readouterr().out
-    assert "4 records from 2 file(s)" in printed, "the previous merge is not an input"
+    assert "4 records from 2 files" in printed, "the previous merge is not an input"
     assert "2 works since" in printed
     assert "1 new, 0 no longer here, 1 with a new citation count" in printed
     assert "[out] 3 records ->" in printed
@@ -191,7 +191,7 @@ def test_a_folder_and_named_files_can_be_read_together(
     _write(tmp_path / "folder" / "session1.jsonl", [_record("a")])
     extra = _write(tmp_path / "elsewhere.jsonl", [_record("z")])
     assert main(["--collection", str(tmp_path / "folder"), str(extra)]) == 0
-    assert "2 records from 2 file(s)" in capsys.readouterr().out
+    assert "2 records from 2 files" in capsys.readouterr().out
 
 
 def test_an_empty_collection_names_the_files_it_skipped_once_each(

@@ -245,7 +245,7 @@ scholar-digest out/all.jsonl --min-citations 1000 --year-from 2018 -o out/hot.js
 
 ```sh
 $ scholar-digest out/all.jsonl
-[in] 38 records from 1 file(s), 3 duplicates merged, 0 filtered out
+[in] 38 records from 1 file, 3 duplicates merged, 0 filtered out
   records          38
   citations        104392 total
   bibtex keys      7
@@ -412,7 +412,7 @@ from what Scholar showed when the records were collected; nothing was re-fetched
 ```sh
 $ scholar-digest out/graph.jsonl --network
   38 records and 0 uncollected works, 28 edges
-  10 component(s), largest 11 works; 7 record(s) neither cite nor are cited here
+  10 components, largest 11 works; 7 records with no edge either way
   most cited from inside this collection:
       10 here     41,135 on Scholar  Graph attention networks
        9 here      4,408 on Scholar  Heterogeneous graph attention network
@@ -430,7 +430,7 @@ $ scholar-digest out/graph.jsonl --network
 
 ```sh
 $ scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl
-[in] 11 records from 2 file(s), 3 duplicates merged, 0 filtered out
+[in] 11 records from 2 files, 3 duplicates merged, 0 filtered out
   ...
   6 works since out/merged.jsonl -> 8 now: 2 new, 0 no longer here, 2 with a new citation count
   citations gained across the works in both: +41
@@ -443,7 +443,7 @@ $ scholar-digest --collection out --since out/merged.jsonl -o out/merged.jsonl
 [out] 8 records -> out/merged.jsonl
 ```
 
-这里有一个容易中招的坑，`--collection` 专门为它而存在：`scholar-digest out/*.jsonl -o out/merged.jsonl` 跑第二遍时，`out/*.jsonl` 已经**包含上次写出的 merged.jsonl**。去重让它看起来没事，但「几个文件、多少重复」的统计从此没有意义，而一个只读回自己上次结果的库看起来永远是完整的。`--collection` 会把这一轮要写的文件（`-o` 与 `--since`）从输入里排除，上面那行 `11 records from 2 file(s)` 就是证据——目录里有三个 `.jsonl`，只读了两个。
+这里有一个容易中招的坑，`--collection` 专门为它而存在：`scholar-digest out/*.jsonl -o out/merged.jsonl` 跑第二遍时，`out/*.jsonl` 已经**包含上次写出的 merged.jsonl**。去重让它看起来没事，但「几个文件、多少重复」的统计从此没有意义，而一个只读回自己上次结果的库看起来永远是完整的。`--collection` 会把这一轮要写的文件（`-o` 与 `--since`）从输入里排除，上面那行 `11 records from 2 files` 就是证据——目录里有三个 `.jsonl`，只读了两个。
 
 `--since` 的比较口径和抓取时的去重完全一致（同一个 `record_key`），所以被引数、期刊、摘要变了仍算同一篇。三类结果各自的含义：
 
@@ -477,7 +477,7 @@ $ scholar-digest out/*.jsonl --stale 60 --refresh-list out/refresh.txt --refresh
   17 of those can be re-listed by id, one page load each; 0 would need their query re-run
     375d      3,205 citations  --cluster 16121581283781234537 Kgat: Knowledge graph attention network…
     475d        203 citations  --cluster 13239932653767095002 Crystal graph attention networks…
-[out] 5 id(s) to re-list -> out/refresh.txt (of 17 records older than 60 days)
+[out] 5 ids to re-list -> out/refresh.txt (of 17 records older than 60 days)
 [out]   $ scholar-crawler --clusters-file out/refresh.txt -p 1
 ```
 
@@ -536,7 +536,7 @@ $ scholar-digest out/clean.jsonl --audit
 ```
 [out] 40 new records (0 duplicates skipped) -> out/results.jsonl
 [run] 5 requests in 1m, 0 takeovers, 0 navigation retries, delay now 4–11s
-[audit] 1 field(s) parsed badly for a large share of this run's records — Scholar's layout may have changed
+[audit] 1 field parsed badly for a large share of this run's records — Scholar's layout may have changed
 [audit]   venue_looks_like_pages: 16 of 40 records (40%) — venue is a volume, issue or page range, so venue grouping is wrong
 [audit]       e.g. 521 (7553), 436-444 | Deep learning
 [audit] run --self-check to test the parser, or scholar-digest --audit for the details
@@ -636,7 +636,7 @@ state 文件是 JSON，会被人打开改、被脚本生成、被别的工具动
 
 但整份文件读不出来时**不是**这样处理：JSON 截断、或者顶层不是对象，会以 `state_unreadable` 停机（连 `--dry-run` 和 `--show-state` 也一样），因为「当作空的」等于悄悄把每个目标从头抓一遍——这个代价只有花掉的请求会告诉你。下一步就两条：修文件，或者把它挪走再跑（代价明确：里面记的目标从头开始）。
 
-接管日志的处理相反：它是**建议性**的（决定这次跑多慢、给人看历史），所以坏行只是跳过并计数（`[handoff] N line(s) ... could not be read`、`[pace] ... 没算上它们`），不会因为一份日志被手改过就不让你抓。`request_index: "soon"` 这类字段也照同一条规则读——以前它会让 `int()` 抛 `ValueError`，也就是一份被手改的日志能直接把抓取搞崩。
+接管日志的处理相反：它是**建议性**的（决定这次跑多慢、给人看历史），所以坏行只是跳过并计数（`[handoff] 2 lines ... could not be read`、`[pace] ... 没算上它们`），不会因为一份日志被手改过就不让你抓。`request_index: "soon"` 这类字段也照同一条规则读——以前它会让 `int()` 抛 `ValueError`，也就是一份被手改的日志能直接把抓取搞崩。
 
 ## 把常用参数写进文件：`--config`
 
@@ -656,13 +656,23 @@ scholar-crawler --config scholar.toml -q "另一个题目" --pages 1
 `--dry-run` 会说明每个值的来源，「为什么这次延迟是 8 秒」有据可查：
 
 ```
-[explain] settings file scholar.toml: 5 value(s) in effect
-[explain]   cooldown_every, max_delay, out, profile, query
-[explain]   min_delay came from the command line instead, which wins over the file
-[explain]   pages came from the command line instead, which wins over the file
+$ scholar-crawler --config scholar.toml --min-delay 8 --pages 1 --dry-run
+[explain] settings file scholar.toml: 12 values in effect
+[explain]   challenge_log = out/challenges.jsonl
+[explain]   cooldown_every = 5
+[explain]   max_delay = 20.0
+[explain]   out = out/gnn.jsonl
+[explain]   profile = .scholar-profile
+[explain]   query = graph attention networks, graph transformer
+[explain]   year_from = 2020
+[explain]   ...
+[explain]   min_delay came from the command line instead of the file's 8.0, which is how precedence works
+[explain]   pages came from the command line instead of the file's 2, which is how precedence works
 ```
 
-不带 `--dry-run` 的正常运行只打一行 `[config] 5 setting(s) from scholar.toml, 2 overridden by flags`。
+每行都带上值，而不只是键名：翻查一份文件的人要确认的是「这一次到底用了 8 还是 20」，键名他已经知道了。被命令行盖掉的那些也会把文件里的原值写出来——「优先级只有一条规则」只有在两个值都摆出来时才是可验证的。值按文件里的写法显示（`false` 不是 `False`，`out/gnn.jsonl` 不是 `PosixPath('out/gnn.jsonl')`），因为读者要认的是自己写的那份文件。
+
+不带 `--dry-run` 的正常运行只打一行 `[config] 12 settings from scholar.toml, 2 overridden by flags`。
 
 写法约定：
 
@@ -691,12 +701,12 @@ Python 3.11 起 `tomllib` 是标准库；3.10 需要 `tomli`（`pyproject.toml` 
 
 ```sh
 $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry-run
-[explain] crawling 1 listing(s)
+[explain] crawling 1 listing
 [explain]   target: graph attention networks
-[explain] up to 3 page(s) per listing, 10 records a page
+[explain] up to 3 pages per listing, 10 records a page
 [explain] waiting 4–11s between page loads
 [explain] pausing 90s every 10 loads, and giving up on a page after 45s
-[explain] on a challenge: the window is brought to you, waiting up to 600s for you to clear it, up to 5 time(s) this run
+[explain] on a challenge: the window is brought to you, waiting up to 600s for you to clear it, up to 5 times this run
 [explain] after each takeover the delays widen by x1.6
 [explain] the window sends Accept-Language en-US and reports its clock in America/Los_Angeles (matching the language)
 [explain] creating records: out/results.jsonl
@@ -905,7 +915,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 565 个用例，全部离线
+python3 -m pytest -q     # 566 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -928,7 +938,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 96 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 98 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

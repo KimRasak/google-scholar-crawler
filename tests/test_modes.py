@@ -58,7 +58,7 @@ def test_state_is_shown_and_forgotten_from_paths_alone(
 
     assert forget_state(state_path, "attention") == 0
     printed = capsys.readouterr().out
-    assert "dropped 1 target(s)" in printed
+    assert "dropped 1 target" in printed
     reread = StateStore(state_path)
     reread.load()
     assert [entry.signature for entry in reread.entries()] == ["author:abc [en]"]

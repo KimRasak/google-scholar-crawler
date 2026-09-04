@@ -9,6 +9,7 @@ that is the cheapest place to catch a mistake.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -113,7 +114,7 @@ def test_the_one_line_summary_counts_both_sides(tmp_path: Path) -> None:
     _, sources = _resolved(tmp_path, "min-delay = 8.0\npages = 5\n", ["-q", "x", "--pages", "1"])
     summary = sources.summary()
     assert summary is not None
-    assert summary.startswith("1 setting(s) from ")
+    assert summary.startswith("1 setting from ")
     assert summary.endswith("1 overridden by flags")
 
 
@@ -210,8 +211,9 @@ def test_a_run_driven_by_a_file_plans_the_file_values(
     path = _write(tmp_path, body)
     assert main(["--config", str(path), "--dry-run"]) == 0
     printed = capsys.readouterr().out
-    assert "4 value(s) in effect" in printed, "the mode lists every setting it took"
-    assert "max_delay, min_delay, pages, query" in printed
+    assert "4 values in effect" in printed, "the mode lists every setting it took"
+    for line in ("  max_delay = 21.0", "  min_delay = 9.0", "  pages = 2"):
+        assert line in printed, "a reader checking a file wants the value, not only the key"
     assert "[config]" not in printed, "the detail replaces the one-line summary"
     assert "graph attention" in printed
     assert "9–21s between requests" in printed
@@ -222,7 +224,26 @@ def test_a_broken_file_stops_the_command_with_a_usage_error(
 ) -> None:
     path = _write(tmp_path, "pages = true\n")
     assert main(["--config", str(path), "-q", "x", "--dry-run"]) == 1
-    assert "wants a value, not true/false" in capsys.readouterr().err
+    printed = capsys.readouterr().err
+    assert "wants a value, not true/false" in printed
+    assert f"edit {path}" in printed, "the file is what has to change, so the advice names it"
+    assert "--dry-run" not in printed.split("wants a value")[1], (
+        "advice a reader can see they already followed reads as if nobody were listening"
+    )
+
+
+def test_a_settings_file_a_real_run_refuses_says_how_to_check_the_fix_for_free(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _write(tmp_path, "pagez = 3\n")
+    assert main(["--config", str(path), "-q", "x", "--pages", "1", "--json"]) == 1
+    printed = capsys.readouterr()
+    document = json.loads(printed.out)
+    assert document["error"]["kind"] == "usage"
+    steps = document["error"]["next_steps"]
+    assert str(path) in steps[0], "--recipes would send them to commands they typed right"
+    assert "--dry-run" in steps[1]
+    assert "try: add --dry-run" in printed.err
 
 
 def test_explaining_a_run_lists_where_the_settings_came_from(
@@ -232,7 +253,9 @@ def test_explaining_a_run_lists_where_the_settings_came_from(
     assert main(["--config", str(path), "--pages", "1", "--dry-run"]) == 0
     printed = capsys.readouterr().out
     assert "[explain] settings file" in printed
-    assert "pages came from the command line instead" in printed
+    assert "pages came from the command line instead of the file's 4" in printed, (
+        "one rule of precedence is only checkable when both values are shown"
+    )
     assert "[config]" not in printed, "the detail replaces the one-line summary"
 
 

@@ -175,7 +175,7 @@ def test_the_digest_writes_a_refresh_file_the_crawler_can_read(
     assert main([str(source), "--stale", "30", "--refresh-list", str(destination)]) == 0
     printed = capsys.readouterr().out
     assert "older than 30 days" in printed
-    assert f"[out] 1 id(s) to re-list -> {destination}" in printed
+    assert f"[out] 1 id to re-list -> {destination}" in printed
 
     # The crawler reads that file back as targets, which is the point of the format.
     args = build_parser().parse_args(["--clusters-file", str(destination), "-p", "1"])

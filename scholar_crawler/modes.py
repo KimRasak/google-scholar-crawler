@@ -185,7 +185,7 @@ def show_takeovers(path: Path, limit: int = RECENT_TAKEOVERS) -> None:
     """
     takeovers, unreadable = ChallengeLog(path).read()
     if unreadable:
-        print(f"[handoff] {unreadable} line(s) in {path} could not be read", flush=True)
+        print(f"[handoff] {counted(unreadable, 'line')} in {path} could not be read", flush=True)
     if not takeovers:
         return
     kinds = Counter(entry.kind for entry in takeovers)
@@ -216,7 +216,7 @@ def forget_state(state_path: Path, pattern: str) -> int:
         if not kept:
             print(f"[state] {state_path} stores no target at all", flush=True)
         return 0
-    print(f"[state] dropped {len(removed)} target(s) from {state_path}", flush=True)
+    print(f"[state] dropped {counted(len(removed), 'target')} from {state_path}", flush=True)
     for entry in removed:
         print(f"[state]   {entry.describe()}", flush=True)
     print("[state] those targets will be crawled from the start again", flush=True)

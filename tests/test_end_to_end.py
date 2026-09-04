@@ -283,7 +283,7 @@ def test_a_run_described_entirely_by_a_settings_file_collects_the_same_records(
         assert main(["--config", str(settings)]) == 0
 
     printed = capsys.readouterr().out
-    assert f"[config] 12 setting(s) from {settings}" in printed
+    assert f"[config] 12 settings from {settings}" in printed
     assert "[out] 10 new records" in printed
     assert len(_records(tmp_path / "results.jsonl")) == 10
     assert site.offsets_requested() == [0]

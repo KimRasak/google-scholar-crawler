@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .models import record_key
-from .text import clip
+from .text import clip, counted
 from .urls import parse_cluster_id
 
 Record = dict[str, Any]
@@ -215,8 +215,8 @@ def render_network(graph: Graph, *, top: int = 10) -> list[str]:
     isolated = [key for key in collected if not inside.get(key) and not outside.get(key)]
     lines = [
         f"{len(collected)} records and {len(graph.stubs)} uncollected works, {len(graph.edges)} edges",
-        f"{len(components)} component(s), largest {len(components[0])} works; "
-        f"{len(isolated)} record(s) neither cite nor are cited here",
+        f"{counted(len(components), 'component')}, largest {len(components[0])} works; "
+        f"{counted(len(isolated), 'record')} with no edge either way",
     ]
     ranked = sorted(inside.items(), key=lambda item: item[1], reverse=True)[:top]
     if not ranked:

@@ -47,6 +47,7 @@ from .refresh import (
 )
 from .report import build_report
 from .storage import CSV_COLUMNS
+from .text import counted
 
 Record = dict[str, Any]
 
@@ -444,7 +445,7 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
         return _fail(
             "no_records",
             "no records found in the given files"
-            + (f"; {malformed} line(s) could not be read as JSON objects" if malformed else ""),
+            + (f"; {counted(malformed, 'line')} could not be read as JSON objects" if malformed else ""),
         )
 
     merged, duplicates = merge_records(records)
@@ -465,11 +466,11 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     delta = compare(earlier, kept) if earlier is not None else None
     if not args.quiet:
         print(
-            f"[in] {len(records)} records from {len(args.inputs)} file(s), "
+            f"[in] {len(records)} records from {counted(len(args.inputs), 'file')}, "
             f"{duplicates} duplicates merged, {len(merged) - len(kept)} filtered out"
             + (f", {malformed} unreadable lines" if malformed else "")
             + (
-                f", {repaired} record(s) had a field of the wrong type"
+                f", {counted(repaired, 'record')} had a field of the wrong type"
                 if repaired
                 else ""
             ),
@@ -504,8 +505,7 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         markdown = build_report(kept, title=args.report_title, top=args.report_top)
         args.report.write_text(markdown, encoding="utf-8")
-        counted = f"{len(kept)} record" + ("" if len(kept) == 1 else "s")
-        print(f"[out] report on {counted} -> {args.report}", flush=True)
+        print(f"[out] report on {counted(len(kept), 'record')} -> {args.report}", flush=True)
         written["report"] = args.report
     if args.refresh_list:
         days = args.stale if args.stale is not None else float(DEFAULT_STALE_DAYS)
@@ -515,7 +515,7 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
         args.refresh_list.write_text("\n".join(lines) + "\n", encoding="utf-8")
         ids = len(refresh_ids(aged, limit=args.refresh_limit))
         print(
-            f"[out] {ids} id(s) to re-list -> {args.refresh_list} "
+            f"[out] {counted(ids, 'id')} to re-list -> {args.refresh_list} "
             f"(of {len(aged)} records older than {days:g} days)",
             flush=True,
         )

@@ -23,6 +23,7 @@ from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing, delay_span
 from .expand import FollowPolicy
 from .models import AuthorRequest, SearchRequest
 from .storage import ChallengeLog, StateStore, Written, written_paths
+from .text import counted
 from .urls import SCHOLAR_HOST
 
 
@@ -62,9 +63,9 @@ def _targets(listings: list[SearchRequest], authors: list[AuthorRequest]) -> lis
     """
     parts = []
     if listings:
-        parts.append(f"{len(listings)} listing(s)")
+        parts.append(counted(len(listings), "listing"))
     if authors:
-        parts.append(f"{len(authors)} author profile(s)")
+        parts.append(counted(len(authors), "author profile"))
     lines = [f"crawling {' and '.join(parts)}"]
     lines.extend(f"  target: {request.label}" for request in listings)
     lines.extend(f"  target: author {request.user_id}" for request in authors)
@@ -81,7 +82,7 @@ def _paging(args: argparse.Namespace, listings: list[SearchRequest]) -> list[str
     lines = []
     if listings:
         cap = f", stopping at {args.max_results} records each" if args.max_results else ""
-        lines.append(f"up to {args.pages} page(s) per listing, 10 records a page{cap}")
+        lines.append(f"up to {counted(args.pages, 'page')} per listing, 10 records a page{cap}")
     if args.start:
         lines.append(f"starting at result offset {args.start}")
     return lines
@@ -119,7 +120,7 @@ def _expansion(follow: FollowPolicy, seeds: int) -> list[str]:
     if not follow.enabled:
         return []
     return [
-        f"then following citations {follow.depth} level(s) deep, expanding the "
+        f"then following citations {counted(follow.depth, 'level')} deep, expanding the "
         f"{follow.breadth} most-cited records per level: up to {follow.estimate(seeds)} listings"
     ]
 
@@ -150,7 +151,7 @@ def _takeover(args: argparse.Namespace) -> list[str]:
     waiting = "waiting forever" if not args.handoff_timeout else f"waiting up to {args.handoff_timeout:g}s"
     return [
         f"on a challenge: the window is brought to you, {waiting} for you to clear it, "
-        f"up to {args.max_handoffs} time(s) this run",
+        f"up to {counted(args.max_handoffs, 'time')} this run",
         f"after each takeover the delays widen by x{args.backoff_factor:g}",
     ]
 
@@ -254,7 +255,7 @@ def _resume_concerns(
         return [
             Concern(
                 Level.WARN,
-                f"--start {args.start} is ignored for the {len(stored)} target(s) that have a "
+                f"--start {args.start} is ignored for the {counted(len(stored), 'target')} that have a "
                 "stored cursor; --resume wins",
             )
         ]
@@ -287,7 +288,7 @@ def _pacing_concerns(args: argparse.Namespace, pacing: Pacing) -> list[Concern]:
             concerns.append(
                 Concern(
                     Level.WARN,
-                    f"--no-learn-from-history ignores {len(takeovers)} recorded takeover(s) that "
+                    f"--no-learn-from-history ignores {counted(len(takeovers), 'recorded takeover')} that "
                     "would otherwise start this run slower",
                 )
             )
