@@ -45,8 +45,10 @@ from .storage import (
     DEFAULT_STATE_PATH,
     ChallengeLog,
     StateStore,
+    Written,
     profiles_beside,
     unwritable,
+    written_paths,
 )
 from .urls import SCHOLAR_HOST, parse_cluster_id, parse_user_id
 
@@ -742,6 +744,23 @@ def _ignored_progress(
     return report_ignored_progress(state, targets, resume=args.resume)
 
 
+def _written_of(args: argparse.Namespace) -> list[Written]:
+    """Describe every path this command writes.
+
+    :param args: parsed arguments.
+    :returns: the paths, as :func:`~scholar_crawler.storage.written_paths` orders them.
+    """
+    return written_paths(
+        out=args.out,
+        state=args.state,
+        challenge_log=args.challenge_log,
+        profile=args.profile,
+        bibtex=args.bibtex,
+        dump_html=args.dump_html,
+        authors=bool(args.author),
+    )
+
+
 def _written_paths(args: argparse.Namespace) -> list[tuple[str, Path, str]]:
     """List every path this command writes, with the flag that names it.
 
@@ -751,17 +770,9 @@ def _written_paths(args: argparse.Namespace) -> list[tuple[str, Path, str]]:
     :param args: parsed arguments.
     :returns: flag, path, and whether the path is a ``file`` or a ``dir``, in reading order.
     """
-    written: list[tuple[str, Path, str]] = [
-        ("--out", args.out, "file"),
-        ("--state", args.state, "file"),
-        ("--challenge-log", args.challenge_log, "file"),
-        ("--profile", args.profile, "dir"),
+    return [
+        (entry.flag, entry.path, entry.kind) for entry in _written_of(args) if entry.flag
     ]
-    if args.bibtex is not None:
-        written.append(("--bibtex", args.bibtex, "file"))
-    if args.dump_html is not None:
-        written.append(("--dump-html", args.dump_html, "dir"))
-    return written
 
 
 def _unwritable_output(args: argparse.Namespace) -> Diagnosis | None:

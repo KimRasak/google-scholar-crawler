@@ -111,13 +111,13 @@ def test_the_doctor_checks_the_paths_this_command_would_write(tmp_path: Path) ->
     written = _written_paths(args)  # type: ignore[arg-type]
     assert [flag for flag, _path, _kind in written] == [
         "--out",
+        "--bibtex",
         "--state",
         "--challenge-log",
-        "--profile",
-        "--bibtex",
         "--dump-html",
+        "--profile",
     ]
-    assert [kind for _flag, _path, kind in written] == ["file", "file", "file", "dir", "file", "dir"]
+    assert [kind for _flag, _path, kind in written] == ["file", "file", "file", "file", "dir", "dir"]
     assert all(str(tmp_path) in str(path) for _flag, path, _kind in written)
 
     # The optional exports are absent unless asked for, so a plain run is not told to check them.

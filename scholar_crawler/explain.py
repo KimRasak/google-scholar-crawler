@@ -22,7 +22,7 @@ from .config import Sources
 from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing, delay_span
 from .expand import FollowPolicy
 from .models import AuthorRequest, SearchRequest
-from .storage import ChallengeLog, StateStore, profiles_beside
+from .storage import ChallengeLog, StateStore, Written, written_paths
 from .urls import SCHOLAR_HOST
 
 
@@ -172,26 +172,34 @@ def _browser(options: BrowserOptions, given: str | None) -> list[str]:
     ]
 
 
+def _written(args: argparse.Namespace) -> list[Written]:
+    """Describe every path this command writes.
+
+    :param args: parsed arguments.
+    :returns: the paths, as :func:`~scholar_crawler.storage.written_paths` orders them.
+    """
+    return written_paths(
+        out=args.out,
+        state=args.state,
+        challenge_log=args.challenge_log,
+        profile=args.profile,
+        bibtex=args.bibtex,
+        dump_html=args.dump_html,
+        authors=bool(args.author),
+    )
+
+
 def _files(args: argparse.Namespace) -> list[str]:
     """Describe every file the run will touch.
 
     :param args: parsed arguments.
     :returns: one line per file, saying whether it is created or appended to.
     """
-    planned: list[tuple[str, Path | None]] = [
-        ("records", args.out),
-        ("bibtex", args.bibtex),
-        ("author profiles", profiles_beside(args.out) if args.author else None),
-        ("resume state", args.state),
-        ("takeover log", args.challenge_log),
-        ("page dumps", args.dump_html),
-    ]
     lines = []
-    for label, path in planned:
-        if path is None:
-            continue
-        verb = "appending to" if path.exists() else "creating"
-        lines.append(f"{verb} {label}: {path}")
+    for entry in _written(args):
+        kept = "reusing" if entry.kind == "dir" else "appending to"
+        verb = kept if entry.path.exists() else "creating"
+        lines.append(f"{verb} {entry.label}: {entry.path}")
     return lines
 
 
@@ -201,23 +209,18 @@ def _output_collisions(args: argparse.Namespace) -> list[Concern]:
     :param args: parsed arguments.
     :returns: one concern per collision.
     """
-    named = {
-        "--out": args.out,
-        "--bibtex": args.bibtex,
-        "--state": args.state,
-        "--challenge-log": args.challenge_log,
-        "the profile file beside --out": profiles_beside(args.out) if args.author else None,
-    }
     seen: dict[Path, str] = {}
     concerns = []
-    for flag, path in named.items():
-        if path is None:
-            continue
-        if path in seen:
+    for entry in _written(args):
+        name = entry.flag or f"the {entry.label.rstrip('s')} file beside --out"
+        if entry.path in seen:
             concerns.append(
-                Concern(Level.WARN, f"{flag} and {seen[path]} write to the same file: {path}")
+                Concern(
+                    Level.WARN,
+                    f"{name} and {seen[entry.path]} write to the same file: {entry.path}",
+                )
             )
-        seen[path] = flag
+        seen[entry.path] = name
     return concerns
 
 

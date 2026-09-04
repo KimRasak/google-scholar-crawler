@@ -206,6 +206,7 @@ class ScholarCrawler:
         self._max_handoffs = max_handoffs
         self._dump_dir = dump_dir
         self._challenge_log = challenge_log
+        self._log_path = challenge_log.path if challenge_log is not None else None
         self._started = time.monotonic()
         self.handoff_count = 0
         self.consecutive_handoffs = 0
@@ -447,7 +448,7 @@ class ScholarCrawler:
             self._humanize()
             self._dump(f"page-{dump_tag}")
             return self._page.content()
-        raise CrawlFailure(diagnose_challenge_loop(url, 3))
+        raise CrawlFailure(diagnose_challenge_loop(url, 3, log=self._log_path))
 
     def _hand_over(self, challenge: Challenge, *, dump_tag: str, target: str) -> None:
         """Hand the browser to the human, recording what happened either way.
@@ -527,7 +528,7 @@ class ScholarCrawler:
                 url, wait_until="domcontentloaded", timeout=self._pacing.nav_timeout * 1000
             )
         except (PlaywrightTimeout, PlaywrightError) as error:
-            diagnosis = diagnose_navigation(error, url)
+            diagnosis = diagnose_navigation(error, url, log=self._log_path)
             if attempt >= 3 or not diagnosis.retry_worthwhile:
                 raise CrawlFailure(diagnosis) from error
             self.navigation_retries += 1

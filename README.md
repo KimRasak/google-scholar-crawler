@@ -695,6 +695,7 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry
 [explain] creating bibtex: out/refs.bib
 [explain] creating resume state: out/state.json
 [explain] creating takeover log: out/challenges.jsonl
+[explain] creating browser profile: .scholar-profile
 [plan] graph attention networks -> https://scholar.google.com/scholar?hl=en&q=graph+attention+networks&as_vis=0&as_sdt=0%2C5
 [plan] seed targets: 3 page loads, up to 30 records
 [plan] bibtex export: up to 60 page loads
@@ -702,6 +703,8 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry
 [plan] estimated 20 min at 4–11s between requests plus 6 cooldowns of 90s
 [plan] nothing was requested; drop --dry-run to start
 ```
+
+那份文件清单、运行前的可写性检查、以及「两个参数指向同一个文件」的告警，来自**同一份清单**（`storage.written_paths`）：说要写哪些、检查哪些、以及查重哪些，永远是同一批路径。目录用「reusing / creating」而不是「appending to」——目录不是拿来追加的；profile 那行还顺带告诉你这次的 cookie 从哪儿来。
 
 会被点出来的组合（`warn` 是「这个参数不做你以为的事」，`note` 是「后果值得知道」）：
 
@@ -894,7 +897,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 558 个用例，全部离线
+python3 -m pytest -q     # 559 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -917,7 +920,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 89 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 91 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```
@@ -984,7 +987,7 @@ scholar_crawler/
   report.py     离线综述：可读的 Markdown 报告
   audit.py      离线体检：字段可疑值与缺失率
   bibsynth.py   离线书目：由已存字段拼出 BibTeX
-  storage.py    JSONL 写入、作者主页记录、BibTeX 文件、断点状态
+  storage.py    JSONL 写入、作者主页记录、BibTeX 文件、断点状态；以及「一次运行会写哪些路径」这份唯一清单与路径可写性判断
   config.py     TOML 设置文件：读取校验、与命令行的优先级、来源追溯
   machine.py    给程序看的一份 JSON 文档：字段固定、失败词表、stdout 只放它
   text.py       终端列宽内的截断：截了就标出来

@@ -146,11 +146,20 @@ def test_an_unreadable_page_points_at_the_parser_and_the_saved_copy(tmp_path: Pa
 
 
 def test_a_page_that_keeps_challenging_is_reported_as_being_blocked() -> None:
-    diagnosis = diagnose_challenge_loop(URL, 3)
+    diagnosis = diagnose_challenge_loop(URL, 3, log=Path("/data/takeovers.jsonl"))
     assert diagnosis.failure is Failure.RATE_LIMITED
     assert "3 times in a row" in diagnosis.what
     assert "being blocked rather than merely checked" in diagnosis.what
-    assert any("challenges.jsonl" in step for step in diagnosis.next_steps)
+    # The advice names the log this run writes, not the default someone else would have.
+    assert any("/data/takeovers.jsonl" in step for step in diagnosis.next_steps)
+
+    dropped = diagnose_navigation(
+        PlaywrightError("net::ERR_CONNECTION_RESET"), URL, log=Path("/data/takeovers.jsonl")
+    )
+    assert any("/data/takeovers.jsonl" in step for step in dropped.next_steps)
+
+    # Without a log there is no file to name, and the flag that would make one is named instead.
+    assert any("--challenge-log" in step for step in diagnose_challenge_loop(URL, 3).next_steps)
 
 
 def test_only_failures_a_retry_could_survive_are_retried() -> None:

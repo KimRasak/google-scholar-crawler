@@ -699,6 +699,7 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry
 [explain] creating bibtex: out/refs.bib
 [explain] creating resume state: out/state.json
 [explain] creating takeover log: out/challenges.jsonl
+[explain] creating browser profile: .scholar-profile
 [plan] graph attention networks -> https://scholar.google.com/scholar?hl=en&q=graph+attention+networks&as_vis=0&as_sdt=0%2C5
 [plan] seed targets: 3 page loads, up to 30 records
 [plan] bibtex export: up to 60 page loads
@@ -706,6 +707,8 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry
 [plan] estimated 20 min at 4–11s between requests plus 6 cooldowns of 90s
 [plan] nothing was requested; drop --dry-run to start
 ```
+
+That file list, the writability check a run makes before spending a request, and the warning about two flags pointed at one file all read from **one list** (`storage.written_paths`): what a run says it writes, what gets checked, and what gets compared are the same paths. Directories say "reusing" or "creating" rather than "appending to", because a directory is not appended to; the profile line also tells you where this run's cookies come from.
 
 What it catches (`warn` means a flag does not do what it looks like; `note` means a consequence worth knowing):
 
@@ -897,7 +900,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 558 tests, fully offline
+python3 -m pytest -q     # 559 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -924,7 +927,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 89 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 91 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
@@ -1011,7 +1014,7 @@ scholar_crawler/
   report.py     offline overview: the readable Markdown report
   audit.py      offline audit: implausible and missing fields
   bibsynth.py   offline bibliography: BibTeX from stored fields
-  storage.py    JSONL writer, author profile records, the .bib file, resume state
+  storage.py    JSONL writer, author profile records, the .bib file, resume state; the one list of paths a run writes, and whether each can be written
   config.py     TOML settings files: reading, validation, precedence, provenance
   machine.py    the JSON document for programs: fixed keys, failure vocabulary, stdout discipline
   text.py       fitting text to a terminal column, marking every cut

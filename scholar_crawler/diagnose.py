@@ -154,7 +154,6 @@ _NETWORK_ADVICE: dict[Failure, tuple[str, tuple[str, ...]]] = {
         (
             "raise --min-delay and --max-delay and rerun with --resume",
             "open Scholar by hand in the same profile once, then rerun",
-            "check out/challenges.jsonl for takeovers just before this",
         ),
     ),
     Failure.CERTIFICATE: (
@@ -183,11 +182,23 @@ _NETWORK_ADVICE: dict[Failure, tuple[str, tuple[str, ...]]] = {
 """What each network failure means, and what to do about it."""
 
 
-def diagnose_navigation(error: Exception, url: str) -> Diagnosis:
+def _about_takeovers(log: Path | None, why: str) -> str:
+    """Point the reader at the takeover log this run actually writes.
+
+    :param log: the ``--challenge-log`` path, or None when the caller keeps no log.
+    :param why: what reading it would tell them.
+    :returns: one next step naming that file.
+    """
+    named = log if log is not None else "the takeover log named by --challenge-log"
+    return f"check {named} {why}"
+
+
+def diagnose_navigation(error: Exception, url: str, *, log: Path | None = None) -> Diagnosis:
     """Explain a navigation that never completed.
 
     :param error: the Playwright error that ended the attempt.
     :param url: the URL being loaded.
+    :param log: the takeover log this run writes, named in the advice when it is relevant.
     :returns: the diagnosis for this failure.
     """
     text = str(error)
@@ -195,6 +206,9 @@ def diagnose_navigation(error: Exception, url: str) -> Diagnosis:
         if needle not in text:
             continue
         what, steps = _NETWORK_ADVICE[failure]
+        if failure is Failure.RESET:
+            # Dropped mid-request is what a challenged address looks like from the network side.
+            steps = (*steps, _about_takeovers(log, "for takeovers just before this"))
         return Diagnosis(
             failure=failure,
             what=f"{what} ({url})",
@@ -381,11 +395,12 @@ def diagnose_page(url: str, *, status: int | None, title: str, dump: Path | None
     )
 
 
-def diagnose_challenge_loop(url: str, attempts: int) -> Diagnosis:
+def diagnose_challenge_loop(url: str, attempts: int, *, log: Path | None = None) -> Diagnosis:
     """Explain a page that keeps answering with a challenge after every takeover.
 
     :param url: the URL that never came back with content.
     :param attempts: how many times it was tried.
+    :param log: the takeover log this run writes, named in the advice.
     :returns: the diagnosis for this failure.
     """
     return Diagnosis(
@@ -397,6 +412,6 @@ def diagnose_challenge_loop(url: str, attempts: int) -> Diagnosis:
         next_steps=(
             "stop for a while before rerunning with --resume; the profile keeps the cleared cookies",
             "raise --min-delay and --max-delay, and lower --pages per run",
-            "check out/challenges.jsonl: back-to-back takeovers mean the rhythm is still too fast",
+            _about_takeovers(log, "as well: back-to-back takeovers mean the rhythm is still too fast"),
         ),
     )

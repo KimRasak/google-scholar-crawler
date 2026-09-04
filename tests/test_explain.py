@@ -13,7 +13,7 @@ from scholar_crawler.cli import build_parser, build_targets, main  # noqa: E402
 from scholar_crawler.crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY  # noqa: E402
 from scholar_crawler.expand import FollowPolicy  # noqa: E402
 from scholar_crawler.explain import Level, concerns_of, explain  # noqa: E402
-from scholar_crawler.storage import StateStore  # noqa: E402
+from scholar_crawler.storage import StateStore, written_paths  # noqa: E402
 
 
 def _explained(argv: list[str]) -> list[str]:
@@ -71,11 +71,47 @@ def test_a_plain_run_is_described_without_any_concern() -> None:
 def test_the_files_a_run_will_touch_are_named_with_create_or_append(tmp_path: Path) -> None:
     (tmp_path / "out").mkdir()
     (tmp_path / "out" / "results.jsonl").write_text("", encoding="utf-8")
-    lines = _explained(["-q", "x", "--bibtex", "out/x.bib"])
+    (tmp_path / "kept-profile").mkdir()
+    lines = _explained(["-q", "x", "--bibtex", "out/x.bib", "--profile", "kept-profile"])
     assert "appending to records: out/results.jsonl" in lines
     assert "creating bibtex: out/x.bib" in lines
     assert "creating resume state: out/state.json" in lines
     assert not [line for line in lines if "author profiles" in line]  # no --author was given
+    # A directory is reused, not appended to, and the profile is the one thing carried between
+    # runs, so a run that inherits cleared cookies says which directory they came from.
+    assert "reusing browser profile: kept-profile" in lines
+    assert "creating browser profile: fresh" in _explained(["-q", "x", "--profile", "fresh"])
+
+
+def test_every_path_the_run_writes_is_the_one_it_checks_and_the_one_it_names(tmp_path: Path) -> None:
+    # Three questions used to be answered by three lists: what a run touches, what to check
+    # before spending a request, and which two flags were pointed at one path.
+    from scholar_crawler.cli import _written_paths
+
+    argv = [
+        "-q",
+        "x",
+        "--author",
+        "kukA0LcAAAAJ",
+        "--bibtex",
+        "out/refs.bib",
+        "--dump-html",
+        "dumps",
+    ]
+    named = _explained(argv)
+    args = build_parser().parse_args(argv)
+    checked = {str(path) for _flag, path, _kind in _written_paths(args)}
+    for entry in written_paths(
+        out=args.out,
+        state=args.state,
+        challenge_log=args.challenge_log,
+        profile=args.profile,
+        bibtex=args.bibtex,
+        dump_html=args.dump_html,
+        authors=True,
+    ):
+        assert any(str(entry.path) in line and entry.label in line for line in named), entry.label
+        assert entry.flag == "" or str(entry.path) in checked, entry.flag
 
 
 def test_filters_and_expansion_are_spelled_out() -> None:

@@ -240,6 +240,60 @@ def profiles_beside(records: Path) -> Path:
     return records.with_suffix(".profiles.jsonl")
 
 
+@dataclass(frozen=True, slots=True)
+class Written:
+    """One path a command writes.
+
+    :param label: what it holds, for a reader being told what a run will touch.
+    :param flag: the flag naming it, empty for the profile file derived from ``--out``.
+    :param path: the path itself.
+    :param kind: ``file`` or ``dir``.
+    """
+
+    label: str
+    flag: str
+    path: Path
+    kind: str
+
+
+def written_paths(
+    *,
+    out: Path,
+    state: Path,
+    challenge_log: Path,
+    profile: Path,
+    bibtex: Path | None = None,
+    dump_html: Path | None = None,
+    authors: bool = False,
+) -> list[Written]:
+    """List every path a command writes, in the order a reader wants to see them.
+
+    One list answers three questions that must not disagree: what to tell the reader a run will
+    touch, which paths to check before spending a request, and which two flags were pointed at
+    one path.
+
+    :param out: the ``--out`` records file.
+    :param state: the ``--state`` resume file.
+    :param challenge_log: the ``--challenge-log`` takeover log.
+    :param profile: the ``--profile`` browser profile directory.
+    :param bibtex: the ``--bibtex`` export, when asked for.
+    :param dump_html: the ``--dump-html`` directory, when asked for.
+    :param authors: True when the run crawls author profiles, which writes a file beside ``out``.
+    :returns: one entry per path this command writes.
+    """
+    written = [Written("records", "--out", out, "file")]
+    if bibtex is not None:
+        written.append(Written("bibtex", "--bibtex", bibtex, "file"))
+    if authors:
+        written.append(Written("author profiles", "", profiles_beside(out), "file"))
+    written.append(Written("resume state", "--state", state, "file"))
+    written.append(Written("takeover log", "--challenge-log", challenge_log, "file"))
+    if dump_html is not None:
+        written.append(Written("page dumps", "--dump-html", dump_html, "dir"))
+    written.append(Written("browser profile", "--profile", profile, "dir"))
+    return written
+
+
 @dataclass(slots=True)
 class ProfileStore:
     """Author profiles kept as one JSONL record per profile, newest values winning.

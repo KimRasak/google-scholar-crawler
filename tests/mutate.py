@@ -302,6 +302,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "one list names every path a run writes",
+        "scholar_crawler/storage.py",
+        '    written.append(Written("browser profile", "--profile", profile, "dir"))',
+        "    pass",
+        "tests/test_explain.py tests/test_cli.py",
+    ),
+    Mutation(
+        "the takeover log named is the one being written",
+        "scholar_crawler/diagnose.py",
+        '    named = log if log is not None else "the takeover log named by --challenge-log"',
+        '    named = "out/challenges.jsonl"',
+        "tests/test_diagnose.py",
+    ),
+    Mutation(
         "the doctor checks the paths this command writes",
         "scholar_crawler/cli.py",
         "            profile=args.profile, written=_written_paths(args), channel=args.channel or None",
