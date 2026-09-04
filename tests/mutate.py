@@ -184,9 +184,30 @@ MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "dedup identity prefers the card id",
         "scholar_crawler/models.py",
-        "return self.cluster_id or f\"{self.title}::{self.link or ''}\"",
-        "return f\"{self.title}::{self.link or ''}\"",
+        "    return cluster_id or f\"{title}::{link or ''}\"",
+        "    return f\"{title}::{link or ''}\"",
         OFFLINE,
+    ),
+    Mutation(
+        "a number stored as text is read as a number",
+        "scholar_crawler/models.py",
+        '            fixed[field_name] = int(value.strip())',
+        "            pass",
+        "tests/test_digest.py",
+    ),
+    Mutation(
+        "a field of the wrong type does not reach the numbers",
+        "scholar_crawler/models.py",
+        "        else:\n            fixed[field_name] = None",
+        "        else:\n            pass",
+        "tests/test_digest.py",
+    ),
+    Mutation(
+        "counts and groups collapse one venue spelled two ways",
+        "scholar_crawler/analysis.py",
+        "            display, members = grouped.setdefault(label.casefold(), (label, []))",
+        "            display, members = grouped.setdefault(label, (label, []))",
+        "tests/test_analysis.py tests/test_report.py",
     ),
     Mutation(
         "merging keeps the higher citation count",

@@ -30,6 +30,8 @@ class Summary:
     :param unknown_year: records without a year.
     :param levels: record count per citation-graph level.
     :param venues: the most common venues with their counts.
+    :param venue_count: how many distinct venues the records name.
+    :param author_count: how many distinct first authors the records name.
     :param top: the most-cited records as (citations, year, title).
     """
 
@@ -41,6 +43,8 @@ class Summary:
     unknown_year: int = 0
     levels: list[tuple[int, int]] = field(default_factory=list)
     venues: list[tuple[str, int]] = field(default_factory=list)
+    venue_count: int = 0
+    author_count: int = 0
     top: list[tuple[int, int | None, str]] = field(default_factory=list)
 
 
@@ -54,11 +58,7 @@ def summarize(records: list[Record], *, top: int = 5, venues: int = 5) -> Summar
     """
     years = Counter(record["year"] for record in records if record.get("year"))
     levels = Counter(int((record.get("extra") or {}).get("follow_depth", 0)) for record in records)
-    venue_counts = Counter(
-        normalize_venue(record["venue"])
-        for record in records
-        if record.get("venue") and not record.get("citation_only")
-    )
+    by_venue = buckets(records, "venue")
     ranked = sorted(records, key=lambda record: record.get("cited_by_count") or 0, reverse=True)
     return Summary(
         records=len(records),
@@ -68,7 +68,14 @@ def summarize(records: list[Record], *, top: int = 5, venues: int = 5) -> Summar
         years=sorted(years.items(), reverse=True),
         unknown_year=sum(1 for record in records if not record.get("year")),
         levels=sorted(levels.items()),
-        venues=venue_counts.most_common(venues),
+        venues=[
+            (label, len(members))
+            for label, members in sorted(
+                by_venue.values(), key=lambda bucket: (-len(bucket[1]), bucket[0])
+            )
+        ][:venues],
+        venue_count=len(by_venue),
+        author_count=len(buckets(records, "author")),
         top=[
             (record.get("cited_by_count") or 0, record.get("year"), record.get("title") or "")
             for record in ranked[:top]
@@ -166,6 +173,27 @@ def group_label(record: Record, key: str) -> str | None:
     raise ValueError(f"unknown group key {key!r}; choose from {', '.join(GROUP_KEYS)}")
 
 
+def buckets(records: list[Record], key: str) -> dict[str, tuple[str, list[Record]]]:
+    """Group records by one label, case-insensitively.
+
+    Scholar writes "nature" and "Nature" for one journal, and one spelling of an author for
+    another, so every count of distinct venues or authors — printed, grouped or reported — reads
+    the same buckets, or one document would disagree with itself.
+
+    :param records: records to group.
+    :param key: one of :data:`GROUP_KEYS`.
+    :returns: casefolded label to the first spelling seen and the records carrying it.
+    :raises ValueError: when ``key`` is not a known dimension.
+    """
+    grouped: dict[str, tuple[str, list[Record]]] = {}
+    for record in records:
+        label = group_label(record, key)
+        if label:
+            display, members = grouped.setdefault(label.casefold(), (label, []))
+            members.append(record)
+    return grouped
+
+
 @dataclass(slots=True)
 class Group:
     """Records sharing one label, with the numbers worth comparing across groups.
@@ -196,16 +224,8 @@ def group_records(records: list[Record], key: str) -> list[Group]:
     :returns: the groups, ordered by total citations then record count.
     :raises ValueError: when ``key`` is not a known dimension.
     """
-    # Grouping is case-insensitive — Scholar writes "nature" and "Nature" for one journal —
-    # while the first spelling seen is kept for display.
-    buckets: dict[str, tuple[str, list[Record]]] = {}
-    for record in records:
-        label = group_label(record, key)
-        if label:
-            display, members = buckets.setdefault(label.casefold(), (label, []))
-            members.append(record)
     groups = []
-    for label, members in buckets.values():
+    for label, members in buckets(records, key).values():
         counts = [record.get("cited_by_count") or 0 for record in members]
         years = sorted(record["year"] for record in members if record.get("year"))
         best = max(members, key=lambda record: record.get("cited_by_count") or 0)

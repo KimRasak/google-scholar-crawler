@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from .analysis import Group, first_author, group_records, normalize_venue, summarize
+from .analysis import Group, Summary, group_records, summarize
 from .audit import audit_records
 
 Record = dict[str, Any]
@@ -73,14 +73,13 @@ def _link(record: Record, *, limit: int = 120) -> str:
     return f"[{title}](<{link}>)" if isinstance(link, str) and link else title
 
 
-def _years(records: list[Record]) -> list[tuple[int, int]]:
-    """Count records per publication year, oldest first.
+def _years(summary: Summary) -> list[tuple[int, int]]:
+    """Read the per-year record counts oldest first.
 
-    :param records: records to count.
+    :param summary: the aggregate view of the same records.
     :returns: ``(year, count)`` pairs.
     """
-    counter = Counter(record["year"] for record in records if isinstance(record.get("year"), int))
-    return sorted(counter.items())
+    return sorted(summary.years)
 
 
 def _span(group: Group) -> str:
@@ -110,26 +109,20 @@ def _table(header: tuple[str, ...], rows: list[tuple[str, ...]]) -> list[str]:
     return lines
 
 
-def _at_a_glance(records: list[Record]) -> list[str]:
+def _at_a_glance(summary: Summary) -> list[str]:
     """Summarize the whole collection in a few bullets.
 
-    :param records: merged records.
+    :param summary: the aggregate view of the merged records.
     :returns: the section's lines.
     """
-    summary = summarize(records, top=0, venues=0)
-    years = _years(records)
+    years = _years(summary)
     span = f"{years[0][0]}–{years[-1][0]}" if years else "unknown"
-    venues = {
-        normalize_venue(record["venue"])
-        for record in records
-        if record.get("venue") and not record.get("citation_only")
-    }
-    authors = {first_author(record) for record in records} - {None}
     return [
         f"- **{_counted(summary.records, 'record')}**, {summary.citations:,} citations in total",
         f"- published **{span}**"
         + (f", {summary.unknown_year} without a year" if summary.unknown_year else ""),
-        f"- **{_counted(len(venues), 'venue')}**, **{_counted(len(authors), 'first author')}**",
+        f"- **{_counted(summary.venue_count, 'venue')}**, "
+        f"**{_counted(summary.author_count, 'first author')}**",
         f"- {_counted(summary.with_bibtex, 'record')} carry a BibTeX key, "
         f"{summary.citation_only} "
         + ("is" if summary.citation_only == 1 else "are")
@@ -180,13 +173,13 @@ def _by_group(records: list[Record], key: str, limit: int, header: str) -> list[
     return _table((header, "Records", "Citations", "Median", "Years", "Most cited"), rows)
 
 
-def _by_year(records: list[Record]) -> list[str]:
+def _by_year(summary: Summary) -> list[str]:
     """Draw the per-year record counts as text bars.
 
-    :param records: merged records.
+    :param summary: the aggregate view of the merged records.
     :returns: the section's lines.
     """
-    years = _years(records)
+    years = _years(summary)
     if not years:
         return []
     busiest = max(count for _year, count in years)
@@ -262,12 +255,13 @@ def build_report(
     :param groups: how many venues and authors to list.
     :returns: the report as Markdown text ending in a newline.
     """
+    summary = summarize(records, top=0, venues=0)
     sections: list[tuple[str, list[str]]] = [
-        ("At a glance", _at_a_glance(records)),
+        ("At a glance", _at_a_glance(summary)),
         (f"Most cited works (top {min(top, len(records))})", _most_cited(records, top)),
         ("Where this work is published", _by_group(records, "venue", groups, "Venue")),
         ("Who wrote it", _by_group(records, "author", groups, "First author")),
-        ("When it was published", _by_year(records)),
+        ("When it was published", _by_year(summary)),
         ("What was searched", _queries(records)),
         ("How much of this to trust", _data_quality(records)),
     ]

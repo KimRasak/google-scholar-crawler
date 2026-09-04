@@ -182,19 +182,72 @@ class ScholarResult:
 
     def dedup_key(self) -> str:
         """Identity used to drop repeats across pages and reruns."""
-        return self.cluster_id or f"{self.title}::{self.link or ''}"
+        return work_key(cluster_id=self.cluster_id, title=self.title, link=self.link)
+
+
+def work_key(*, cluster_id: str | None, title: str | None, link: str | None) -> str:
+    """Name the one work these fields describe.
+
+    Every place that decides whether two observations are the same work — the crawler's sink
+    both while writing and when reading a file back, merging a collection, building a graph —
+    reads this one rule, or a rerun would count as new what a merge counts as a repeat.
+
+    :param cluster_id: Scholar's card id, when the page carried one.
+    :param title: the record title.
+    :param link: the record link.
+    :returns: Scholar's card id when present, otherwise title and link.
+    """
+    return cluster_id or f"{title}::{link or ''}"
+
+
+NUMBER_FIELDS = ("year", "cited_by_count", "versions_count", "position", "page_start")
+"""Record fields every offline tool sorts, sums or compares as numbers."""
+
+
+def readable_record(record: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Read a stored record's typed fields as their type, or as absent.
+
+    A records file is an ordinary JSONL file that people edit, generate and merge by hand, so a
+    year can arrive as ``"2019"`` and a count as ``null``. Every field this tool sorts or sums is
+    therefore read here once: a number that is written as a number stays, a number written as
+    digits becomes one, and anything else is read as absent — which is what the field means when
+    Scholar did not show it. Reading a whole record as unreadable would throw away the title and
+    link over one bad field.
+
+    :param record: a record as it was stored.
+    :returns: the record to use, and whether any field had to be read as something else.
+    """
+    fixed = dict(record)
+    for field_name in NUMBER_FIELDS:
+        value = fixed.get(field_name)
+        if value is None or isinstance(value, int) and not isinstance(value, bool):
+            continue
+        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            fixed[field_name] = int(value.strip())
+        else:
+            fixed[field_name] = None
+    if not isinstance(fixed.get("extra"), dict | None):
+        fixed["extra"] = None
+    for field_name in ("authors", "byline"):
+        value = fixed.get(field_name)
+        if value is None or isinstance(value, str):
+            continue
+        # A list of names is what another tool would write for a byline, and it is still a byline.
+        fixed[field_name] = ", ".join(str(name) for name in value) if isinstance(value, list) else None
+    if not isinstance(fixed.get("citation_only"), bool | None):
+        fixed["citation_only"] = None
+    return fixed, fixed != record
 
 
 def record_key(record: dict[str, Any]) -> str:
     """Identify a stored record the way :meth:`ScholarResult.dedup_key` identifies a live one.
 
-    Records read back from JSONL are plain mappings, and every offline tool that groups them —
-    merging, graph building — must agree with the crawler's sink on what one work is.
-
     :param record: a stored record.
-    :returns: Scholar's card id when present, otherwise title and link.
+    :returns: the key :func:`work_key` gives its fields.
     """
-    return record.get("cluster_id") or f"{record.get('title')}::{record.get('link') or ''}"
+    return work_key(
+        cluster_id=record.get("cluster_id"), title=record.get("title"), link=record.get("link")
+    )
 
 
 @dataclass(slots=True)

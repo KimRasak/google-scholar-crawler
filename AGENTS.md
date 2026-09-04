@@ -85,7 +85,8 @@ with exactly `before`, `after`, `added`, `gone`, `unchanged`, `reclustered`, `ci
 the titles listed as both added and gone: one work Scholar gave a new id, not two works. A count
 arriving where there was none is a movement from 0, because Scholar shows no citing-works link
 until a work has one. Its `"counts"` are `records`, `read`, `files`, `duplicates`,
-`filtered_out`, `unreadable_lines`.
+`filtered_out`, `unreadable_lines`, `repaired_records` — the last counts records whose year or
+another number arrived as the wrong type and was read as that type, or as absent.
 
 ## Exit codes and errors
 

@@ -83,6 +83,27 @@ def test_at_a_glance_counts_records_venues_and_authors() -> None:
     assert "**3 venues**, **4 first authors**" in glance
 
 
+def test_the_glance_and_the_tables_of_one_report_count_the_same_way() -> None:
+    # Scholar writes "nature" and "Nature" for one journal, and the tables have always collapsed
+    # them. A glance that counted spellings instead made one document disagree with itself.
+    mixed = [
+        *CORPUS,
+        _record(cluster_id="mixed1", title="Lower case", venue="nature", authors="y leCun, X"),
+    ]
+    glance = _section(build_report(mixed), "At a glance")
+    venue_rows = [
+        line for line in _section(build_report(mixed), "Where this work is published").splitlines()
+        if line.startswith("| ") and not line.startswith("| ---")
+    ]
+    author_rows = [
+        line for line in _section(build_report(mixed), "Who wrote it").splitlines()
+        if line.startswith("| ") and not line.startswith("| ---")
+    ]
+    assert f"**{len(venue_rows) - 1} venues**" in glance
+    assert f"**{len(author_rows) - 1} first authors**" in glance
+    assert "**3 venues**, **4 first authors**" in glance
+
+
 def test_the_most_cited_table_links_titles_that_have_a_destination() -> None:
     table = _section(build_report(CORPUS, top=3), "Most cited works (top 3)")
     rows = [line for line in table.splitlines() if line.startswith("| ")]

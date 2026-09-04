@@ -265,6 +265,10 @@ $ scholar-digest out/all.jsonl
 
 When the same work appears in several files, the higher citation count wins as the fresher observation, the fuller record wins ties, `extra.bibtex_key` survives, and `follow_depth` keeps the shallowest level.
 
+The identity rule — Scholar's card id, or title and link when there is none — has one implementation, used by the crawler while writing, by the crawler when it reads an existing file back, and by merging and graph building, or the same files would give one duplicate count to a crawl and another to a merge.
+
+The input is ordinary JSONL: people edit it and other scripts generate it. Every field that gets sorted, summed or compared is therefore read once, on the way in: a number written as `"2019"` is read as a number, a value of some other type (`"soon"`, a list, an object) is read as "Scholar did not show this field", and an author list `["A","B"]` becomes one byline. One bad field must not cost the whole line — the title and link are still worth having — and must not end the digest with a `TypeError`, which is what sorting years does when one of them is a string. Those records are counted and reported on the `[in]` line (`counts.repaired_records` under `--json`), because changing data silently is worse than an error.
+
 `--help` is ordered as "which records → read in the terminal → write to a file", and each group says when to use it.
 
 **Inputs**
@@ -561,7 +565,7 @@ $ scholar-digest out/all.jsonl --group-by venue --groups 4
 
 The `median` column is there for fair comparison: it tells a group carried by one runaway paper apart from a group that is well cited throughout.
 
-Two normalizations keep one venue from being split across groups: every arXiv preprint becomes `arXiv preprint` (Scholar writes the identifier into the venue), and profile-style venues like `nature 521 (7553), 436-444, 2015` lose the volume and pages to become `nature`. Grouping is case-insensitive and displays the first spelling seen. The overview's venue list uses the same normalization.
+Two normalizations keep one venue from being split across groups: every arXiv preprint becomes `arXiv preprint` (Scholar writes the identifier into the venue), and profile-style venues like `nature 521 (7553), 436-444, 2015` lose the volume and pages to become `nature`. Grouping is case-insensitive and displays the first spelling seen. **The buckets have one implementation**: the overview's venue list, the report's opening count of venues and first authors, and the grouped tables all read them, or one report would disagree with itself — an opening line claiming two venues above a table with one row.
 
 ## The takeover log
 
@@ -900,7 +904,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 559 tests, fully offline
+python3 -m pytest -q     # 562 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -927,7 +931,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 91 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 94 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```
@@ -988,7 +992,7 @@ Google Scholar's terms do not allow automated scraping, and collected metadata r
 
 ```
 scholar_crawler/
-  models.py     data structures for records and requests (search, result, profile, page); the two spellings of a target: short beside the command line, full when read out of context
+  models.py     data structures for records and requests (search, result, profile, page); the two spellings of a target: short beside the command line, full when read out of context; the one rule for what counts as the same work, and how a stored field's type is read
   urls.py       query and profile URLs, filters, id/URL parsing
   parser.py     result-page and profile HTML -> structured records
   challenge.py  challenge detection + human takeover wait

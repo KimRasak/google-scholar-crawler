@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from .audit import AuditTally
-from .models import AuthorProfile, ScholarResult, describe_signature
+from .models import AuthorProfile, ScholarResult, describe_signature, record_key
 from .parser import bibtex_key
 from .urls import redact_url
 
@@ -145,9 +145,7 @@ class ResultSink:
                     line = line.strip()
                     if not line:
                         continue
-                    record = json.loads(line)
-                    fallback = f"{record.get('title')}::{record.get('link') or ''}"
-                    self._seen.add(record.get("cluster_id") or fallback)
+                    self._seen.add(record_key(json.loads(line)))
         self._handle = self.path.open("a", encoding="utf-8")
 
     def write(self, result: ScholarResult) -> bool:

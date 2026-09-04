@@ -51,6 +51,19 @@ def test_summary_counts_and_ranking() -> None:
     assert summary.levels == [(0, 3), (1, 1)]
 
 
+def test_one_venue_spelled_two_ways_is_counted_once() -> None:
+    # The same buckets serve the printed counts and the grouped tables, so both collapse the
+    # spellings Scholar uses for one journal.
+    records = [
+        _record(cluster_id="a", venue="Nature", cited_by_count=2),
+        _record(cluster_id="b", venue="nature", cited_by_count=1),
+    ]
+    summary = summarize(records)
+    assert summary.venues == [("Nature", 2)]
+    assert (summary.venue_count, summary.author_count) == (1, len(group_records(records, "author")))
+    assert [group.records for group in group_records(records, "venue")] == [2]
+
+
 def test_rendered_summary_lists_levels_only_when_they_differ() -> None:
     flat = render_summary(summarize([_record()]))
     assert not any(line.startswith("graph levels") for line in flat)

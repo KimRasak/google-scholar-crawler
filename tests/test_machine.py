@@ -164,6 +164,7 @@ def test_a_digest_document_carries_the_records_and_the_overview(
         "duplicates": 0,
         "filtered_out": 0,
         "unreadable_lines": 0,
+        "repaired_records": 0,
     }
     assert [record["cluster_id"] for record in parsed["records"]] == ["a", "b"]
     assert parsed["overview"]["citations"] == 105

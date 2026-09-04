@@ -35,7 +35,7 @@ from .machine import (
     refusal,
     version,
 )
-from .models import record_key
+from .models import readable_record, record_key
 from .refresh import (
     DEFAULT_REFRESH_LIMIT,
     DEFAULT_STALE_DAYS,
@@ -57,15 +57,18 @@ DEFAULT_REPORT_TOP = 15
 """Records listed in the Markdown report, which has room for more than the terminal."""
 
 
-def load_records(paths: list[Path]) -> tuple[list[Record], int]:
+def load_records(paths: list[Path]) -> tuple[list[Record], int, int]:
     """Read JSONL records from every input file, in the order given.
 
     :param paths: JSONL files written by the crawler.
-    :returns: the records read, and the number of lines that were not valid JSON objects.
+    :returns: the records read, the number of lines that were not valid JSON objects, and the
+        number of records that carried a field of the wrong type, read by
+        :func:`~scholar_crawler.models.readable_record`.
     :raises FileNotFoundError: when an input file does not exist.
     """
     records: list[Record] = []
     malformed = 0
+    repaired = 0
     for path in paths:
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
@@ -75,11 +78,13 @@ def load_records(paths: list[Path]) -> tuple[list[Record], int]:
             except json.JSONDecodeError:
                 malformed += 1
                 continue
-            if isinstance(record, dict):
-                records.append(record)
-            else:
+            if not isinstance(record, dict):
                 malformed += 1
-    return records, malformed
+                continue
+            readable, changed = readable_record(record)
+            repaired += 1 if changed else 0
+            records.append(readable)
+    return records, malformed, repaired
 
 
 def _filled(record: Record) -> int:
@@ -432,7 +437,7 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
             "otherwise the run prints nothing",
         )
     try:
-        records, malformed = load_records(args.inputs)
+        records, malformed, repaired = load_records(args.inputs)
     except OSError as error:
         return _fail("unreadable_input", str(error))
     if not records:
@@ -446,7 +451,7 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     earlier: list[Record] | None = None
     if args.since is not None:
         try:
-            earlier, _ = load_records([args.since])
+            earlier, _, _ = load_records([args.since])
         except FileNotFoundError:
             return _fail("missing_since", f"{args.since}: no earlier merge to compare against")
         except OSError as error:
@@ -462,7 +467,12 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
         print(
             f"[in] {len(records)} records from {len(args.inputs)} file(s), "
             f"{duplicates} duplicates merged, {len(merged) - len(kept)} filtered out"
-            + (f", {malformed} unreadable lines" if malformed else ""),
+            + (f", {malformed} unreadable lines" if malformed else "")
+            + (
+                f", {repaired} record(s) had a field of the wrong type"
+                if repaired
+                else ""
+            ),
             flush=True,
         )
         for line in render_summary(summarize(kept, top=args.top)):
@@ -529,6 +539,7 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
             "duplicates": duplicates,
             "filtered_out": len(merged) - len(kept),
             "unreadable_lines": malformed,
+            "repaired_records": repaired,
         },
         files=written,
         records=kept,

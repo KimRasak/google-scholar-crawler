@@ -10,6 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scholar_crawler.analysis import summarize  # noqa: E402
 from scholar_crawler.digest import (  # noqa: E402
     build_parser,
     filter_records,
@@ -52,9 +53,31 @@ def test_records_are_keyed_like_the_crawler_sink() -> None:
 
 def test_unreadable_lines_are_counted_not_fatal(tmp_path: Path) -> None:
     path = _write(tmp_path / "a.jsonl", [_record()], extra_lines="{oops\n\n[1, 2]\n")
-    records, malformed = load_records([path])
+    records, malformed, repaired = load_records([path])
     assert len(records) == 1
     assert malformed == 2
+    assert repaired == 0
+
+
+def test_a_field_of_the_wrong_type_is_read_as_that_type_or_as_absent(tmp_path: Path) -> None:
+    # A records file is edited, generated and merged by hand, so a year arrives as "2019" and a
+    # byline as a list. One bad field must not cost the title and link on that line, and must not
+    # end the digest with a TypeError when years are sorted.
+    path = _write(
+        tmp_path / "a.jsonl",
+        [
+            _record(cluster_id="1", year="2019", cited_by_count="7"),
+            _record(cluster_id="2", year="soon", authors=["J Smith", "K Lee"], extra="none"),
+        ],
+    )
+    records, malformed, repaired = load_records([path])
+    assert (malformed, repaired) == (0, 2)
+    assert (records[0]["year"], records[0]["cited_by_count"]) == (2019, 7)
+    assert records[0]["title"], "a bad field does not cost the rest of the record"
+    assert records[1]["year"] is None
+    assert records[1]["authors"] == "J Smith, K Lee"
+    assert records[1]["extra"] is None
+    assert summarize(records).years == [(2019, 1)]
 
 
 def test_a_missing_input_is_reported_as_an_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
