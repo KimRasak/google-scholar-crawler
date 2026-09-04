@@ -234,3 +234,24 @@ def test_explaining_a_run_lists_where_the_settings_came_from(
     assert "[explain] settings file" in printed
     assert "pages came from the command line instead" in printed
     assert "[config]" not in printed, "the detail replaces the one-line summary"
+
+
+def test_the_doctor_checks_what_the_settings_file_asks_for(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A report about the defaults would be worse than none when the real paths live in a file.
+    body = (
+        'query = ["graph attention"]\n'
+        f'out = "{tmp_path}/records/results.jsonl"\n'
+        f'state = "{tmp_path}/resume/state.json"\n'
+        f'profile = "{tmp_path}/browser-profile"\n'
+        'channel = "msedge"\n'
+    )
+    path = _write(tmp_path, body)
+    main(["--config", str(path), "--doctor"])
+    printed = capsys.readouterr().out
+    assert f"{tmp_path}/records" in printed
+    assert f"{tmp_path}/resume" in printed
+    assert f"{tmp_path}/browser-profile" in printed
+    assert "msedge" in printed, "the browser checked is the one the file asks for"
+    assert ".scholar-profile" not in printed and "out is writable" not in printed

@@ -127,7 +127,7 @@ $ scholar-crawler --doctor
 [doctor] + settings files         tomllib (stdlib) reads --config files
 [doctor] + browser                chrome at /Applications/Google Chrome.app/...; bundled Chromium is also available
 [doctor] ! profile                .scholar-profile holds no cookies yet, so the first challenge will need a human
-[doctor] + output                 out is writable
+[doctor] + --out                  out is writable
 [doctor] nothing is broken; these are worth knowing:
 [doctor]   profile: expect one takeover on the first run; the cleared cookies are then reused
 ```
@@ -146,7 +146,7 @@ $ scholar-crawler --doctor --channel ''
 
 要修的和只需知道的分成两段：一条 `!` 出现在「必须修」下面，会被读成第二个问题，而一个新装环境看到的第一屏不该把自己说得比实际更糟。照它给的那条命令跑完 `--install-browser`（下 280 MB，占盘 550 MB），同一条 `--doctor` 就会变成退出码 0。
 
-检查项：Python 版本是否达到 3.10、装上的版本号与源码里的版本号是否还一致、三个依赖是否装上且版本不低于 `pyproject.toml` 声明的下限、能不能读 TOML 设置文件（3.11 起是标准库的 `tomllib`，3.10 需要 `tomli`）、**这次运行真正要启动的那个浏览器**在不在、profile 里有没有以前攒下的 cookie、输出与断点文件的目录是否可写。每项失败都给出具体的修复命令（`pip install -e .`、`scholar-crawler --install-browser`、`--channel ''`……），有 `x` 就退出码 1。
+检查项：Python 版本是否达到 3.10、装上的版本号与源码里的版本号是否还一致、三个依赖是否装上且版本不低于 `pyproject.toml` 声明的下限、能不能读 TOML 设置文件（3.11 起是标准库的 `tomllib`，3.10 需要 `tomli`）、**这条命令真正要启动的那个浏览器**在不在、profile 里有没有以前攒下的 cookie、**这条命令真正会写的每一条路径**是否可写（`-o`、`--state`、`--challenge-log`、`--profile`，以及给了就查的 `--bibtex`、`--dump-html`；报告里直接用参数名当标签，因为要改的就是它）。这些路径来自这条命令本身，`--config` 里写的路径和 channel 也照样体检——报默认值而不报实际要写的路径，比不报更糟。多个参数落在同一个目录时只报一次：那是一件事要修，说三遍会读成三个问题。每项失败都给出具体的修复命令（`pip install -e .`、`scholar-crawler --install-browser`、`--channel ''`……），有 `x` 就退出码 1。
 
 三个刻意的设计：浏览器只查一条，因为一次运行只启动一个——默认 `--channel chrome` 时系统 Chrome 在就够了（自带 Chromium 没下也不算问题），反过来指定的 channel 没装则直接判失败，因为这条命令确实起不来；装上的版本号与源码不一致只是警告，但会提示重装，否则 `--json` 里那个 `version` 会一直是安装那一刻的旧号；体检本身不会创建任何目录——路径打错了不该在磁盘上留下空壳，所以它探测的是最近的已存在上级目录，并如实写明「目录还不存在，但上级可写」。
 
@@ -875,7 +875,7 @@ $ scholar-crawler -q "graph attention networks"
 
 **浏览器根本没起来**也在这套翻译里，而且它发生在第一个请求之前：`--channel` 指向一个装不上的浏览器 → `browser_missing`，下一步是 `--doctor`、`--install-browser` 或 `--channel ''`。
 
-**写不进去的路径在花掉任何请求之前就被拦下**：`-o`、`--state`、`--challenge-log`、`--bibtex`、`--dump-html` 会逐个试写（探针写进最近的已存在上级目录再删掉，打错的路径不会在磁盘上留下空壳），任何一个不行就以 `path_unwritable` 停机，`message` 说是哪条路径为什么不行，下一步点名要改的那个参数。`--dry-run` 也做这项检查——它存在的意义就是在花请求之前发现这类问题。两种典型情况：目录没有写权限；以及那个路径其实是个**已存在的目录**（`--bibtex out/refs.bib` 而 `refs.bib` 是目录），后者以前要等抓完才炸。
+**写不进去的路径在花掉任何请求之前就被拦下**：`-o`、`--state`、`--challenge-log`、`--profile`，以及给了就查的 `--bibtex`、`--dump-html` 会逐个试写（探针写进最近的已存在上级目录再删掉，打错的路径不会在磁盘上留下空壳），任何一个不行就以 `path_unwritable` 停机，`message` 说是哪条路径为什么不行，下一步点名要改的那个参数。`--dry-run` 和 `--doctor` 用的是同一份清单，所以「体检说没问题」和「运行真的能写」说的是同一批路径。四种典型情况：目录没有写权限；要写文件的地方其实是个**已存在的目录**（`--bibtex out/refs.bib` 而 `refs.bib` 是目录）；要建目录的地方其实是个**已存在的文件**（`--profile` 指到一个文件）；以及路径的某一级上级是个文件，底下什么都建不出来。只开浏览器的 `--self-check` 与 `--rehearse-handoff` 也走同一条判断，因为它们同样要写这个 profile。
 
 **抓到一半磁盘写不下去**（满了、配额用尽、权限被改）也是 `path_unwritable`，而且这里最重要的是**没丢东西**：已经落盘的记录都在，断点停在出错那一页之前（每页是先写记录、写成功才记断点），`--resume` 接着抓不会重复也不会漏。文档里 `counts.records` 与 `files` 照常报出这一轮保住了多少、在哪——这类失败以前落进 `runtime_error`，`counts` 是空的，调用方看不出「其实存下来了 14 条」。浏览器是通过管道驱动的，管道断了同样是 `OSError`，那种不会被算成磁盘问题（否则会让人去查根本不缺的磁盘空间）。
 
@@ -894,7 +894,7 @@ $ scholar-crawler -q "graph attention networks"
 ## 开发
 
 ```sh
-python3 -m pytest -q     # 555 个用例，全部离线
+python3 -m pytest -q     # 558 个用例，全部离线
 ruff check .             # 与 CI 相同的 lint 配置
 ```
 
@@ -917,7 +917,7 @@ ruff check .             # 与 CI 相同的 lint 配置
 一条永远不会失败的测试，和一条不可能失败的测试，从外面看是一样的。`tests/mutate.py` 保存了一批**故意写错**的改动，每条指定「改哪个文件的哪一行、改成什么、哪些测试必须因此失败」：
 
 ```sh
-python3 -m tests.mutate          # 87 条，约 4 分钟；跑完自动把文件改回去
+python3 -m tests.mutate          # 89 条，约 4 分钟；跑完自动把文件改回去
 python3 -m tests.mutate --all    # 连那条会让测试真的等超时的一起跑（慢十分钟）
 python3 -m tests.mutate offset   # 只跑标签里含 offset 的
 ```

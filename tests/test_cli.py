@@ -85,6 +85,46 @@ def test_a_path_the_run_cannot_write_stops_it_before_the_first_request(
     assert second["error"]["next_steps"][0] == "point --bibtex at a file this user can write"
 
 
+def test_the_doctor_checks_the_paths_this_command_would_write(tmp_path: Path) -> None:
+    # A report that checks the defaults while the run writes somewhere else is worse than no
+    # report: it says "ready" about paths the run never touches.
+    from scholar_crawler.cli import _written_paths
+
+    args = _args(
+        [
+            "-q",
+            "x",
+            "-o",
+            str(tmp_path / "a" / "records.jsonl"),
+            "--state",
+            str(tmp_path / "b" / "state.json"),
+            "--challenge-log",
+            str(tmp_path / "c" / "challenges.jsonl"),
+            "--profile",
+            str(tmp_path / "d"),
+            "--bibtex",
+            str(tmp_path / "e" / "refs.bib"),
+            "--dump-html",
+            str(tmp_path / "f"),
+        ]
+    )
+    written = _written_paths(args)  # type: ignore[arg-type]
+    assert [flag for flag, _path, _kind in written] == [
+        "--out",
+        "--state",
+        "--challenge-log",
+        "--profile",
+        "--bibtex",
+        "--dump-html",
+    ]
+    assert [kind for _flag, _path, kind in written] == ["file", "file", "file", "dir", "file", "dir"]
+    assert all(str(tmp_path) in str(path) for _flag, path, _kind in written)
+
+    # The optional exports are absent unless asked for, so a plain run is not told to check them.
+    plain = _written_paths(_args(["-q", "x"]))  # type: ignore[arg-type]
+    assert [flag for flag, _path, _kind in plain] == ["--out", "--state", "--challenge-log", "--profile"]
+
+
 def test_filters_apply_to_every_request() -> None:
     requests, _authors = build_targets(  # type: ignore[arg-type]
         _args(["-q", "a", "-q", "b", "--year-from", "2020", "--no-patents", "--lang", "zh-CN"])

@@ -439,6 +439,32 @@ def test_a_disk_that_fills_mid_crawl_keeps_what_it_had_and_can_be_continued(
     assert store.entries()[0].next_start == 30
 
 
+def test_a_drill_that_cannot_make_its_profile_says_so_instead_of_raising(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A crawl checks its paths before it starts; the modes that only open a browser reach the
+    # same mistake through the launch itself, and it has to arrive as advice there too.
+    in_the_way = tmp_path / "profile"
+    in_the_way.write_text("not a directory", encoding="utf-8")
+    exit_code = main(
+        [
+            "--rehearse-handoff",
+            "--headless",
+            "--channel",
+            "",
+            "--profile",
+            str(in_the_way),
+            "--challenge-log",
+            str(tmp_path / "challenges.jsonl"),
+        ]
+    )
+    printed = capsys.readouterr()
+    assert exit_code == 1
+    assert "Traceback" not in printed.err
+    assert str(in_the_way) in printed.err
+    assert "[stop]" in printed.err
+
+
 def test_a_browser_that_cannot_start_stops_the_run_with_its_local_cause(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -500,7 +526,8 @@ def test_a_profile_that_cannot_be_written_stops_the_run_before_the_browser(
     assert "Traceback" not in printed.err
     parsed = json.loads(printed.out)
     assert parsed["error"]["kind"] == "path_unwritable"
-    assert str(closed) in parsed["error"]["next_steps"][0]
+    assert str(closed) in parsed["error"]["message"]
+    assert parsed["error"]["next_steps"][0] == "point --profile at a directory this user can write"
 
 
 def test_a_headless_stop_hands_back_the_command_that_finishes_the_job(

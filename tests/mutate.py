@@ -302,6 +302,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "tests/test_state.py tests/test_end_to_end.py",
     ),
     Mutation(
+        "the doctor checks the paths this command writes",
+        "scholar_crawler/cli.py",
+        "            profile=args.profile, written=_written_paths(args), channel=args.channel or None",
+        '            profile=args.profile, written=[], channel=args.channel or None',
+        "tests/test_config.py",
+    ),
+    Mutation(
+        "one directory is one finding",
+        "scholar_crawler/doctor.py",
+        "        if directory in seen:",
+        "        if False:",
+        "tests/test_doctor.py",
+    ),
+    Mutation(
         "a full disk keeps what it collected",
         "scholar_crawler/run.py",
         "    except OSError as error:",
@@ -346,8 +360,8 @@ MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "a profile that cannot be made is diagnosed too",
         "scholar_crawler/browser.py",
-        "    except OSError as error:",
-        "    except _NeverRaised as error:",
+        '    unusable = unwritable(options.user_data_dir, kind="dir")',
+        "    unusable = \"\"",
         "tests/test_end_to_end.py",
     ),
     Mutation(

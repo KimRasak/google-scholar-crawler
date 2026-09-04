@@ -106,7 +106,7 @@ def test_an_unwritable_directory_fails_and_says_which_path(tmp_path: Path) -> No
         locked.chmod(0o700)
     assert finding.status is Status.FAIL
     assert str(locked) in finding.detail
-    assert "permissions" in finding.fix
+    assert "point the flag" in finding.fix
 
 
 def test_an_unreadable_ancestor_does_not_crash_the_check(tmp_path: Path) -> None:
@@ -141,8 +141,11 @@ def test_a_profile_with_cookies_passes(tmp_path: Path) -> None:
 def test_the_full_check_covers_every_prerequisite(tmp_path: Path) -> None:
     findings = diagnose_environment(
         profile=tmp_path / "profile",
-        out=tmp_path / "out" / "results.jsonl",
-        state=tmp_path / "elsewhere" / "state.json",
+        written=[
+            ("--out", tmp_path / "out" / "results.jsonl", "file"),
+            ("--state", tmp_path / "elsewhere" / "state.json", "file"),
+            ("--dump-html", tmp_path / "dump", "dir"),
+        ],
         channel="chrome",
     )
     names = [finding.name for finding in findings]
@@ -155,25 +158,37 @@ def test_the_full_check_covers_every_prerequisite(tmp_path: Path) -> None:
         "settings files",
         "browser",
         "profile",
-        "output",
-        "state",
+        "--out",
+        "--state",
+        "--dump-html",
     ]
     assert _named(findings, "python").status is Status.OK
 
 
-def test_the_state_check_is_skipped_when_it_shares_the_output_directory(tmp_path: Path) -> None:
+def test_one_directory_is_checked_once_however_many_flags_land_in_it(tmp_path: Path) -> None:
+    # Several paths in one place is one thing to fix, and a report that says so three times
+    # reads like three problems.
     findings = diagnose_environment(
         profile=tmp_path / "profile",
-        out=tmp_path / "out" / "results.jsonl",
-        state=tmp_path / "out" / "state.json",
+        written=[
+            ("--out", tmp_path / "out" / "results.jsonl", "file"),
+            ("--state", tmp_path / "out" / "state.json", "file"),
+            ("--challenge-log", tmp_path / "out" / "challenges.jsonl", "file"),
+            ("--profile", tmp_path / "profile", "dir"),
+        ],
         channel=None,
     )
-    assert [finding.name for finding in findings].count("state") == 0
+    names = [finding.name for finding in findings]
+    assert names.count("--out") == 1
+    assert "--state" not in names and "--challenge-log" not in names
+    assert names.count("profile") == 1, "the profile is reported once, for its cookies"
 
 
 def test_the_report_puts_fixes_last_and_ends_on_what_to_do_next(tmp_path: Path) -> None:
     findings = diagnose_environment(
-        profile=tmp_path / "profile", out=tmp_path / "x.jsonl", state=tmp_path / "s.json", channel=None
+        profile=tmp_path / "profile",
+        written=[("--out", tmp_path / "x.jsonl", "file")],
+        channel=None,
     )
     lines = render_environment(findings)
     assert [line for line in lines if line.startswith("+ python")]

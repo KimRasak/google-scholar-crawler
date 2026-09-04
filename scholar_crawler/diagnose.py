@@ -234,18 +234,20 @@ def stop_report(diagnosis: Diagnosis) -> str:
     return "\n".join([f"\n[stop] {what}", *(f"[stop] {line}" for line in rest)])
 
 
-def diagnose_unwritable(reason: str, flag: str) -> Diagnosis:
+def diagnose_unwritable(reason: str, flag: str, *, kind: str = "file") -> Diagnosis:
     """Explain an output path this run cannot write, before it spends anything.
 
     :param reason: what :func:`~scholar_crawler.storage.unwritable` found.
     :param flag: the flag carrying that path, which is what the reader has to change.
+    :param kind: ``file`` when the flag names a file, ``dir`` when it names a directory.
     :returns: the diagnosis for this failure.
     """
+    wanted = "a directory" if kind == "dir" else "a file"
     return Diagnosis(
         failure=Failure.PATH_UNWRITABLE,
         what=f"{reason}, so nothing was crawled",
         next_steps=(
-            f"point {flag} at a file this user can write",
+            f"point {flag} at {wanted} this user can write",
             "run scholar-crawler --doctor, which checks every path a run needs",
         ),
     )

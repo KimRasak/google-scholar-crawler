@@ -16,8 +16,8 @@ from playwright.sync_api import BrowserContext, Page, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
 
 from .challenge import HumanHandoff
-from .diagnose import CrawlFailure, diagnose_launch
-from .storage import ChallengeLog
+from .diagnose import CrawlFailure, diagnose_launch, diagnose_unwritable
+from .storage import ChallengeLog, unwritable
 from .urls import SCHOLAR_HOST
 
 _INIT_SCRIPT = """
@@ -52,12 +52,10 @@ def browser_session(options: BrowserOptions) -> Iterator[tuple[BrowserContext, P
     :param options: launch settings.
     :returns: a context manager yielding the context and a ready page; both close on exit.
     """
-    try:
-        options.user_data_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as error:
-        raise CrawlFailure(
-            diagnose_launch(error, channel=options.channel, profile=options.user_data_dir)
-        ) from error
+    unusable = unwritable(options.user_data_dir, kind="dir")
+    if unusable:
+        raise CrawlFailure(diagnose_unwritable(unusable, "--profile", kind="dir"))
+    options.user_data_dir.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
         try:
             context = playwright.chromium.launch_persistent_context(

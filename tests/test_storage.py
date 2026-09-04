@@ -100,6 +100,14 @@ def test_a_path_is_checked_without_creating_anything(tmp_path: Path) -> None:
     assert "is a directory" in unwritable(as_directory)
     assert unwritable(as_directory, kind="dir") == "", "as a directory it is fine"
 
+    # The mirror mistake: a flag that wants a directory pointed at a file, and a file asked for
+    # below one. Nothing can be created under a file, however writable the directory above it is.
+    as_file = tmp_path / "profile"
+    as_file.write_text("", encoding="utf-8")
+    assert "is a file, and this run needs a directory there" in unwritable(as_file, kind="dir")
+    assert f"{as_file} is a file, so" in unwritable(as_file / "deep" / "records.jsonl")
+    assert "and this run needs a directory there" in unwritable(as_file / "records.jsonl")
+
     closed = tmp_path / "closed"
     closed.mkdir()
     closed.chmod(0o500)

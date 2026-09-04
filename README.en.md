@@ -127,7 +127,7 @@ $ scholar-crawler --doctor
 [doctor] + settings files         tomllib (stdlib) reads --config files
 [doctor] + browser                chrome at /Applications/Google Chrome.app/...; bundled Chromium is also available
 [doctor] ! profile                .scholar-profile holds no cookies yet, so the first challenge will need a human
-[doctor] + output                 out is writable
+[doctor] + --out                  out is writable
 [doctor] nothing is broken; these are worth knowing:
 [doctor]   profile: expect one takeover on the first run; the cleared cookies are then reused
 ```
@@ -146,7 +146,7 @@ $ scholar-crawler --doctor --channel ''
 
 What must be fixed and what is merely worth knowing are separate blocks: a `!` printed under "must be fixed" reads as a second problem, and the first screen a new install sees should not make itself sound worse than it is. Running the command it names (`--install-browser`, 280 MB down and 550 MB on disk) turns the same `--doctor` into exit 0.
 
-It checks the Python version against 3.10, that the installed version still matches the sources being run, that all three dependencies import and are no older than the floors declared in `pyproject.toml`, that TOML settings files can be read (stdlib `tomllib` from 3.11, `tomli` on 3.10), that **the browser this run would actually launch** is there, whether the profile already holds cookies from earlier runs, and whether the output and state directories can be written. Every failure names the command that fixes it (`pip install -e .`, `scholar-crawler --install-browser`, `--channel ''`, …), and any `x` exits 1.
+It checks the Python version against 3.10, that the installed version still matches the sources being run, that all three dependencies import and are no older than the floors declared in `pyproject.toml`, that TOML settings files can be read (stdlib `tomllib` from 3.11, `tomli` on 3.10), that **the browser this command would actually launch** is there, whether the profile already holds cookies from earlier runs, and whether **every path this command would write** can be written (`-o`, `--state`, `--challenge-log`, `--profile`, plus `--bibtex` and `--dump-html` when they are asked for; each finding is labelled with the flag, because the flag is what you change). Those paths come from this command, so paths and a channel set in a `--config` file are checked as given — a report about the defaults while the run writes elsewhere is worse than no report. Several flags landing in one directory are reported once: that is one thing to fix, and saying it three times reads as three problems. Every failure names the command that fixes it (`pip install -e .`, `scholar-crawler --install-browser`, `--channel ''`, …), and any `x` exits 1.
 
 Three deliberate choices: the browser is one check because a run launches one browser — with the default `--channel chrome`, a system Chrome is enough and an undownloaded Chromium costs nothing, while a channel that is not installed is a failure because that exact command cannot start; a version mismatch is only a warning but names the reinstall, because otherwise the `version` in every `--json` document stays the one pip recorded at install time; and the check creates no directories — a mistyped path should not leave empty shells on disk, so it probes the closest existing ancestor and says plainly that the directory does not exist yet while its parent is writable.
 
@@ -878,7 +878,7 @@ Told apart: a refused connection, a name that does not resolve, no internet at a
 
 **A browser that never started** is translated the same way, before the first request: a `--channel` naming a browser that cannot be launched is `browser_missing`, whose next steps are `--doctor`, `--install-browser` or `--channel ''`.
 
-**A path this run cannot write stops it before a single request is spent.** `-o`, `--state`, `--challenge-log`, `--bibtex` and `--dump-html` are each probed — a test file written into the closest existing ancestor and removed again, so a mistyped path leaves nothing behind — and the first one that fails ends the run as `path_unwritable`, with `message` naming the path and the reason and the next step naming the flag to change. `--dry-run` runs the same check, since catching this before requests are spent is what it is for. Two cases show up in practice: a directory without write permission, and a path that is itself an **existing directory** (`--bibtex out/refs.bib` where `refs.bib` is a directory), which used to fail only after the whole crawl.
+**A path this run cannot write stops it before a single request is spent.** `-o`, `--state`, `--challenge-log`, `--profile`, plus `--bibtex` and `--dump-html` when asked for, are each probed — a test file written into the closest existing ancestor and removed again, so a mistyped path leaves nothing behind — and the first one that fails ends the run as `path_unwritable`, with `message` naming the path and the reason and the next step naming the flag to change. `--dry-run` and `--doctor` work from the same list, so what a report calls sound and what a run can actually write are the same paths. Four cases show up in practice: a directory without write permission; a place a file goes that is itself an **existing directory** (`--bibtex out/refs.bib` where `refs.bib` is a directory); a place a directory goes that is an **existing file** (`--profile` pointed at one); and an ancestor that is a file, under which nothing can be created. `--self-check` and `--rehearse-handoff` only open a browser, and they take the same decision, because they write that profile too.
 
 **A disk that fills mid-crawl** — no space, quota reached, permissions changed under the run — is `path_unwritable` too, and what matters there is that **nothing is lost**: every record already appended is on disk, and the cursor stopped before the page that failed, because a page is written first and only then recorded. `--resume` continues without a gap or a duplicate. The document still reports `counts.records` and `files`, so a caller sees that 14 records were kept and where they are; this used to land in `runtime_error` with empty counts. The browser is driven through a pipe, and a dead pipe is an `OSError` as well — that one is not counted as a disk problem, since it would send the reader to check free space they have plenty of.
 
@@ -897,7 +897,7 @@ One behaviour was corrected along the way: a page that loaded with none of Schol
 ## Development
 
 ```sh
-python3 -m pytest -q     # 555 tests, fully offline
+python3 -m pytest -q     # 558 tests, fully offline
 ruff check .             # same lint configuration as CI
 ```
 
@@ -924,7 +924,7 @@ A test that never fails and a test that cannot fail look the same from outside.
 break, the wrong version, and the tests that must fail because of it:
 
 ```sh
-python3 -m tests.mutate          # 87 entries, about 4 minutes; every file is restored after
+python3 -m tests.mutate          # 89 entries, about 4 minutes; every file is restored after
 python3 -m tests.mutate --all    # includes the one whose broken form waits out a real timeout
 python3 -m tests.mutate offset   # only entries whose label matches
 ```

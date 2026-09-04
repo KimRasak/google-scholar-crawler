@@ -525,7 +525,7 @@ def _run_offline_mode(args: argparse.Namespace) -> int | None:
         return forget_state(args.state, args.forget)
     if args.doctor:
         return check_environment(
-            profile=args.profile, out=args.out, state=args.state, channel=args.channel or None
+            profile=args.profile, written=_written_paths(args), channel=args.channel or None
         )
     if args.self_check:
         return self_check(_session_of(args))
@@ -742,25 +742,38 @@ def _ignored_progress(
     return report_ignored_progress(state, targets, resume=args.resume)
 
 
+def _written_paths(args: argparse.Namespace) -> list[tuple[str, Path, str]]:
+    """List every path this command writes, with the flag that names it.
+
+    One list serves the check before a run and the ``--doctor`` report, so the paths a run
+    would write and the paths a report calls sound are the same paths.
+
+    :param args: parsed arguments.
+    :returns: flag, path, and whether the path is a ``file`` or a ``dir``, in reading order.
+    """
+    written: list[tuple[str, Path, str]] = [
+        ("--out", args.out, "file"),
+        ("--state", args.state, "file"),
+        ("--challenge-log", args.challenge_log, "file"),
+        ("--profile", args.profile, "dir"),
+    ]
+    if args.bibtex is not None:
+        written.append(("--bibtex", args.bibtex, "file"))
+    if args.dump_html is not None:
+        written.append(("--dump-html", args.dump_html, "dir"))
+    return written
+
+
 def _unwritable_output(args: argparse.Namespace) -> Diagnosis | None:
     """Check every path this run would write, before it spends a request on finding out.
 
     :param args: parsed arguments.
     :returns: the diagnosis for the first path that cannot be written, or None.
     """
-    checked: list[tuple[str, Path, str]] = [
-        ("--out", args.out, "file"),
-        ("--state", args.state, "file"),
-        ("--challenge-log", args.challenge_log, "file"),
-    ]
-    if args.bibtex is not None:
-        checked.append(("--bibtex", args.bibtex, "file"))
-    if args.dump_html is not None:
-        checked.append(("--dump-html", args.dump_html, "dir"))
-    for flag, path, kind in checked:
+    for flag, path, kind in _written_paths(args):
         reason = unwritable(path, kind=kind)
         if reason:
-            return diagnose_unwritable(reason, flag)
+            return diagnose_unwritable(reason, flag, kind=kind)
     return None
 
 

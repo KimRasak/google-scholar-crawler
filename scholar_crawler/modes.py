@@ -18,6 +18,7 @@ from pathlib import Path
 from .browser import Session, browser_session
 from .challenge import ChallengeUnattended
 from .crawler import ScholarCrawler
+from .diagnose import CrawlFailure, stop_report
 from .doctor import Status, check_browser, diagnose_environment, render_environment
 from .models import SearchRequest, parse_signature
 from .recipes import resume_command
@@ -66,16 +67,17 @@ def install_browser() -> int:
     return 0
 
 
-def check_environment(*, profile: Path, out: Path, state: Path, channel: str | None) -> int:
+def check_environment(
+    *, profile: Path, written: list[tuple[str, Path, str]], channel: str | None
+) -> int:
     """Report whether this machine can run a crawl, without sending a request.
 
     :param profile: profile directory a crawl would reuse.
-    :param out: JSONL destination a crawl would write.
-    :param state: resume-state file a crawl would write.
+    :param written: every path a crawl would write, as flag, path and ``file`` or ``dir``.
     :param channel: browser channel a crawl would drive.
     :returns: process exit code — 0 when nothing is broken, 1 when something must be fixed.
     """
-    findings = diagnose_environment(profile=profile, out=out, state=state, channel=channel)
+    findings = diagnose_environment(profile=profile, written=written, channel=channel)
     for line in render_environment(findings):
         print(f"[doctor] {line}", flush=True)
     return 1 if any(finding.status is Status.FAIL for finding in findings) else 0
@@ -103,6 +105,9 @@ def self_check(session: Session) -> int:
     except KeyboardInterrupt:
         print("\n[stop] interrupted by user", flush=True)
         return 130
+    except CrawlFailure as failure:
+        print(stop_report(failure.diagnosis), file=sys.stderr)
+        return 1
     except (ChallengeUnattended, RuntimeError) as error:
         print(f"\n[stop] {error}", file=sys.stderr)
         return 1
@@ -127,6 +132,10 @@ def rehearse_takeover(session: Session) -> int:
     except KeyboardInterrupt:
         print("\n[stop] interrupted by user", flush=True)
         return 130
+    except CrawlFailure as failure:
+        # A drill opens the crawling profile, so it meets the same launch failures a crawl does.
+        print(stop_report(failure.diagnosis), file=sys.stderr)
+        return 1
     except ChallengeUnattended as error:
         if session.handoff.headless:
             print(f"[rehearse] refused without a window, as designed: {error}", flush=True)

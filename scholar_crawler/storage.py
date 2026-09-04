@@ -73,6 +73,17 @@ def unwritable(path: Path, *, kind: str = "file") -> str:
         return f"{path} is a directory, and this run needs to write a file there"
     directory = target if kind == "dir" else target.parent
     existing = nearest_existing(directory)
+    for candidate in (directory, *directory.parents):
+        if candidate == existing:
+            break
+        try:
+            in_the_way = candidate.exists()
+        except OSError:  # an ancestor this user may not even look at; the probe below reports it
+            break
+        if in_the_way:  # a file: neither a directory to write in, nor one to create under
+            if candidate == directory:
+                return f"{candidate} is a file, and this run needs a directory there"
+            return f"{candidate} is a file, so {directory} cannot be created"
     probe = existing / PROBE_NAME
     try:
         probe.write_text("", encoding="utf-8")

@@ -306,7 +306,7 @@ def check_writable(name: str, path: Path, *, kind: str) -> Finding:
             name,
             Status.FAIL,
             reason,
-            "point the flag at a writable directory, or fix the permissions",
+            "point the flag at a writable directory, or clear what is in the way",
         )
     existing = nearest_existing(directory)
     if existing != absolute(directory):
@@ -373,24 +373,28 @@ def _source_version() -> str | None:
 
 
 def diagnose_environment(
-    *, profile: Path, out: Path, state: Path, channel: str | None
+    *, profile: Path, written: list[tuple[str, Path, str]], channel: str | None
 ) -> list[Finding]:
     """Run every environment check.
 
-    :param profile: profile directory a run would reuse.
-    :param out: JSONL destination a run would write.
-    :param state: resume-state file a run would write.
+    :param profile: profile directory a run would reuse, reported for its cookies as well.
+    :param written: every path a run would write, as flag, path and ``file`` or ``dir``.
     :param channel: browser channel a run would drive.
-    :returns: the findings, in the order they are worth reading.
+    :returns: the findings, in the order they are worth reading; one per directory, since
+        several flags landing in one place is one thing to fix.
     """
     findings = [check_python(), check_version()]
     findings.extend(check_module(requirement) for requirement in REQUIREMENTS)
     findings.append(check_toml_reader())
     findings.append(check_browser(channel))
     findings.append(check_profile(profile))
-    findings.append(check_writable("output", out, kind="file"))
-    if state.parent != out.parent:
-        findings.append(check_writable("state", state, kind="file"))
+    seen = {absolute(profile)}
+    for flag, path, kind in written:
+        directory = absolute(path if kind == "dir" else path.parent)
+        if directory in seen:
+            continue
+        seen.add(directory)
+        findings.append(check_writable(flag, path, kind=kind))
     return findings
 
 
