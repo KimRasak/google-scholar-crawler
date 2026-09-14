@@ -259,6 +259,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     browser.add_argument("--headless", action="store_true", help="no window; a challenge then aborts the run")
     browser.add_argument(
+        "--keep-background",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="open the window behind your work instead of on top of it; a challenge then "
+        "rings the bell instead of raising the window (default: on; --no-keep-background "
+        "lets the window take the screen's front as runs did before)",
+    )
+    browser.add_argument(
         "--channel",
         default="chrome",
         help="browser channel (default: chrome); empty string uses bundled Chromium"
@@ -476,6 +484,7 @@ def _browser_options(args: argparse.Namespace) -> BrowserOptions:
         locale=locale_for(args.lang),
         timezone=args.timezone or timezone_for(args.lang),
         proxy_server=args.proxy,
+        steal_focus=not args.keep_background,
     )
 
 
@@ -487,7 +496,11 @@ def _session_of(args: argparse.Namespace) -> Session:
     """
     return Session(
         options=_browser_options(args),
-        handoff=HumanHandoff(timeout=args.handoff_timeout, headless=args.headless),
+        handoff=HumanHandoff(
+            timeout=args.handoff_timeout,
+            headless=args.headless,
+            raise_window=not args.keep_background,
+        ),
         log=ChallengeLog(args.challenge_log),
         host=args.host,
         max_handoffs=args.max_handoffs,

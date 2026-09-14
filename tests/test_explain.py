@@ -140,14 +140,29 @@ def test_filters_and_expansion_are_spelled_out() -> None:
 
 
 def test_the_takeover_policy_is_described_both_ways() -> None:
-    headed = _explained(["-q", "x", "--handoff-timeout", "300", "--max-handoffs", "2"])
+    # --no-keep-background spelled out because keeping the window behind is the default now.
+    headed = _explained(
+        ["-q", "x", "--handoff-timeout", "300", "--max-handoffs", "2", "--no-keep-background"]
+    )
     assert any("waiting up to 300s for you to clear it, up to 2 times" in line for line in headed)
+    assert any("the window is brought to you" in line for line in headed)
 
     forever = _explained(["-q", "x", "--handoff-timeout", "0"])
     assert any("waiting forever" in line for line in forever)
 
     headless = _explained(["-q", "x", "--headless"])
     assert any("nothing to hand over without a window" in line for line in headless)
+
+
+def test_keep_background_changes_how_the_takeover_sums_up() -> None:
+    lines = _explained(["-q", "x", "--keep-background"])
+    assert any(
+        "the bell rings and the window stays where it is (--keep-background)" in line
+        for line in lines
+    )
+    assert not any("the window is brought to you" in line for line in lines)
+    # The default run keeps the window behind as well.
+    assert _explained(["-q", "x"]) == lines
 
 
 def test_headless_is_warned_about_because_a_challenge_ends_the_run() -> None:

@@ -58,6 +58,14 @@ def test_a_key_may_be_spelled_as_the_flag_or_as_the_name(tmp_path: Path) -> None
     assert _settings(tmp_path, '"--min-delay" = 8.0\n') == {"min_delay": 8.0}
 
 
+def test_a_switch_is_set_from_the_file_as_true_or_false(tmp_path: Path) -> None:
+    args, sources = _resolved(tmp_path, "[browser]\nkeep-background = true\n", ["-q", "x"])
+    assert args.keep_background is True
+    assert sources.of("keep_background") is Origin.FILE
+    args, _ = _resolved(tmp_path, "[browser]\nkeep-background = false\n", ["-q", "x"])
+    assert args.keep_background is False
+
+
 def test_a_path_setting_becomes_a_path(tmp_path: Path) -> None:
     settings = _settings(tmp_path, 'out = "out/gnn.jsonl"\n')
     assert settings == {"out": Path("out/gnn.jsonl")}

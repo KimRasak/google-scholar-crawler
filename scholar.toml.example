@@ -40,6 +40,7 @@ max-handoffs = 3
 
 [browser]
 profile = ".scholar-profile"
+# keep-background = false # let the window take the screen's front; the default true keeps it behind your work
 
 [output]
 out = "out/gnn.jsonl"

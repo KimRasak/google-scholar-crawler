@@ -16,7 +16,7 @@ pip install git+https://github.com/KimRasak/google-scholar-crawler   # pipx inst
 scholar-crawler --install-browser                                    # 没装 Chrome 才需要
 ```
 
-**二、抓一次**（一次请求，约 5 秒，会弹出一个真实的 Chrome 窗口）
+**二、抓一次**（一次请求，约 5 秒，会打开一个真实的 Chrome 窗口——默认开在你手头工作后面，不抢屏幕最前）
 
 ```sh
 $ scholar-crawler -q "retrieval augmented generation survey" -p 1 -o out/rag.jsonl
@@ -64,7 +64,7 @@ scholar-digest out/rag.jsonl --report out/report.md   # 写成一份可读的 Ma
 [pace] backing off to 6.4–17.6s between pages
 ```
 
-你要做的只有一件事：在弹到最前面的那个窗口里把验证做完，然后什么都不用按。几个为「人离开了一会儿」准备的细节：
+你要做的只有一件事：切到弹出的那个浏览器窗口把验证做完，然后什么都不用按（窗口默认不会弹到最前抢走你手头的事；响了铃自己切过去就行）。几个为「人离开了一会儿」准备的细节：
 
 - **不需要按键**：程序每 2 秒重看一眼页面，恢复正常就继续；开头就说明还剩多少时间（`--handoff-timeout 0` 是无限等）。
 - **验证类型变了会说**：验证码点完却跳出登录墙时你要做的事不一样，所以它明确报出来（`the page is now a sign_in`）。
@@ -709,7 +709,7 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry
 [explain] up to 3 pages per listing, 10 records a page
 [explain] waiting 4–11s between page loads
 [explain] pausing 90s every 10 loads, and giving up on a page after 45s
-[explain] on a challenge: the window is brought to you, waiting up to 600s for you to clear it, up to 5 times this run
+[explain] on a challenge: the bell rings and the window stays where it is (--keep-background), waiting up to 600s for you to clear it, up to 5 times this run
 [explain] after each takeover the delays widen by x1.6
 [explain] the window sends Accept-Language en-US and reports its clock in America/Los_Angeles (matching the language)
 [explain] creating records: out/results.jsonl
@@ -810,8 +810,11 @@ $ scholar-crawler --self-check
 | `--dry-run` | 把这条命令读回成人话、指出互相抵消的参数、并给出抓取计划与用时估算，不发任何请求 |
 | `--self-check` | 跑一次解析自检（一个请求），逐项报告哪些字段还能正常解析 |
 | `--headless` | 无窗口模式；**此时遇到验证会直接终止并提示改用有界面模式** |
+| `--keep-background` | 默认开启：浏览器开在你手头工作后面，不抢屏幕最前（macOS 下记住最前面的程序并还屏）；遇到验证改为响铃提示，不强制提窗。`--no-keep-background` 恢复以前「窗口弹到最前」的行为 |
 
 `--headless` 与人工接管天然冲突：没有窗口就没人能操作。建议先用有界面模式跑一次、人工通过验证，之后同一个 `--profile` 在 headless 下命中率会明显提高；即使被拦，程序也会带着明确提示退出而不是空转。
+
+浏览器窗口默认（`--keep-background`）开在你手头工作后面：macOS 在启动浏览器前记住最前面的程序，浏览器一抢到屏幕就把屏幕还回去（首次运行会请求「控制‘系统事件’」的自动化权限，拒绝则窗口回到原来的抢前行为，终端会打印一行说明；其他系统上没有这个效果）。遇到验证时也不强制把窗口提到最前，改为响铃并在终端打印接管提示，你自己切过去处理即可。
 
 节奏参数写错（负数、`--min-delay` 大于 `--max-delay`、`--backoff-factor` 小于 1）会在启动时立刻报错退出，不会静默按奇怪的时序跑。
 
@@ -868,7 +871,7 @@ JSONL 每行一条记录：
 scholar-crawler --rehearse-handoff
 ```
 
-流程和真遇到验证时完全一致：检测到「验证页」→ 响铃并把窗口提到最前 → 打印接管提示 → 轮询等你操作。页面上有一个按钮，按下就等于「验证已通过」，程序会确认页面恢复成正常内容并报告等待了多久，退出码 0。没人操作时会在 `--handoff-timeout` 到点后报错退出（退出码 1）；加 `--headless` 则会验证「无窗口就拒绝运行」这条路径。
+流程和真遇到验证时完全一致：检测到「验证页」→ 响铃并把窗口提到最前（默认 `--keep-background` 不提窗，改为提示你自行切换；`--no-keep-background` 恢复提窗）→ 打印接管提示 → 轮询等你操作。页面上有一个按钮，按下就等于「验证已通过」，程序会确认页面恢复成正常内容并报告等待了多久，退出码 0。没人操作时会在 `--handoff-timeout` 到点后报错退出（退出码 1）；加 `--headless` 则会验证「无窗口就拒绝运行」这条路径。
 
 ## 运行摘要
 
@@ -987,6 +990,7 @@ scholar_crawler/
   urls.py       查询/主页 URL、过滤参数、id/URL 解析
   parser.py     结果页与作者主页 HTML → 结构化记录
   challenge.py  验证页判定 + 人工接管等待
+  focus.py      --keep-background：记住最前面的程序，把屏幕还给浏览器之外的工作
   diagnose.py   失败诊断：把网络与页面故障翻译成下一步动作
   browser.py    持久化 profile 的浏览器会话
   crawler.py    抓取循环：节奏、接管、翻页/分批、BibTeX 取用、HTML dump

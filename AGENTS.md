@@ -23,6 +23,9 @@ environment the tool landed in, so it works under `pipx`, a venv, or a plain `pi
 CAPTCHA, the browser window is brought to the front and the run waits. So:
 
 - Run without `--headless` when a person can reach the screen.
+- The window opens behind the operator's work by default (`--keep-background`), and a challenge
+  rings the terminal bell instead of raising the window; `--no-keep-background` restores the old
+  takeover of the screen.
 - With `--headless`, a challenge ends the run with `"error": {"kind": "challenge_unattended"}`.
   That is not a bug to retry harder — surface it to a human, let them clear it once, and the
   persistent profile (`--profile`, default `.scholar-profile`) reuses the cleared cookies.

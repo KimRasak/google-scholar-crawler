@@ -12,7 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scholar_crawler.browser import locale_for, timezone_for  # noqa: E402
-from scholar_crawler.cli import build_parser, build_targets, main  # noqa: E402
+from scholar_crawler.cli import _browser_options, _session_of, build_parser, build_targets, main  # noqa: E402
 
 
 def _args(argv: list[str]) -> object:
@@ -320,3 +320,23 @@ def test_the_timezone_follows_the_language_unless_one_is_given() -> None:
     # particular, rather than quietly claiming California.
     assert timezone_for("sw") == "UTC"
     assert timezone_for("EN") == "America/Los_Angeles"
+
+
+def test_keep_background_leaves_the_window_and_the_handoff_behind() -> None:
+    # The one flag drives both places a window can jump forward: the launch and the takeover.
+    args = _args(["-q", "x", "--keep-background"])  # type: ignore[arg-type]
+    assert _browser_options(args).steal_focus is False  # type: ignore[arg-type]
+    assert _session_of(args).handoff.raise_window is False  # type: ignore[arg-type]
+
+
+def test_the_default_run_keeps_the_window_behind_the_work() -> None:
+    args = _args(["-q", "x"])  # type: ignore[arg-type]
+    assert args.keep_background is True  # type: ignore[attr-defined]
+    assert _browser_options(args).steal_focus is False  # type: ignore[arg-type]
+    assert _session_of(args).handoff.raise_window is False  # type: ignore[arg-type]
+
+
+def test_no_keep_background_restores_the_old_takeover_of_the_screen() -> None:
+    args = _args(["-q", "x", "--no-keep-background"])  # type: ignore[arg-type]
+    assert _browser_options(args).steal_focus is True  # type: ignore[arg-type]
+    assert _session_of(args).handoff.raise_window is True  # type: ignore[arg-type]

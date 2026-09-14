@@ -141,6 +141,9 @@ class HumanHandoff:
     :param timeout: seconds to wait for the human; 0 waits indefinitely.
     :param poll_interval: seconds between page re-inspections.
     :param headless: when True there is no window to hand over, so challenges abort the run.
+    :param raise_window: bring the window to the front for the human; off by default
+        (``--keep-background`` leaves the window where it is and tells the human to switch
+        over), and ``--no-keep-background`` turns it back on.
     :param status_every: seconds between progress lines while waiting.
     :param warn_before: ring and warn again this long before the timeout elapses.
     """
@@ -148,13 +151,15 @@ class HumanHandoff:
     timeout: float = 600.0
     poll_interval: float = 2.0
     headless: bool = False
+    raise_window: bool = False
     status_every: float = 15.0
     warn_before: float = 60.0
 
     def resolve(self, page: Page, challenge: Challenge) -> Takeover:
         """Wait until the human clears ``challenge`` on ``page``.
 
-        :param page: the page showing the challenge; brought to the front for the human.
+        :param page: the page showing the challenge; brought to the front for the human
+            unless ``raise_window`` is off.
         :param challenge: the detected challenge being handed over.
         :returns: how long the human took and what the window showed while they worked.
         :raises ChallengeUnattended: when running headless, or when ``timeout`` elapses first.
@@ -169,18 +174,29 @@ class HumanHandoff:
         budget = (
             f"{self.timeout:.0f}s to act" if self.timeout else "no time limit; it waits as long as needed"
         )
+        if self.raise_window:
+            yours = (
+                "[handoff] The browser window is yours. Solve the challenge (or accept the\n"
+                "[handoff] consent/sign-in page) and leave it on the Scholar result page.\n"
+            )
+        else:
+            yours = (
+                "[handoff] The window stays where it is (--keep-background). Switch to the browser\n"
+                "[handoff] when you are ready, solve the challenge (or accept the consent/sign-in\n"
+                "[handoff] page), and leave it on the Scholar result page.\n"
+            )
         print(
             f"\n[handoff] {challenge.kind.value}: {challenge.detail}\n"
             f"[handoff] URL: {challenge.url}\n"
-            "[handoff] The browser window is yours. Solve the challenge (or accept the\n"
-            "[handoff] consent/sign-in page) and leave it on the Scholar result page.\n"
+            f"{yours}"
             f"[handoff] No keypress needed — the page is re-checked every {self.poll_interval:g}s "
             f"and crawling resumes by itself. You have {budget}.\n"
             "[handoff] Press Ctrl+C to stop instead.",
             flush=True,
         )
-        with suppress(PlaywrightError):  # window already gone; the wait below reports it
-            page.bring_to_front()
+        if self.raise_window:
+            with suppress(PlaywrightError):  # window already gone; the wait below reports it
+                page.bring_to_front()
         return self._wait_out(page, challenge)
 
     def _wait_out(self, page: Page, challenge: Challenge) -> Takeover:

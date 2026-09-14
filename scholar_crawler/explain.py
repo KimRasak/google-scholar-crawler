@@ -149,8 +149,13 @@ def _takeover(args: argparse.Namespace) -> list[str]:
     if args.headless:
         return ["on a challenge: nothing to hand over without a window, so the run stops"]
     waiting = "waiting forever" if not args.handoff_timeout else f"waiting up to {args.handoff_timeout:g}s"
+    summons = (
+        "the window is brought to you"
+        if not args.keep_background
+        else "the bell rings and the window stays where it is (--keep-background)"
+    )
     return [
-        f"on a challenge: the window is brought to you, {waiting} for you to clear it, "
+        f"on a challenge: {summons}, {waiting} for you to clear it, "
         f"up to {counted(args.max_handoffs, 'time')} this run",
         f"after each takeover the delays widen by x{args.backoff_factor:g}",
     ]

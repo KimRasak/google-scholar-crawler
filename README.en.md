@@ -16,7 +16,7 @@ pip install git+https://github.com/KimRasak/google-scholar-crawler   # pipx inst
 scholar-crawler --install-browser                                    # only if Chrome is missing
 ```
 
-**2. Collect once** (one request, about five seconds, in a real Chrome window)
+**2. Collect once** (one request, about five seconds, in a real Chrome window — which by default opens behind your work instead of on top of it)
 
 ```sh
 $ scholar-crawler -q "retrieval augmented generation survey" -p 1 -o out/rag.jsonl
@@ -64,7 +64,7 @@ Google showing a verification page mid-crawl is normal, and this whole tool is b
 [pace] backing off to 6.4–17.6s between pages
 ```
 
-You have exactly one job: clear the challenge in the window that just came to the front, then press nothing. The details exist because the person it waits for has usually stepped away:
+You have exactly one job: switch to the browser window that just opened and clear the challenge, then press nothing (by default the window does not jump to the front and steal your screen; it rings the bell, you switch over when ready). The details exist because the person it waits for has usually stepped away:
 
 - **No keypress is needed.** The page is re-inspected every two seconds and the crawl resumes by itself; the opening message says how long there is (`--handoff-timeout 0` waits forever).
 - **A change of challenge is announced.** Clearing a captcha only to land on a sign-in wall asks something different of you, so the wait says `the page is now a sign_in`.
@@ -716,7 +716,7 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry
 [explain] up to 3 pages per listing, 10 records a page
 [explain] waiting 4–11s between page loads
 [explain] pausing 90s every 10 loads, and giving up on a page after 45s
-[explain] on a challenge: the window is brought to you, waiting up to 600s for you to clear it, up to 5 times this run
+[explain] on a challenge: the bell rings and the window stays where it is (--keep-background), waiting up to 600s for you to clear it, up to 5 times this run
 [explain] after each takeover the delays widen by x1.6
 [explain] the window sends Accept-Language en-US and reports its clock in America/Los_Angeles (matching the language)
 [explain] creating records: out/results.jsonl
@@ -816,8 +816,11 @@ It fetches one page of a broad query and reports, field by field, whether titles
 | `--dry-run` | read the command back, name flags that cancel each other, print the plan and duration estimate, then stop without requesting anything |
 | `--self-check` | run the parser self-check (one request) and report field by field what still parses |
 | `--headless` | no window; **a challenge then aborts the run with instructions** |
+| `--keep-background` | on by default: the window opens behind your work instead of on top of it (on macOS the frontmost app gets the screen back); a challenge then rings the bell instead of raising the window. `--no-keep-background` restores the old grab-the-front behaviour |
 
 `--headless` and human takeover are mutually exclusive by nature: with no window, nobody can act. Run headed once so a human clears the challenge, then reuse the same `--profile` in headless mode; if it is still blocked, the run exits with a clear message instead of spinning.
+
+The browser window opens behind your work by default (`--keep-background`): on macOS the frontmost application is remembered before the browser starts, and the screen is handed back as soon as the browser takes it (the first run asks for "System Events" automation permission; declining puts the window back on top, with one line in the terminal saying so, and on other systems there is no such effect). A challenge then rings the bell and prints the takeover notice instead of raising the window — switch to the browser yourself when you are ready.
 
 Invalid pacing (negative values, `--min-delay` above `--max-delay`, `--backoff-factor` below 1) fails at startup rather than producing strange timing.
 
@@ -874,7 +877,7 @@ A real CAPTCHA cannot be summoned on demand, so the whole takeover path can be r
 scholar-crawler --rehearse-handoff
 ```
 
-The flow is the one a real challenge triggers: the page is detected as a challenge, the bell rings, the window comes to the front, the takeover notice prints, and the wait polls. Press the button on the page to stand in for solving it — the rehearsal then confirms the page reads as content again and reports how long the wait took, exiting 0. With nobody acting it fails at `--handoff-timeout` (exit 1), and with `--headless` it verifies the "no window, so refuse" path instead.
+The flow is the one a real challenge triggers: the page is detected as a challenge, the bell rings, the window comes to the front (with the default `--keep-background` it is not raised; the notice tells you to switch over, and `--no-keep-background` restores the raising), the takeover notice prints, and the wait polls. Press the button on the page to stand in for solving it — the rehearsal then confirms the page reads as content again and reports how long the wait took, exiting 0. With nobody acting it fails at `--handoff-timeout` (exit 1), and with `--headless` it verifies the "no window, so refuse" path instead.
 
 ## Run summary
 
@@ -1017,6 +1020,7 @@ scholar_crawler/
   urls.py       query and profile URLs, filters, id/URL parsing
   parser.py     result-page and profile HTML -> structured records
   challenge.py  challenge detection + human takeover wait
+  focus.py      window focus for --keep-background: remember the frontmost app, hand the screen back
   diagnose.py   failure diagnosis: network and page failures turned into next steps
   browser.py    persistent-profile browser session
   crawler.py    crawl loop: pacing, takeover, pagination and author batching, BibTeX loads, HTML dumps

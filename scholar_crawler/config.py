@@ -242,7 +242,10 @@ def _convert_one(value: Any, action: argparse.Action, name: str, path: Path) -> 
     :returns: the converted value.
     :raises ConfigError: when the value is the wrong kind, or outside the option's choices.
     """
-    flag = isinstance(action, argparse._StoreTrueAction | argparse._StoreFalseAction)
+    flag = isinstance(
+        action,
+        argparse._StoreTrueAction | argparse._StoreFalseAction | argparse.BooleanOptionalAction,
+    )
     if flag != isinstance(value, bool):
         wanted = "true or false" if flag else "a value, not true/false"
         raise ConfigError(f"{path}: {name!r} wants {wanted}")

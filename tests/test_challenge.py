@@ -124,13 +124,29 @@ def test_consent_wall_detected_by_text(page: Page) -> None:
 
 
 def test_handoff_waits_then_resumes_when_the_page_is_cleared(monkeypatch: pytest.MonkeyPatch) -> None:
+    # raise_window spelled out because the CLI default is --keep-background; this exercises
+    # the raising handoff that --no-keep-background selects.
     consumed = _scripted_detector(monkeypatch, [CAPTCHA, CAPTCHA, None])
     stub = _StubPage()
-    takeover = HumanHandoff(timeout=10.0, poll_interval=0.01).resolve(stub, CAPTCHA)  # type: ignore[arg-type]
+    takeover = HumanHandoff(
+        timeout=10.0, poll_interval=0.01, raise_window=True
+    ).resolve(stub, CAPTCHA)  # type: ignore[arg-type]
     assert consumed == [CAPTCHA, CAPTCHA, None]
     assert stub.fronted == 1
     assert takeover.saw == ("captcha",)
     assert takeover.waited >= 0.0
+
+
+def test_the_default_handoff_leaves_the_window_where_it_is(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The default mirrors a bare run: --keep-background is on, so nothing is raised and the
+    # notice tells the human to switch over.
+    _scripted_detector(monkeypatch, [None])
+    stub = _StubPage()
+    HumanHandoff(timeout=10.0, poll_interval=0.01).resolve(stub, CAPTCHA)  # type: ignore[arg-type]
+    assert stub.fronted == 0
+    assert "Switch to the browser" in capsys.readouterr().out
 
 
 def test_the_opening_message_says_no_keypress_is_needed_and_how_long_there_is(
@@ -141,6 +157,20 @@ def test_the_opening_message_says_no_keypress_is_needed_and_how_long_there_is(
     printed = capsys.readouterr().out
     assert "No keypress needed" in printed
     assert "You have 300s to act" in printed
+
+
+def test_the_window_is_left_where_it_is_when_raising_is_off(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # --keep-background promises the window never jumps over the operator's work, and a
+    # challenge is not an exception: the bell and the notice summon them instead.
+    _scripted_detector(monkeypatch, [None])
+    stub = _StubPage()
+    HumanHandoff(timeout=300.0, poll_interval=0.01, raise_window=False).resolve(stub, CAPTCHA)  # type: ignore[arg-type]
+    assert stub.fronted == 0
+    printed = capsys.readouterr().out
+    assert "--keep-background" in printed
+    assert "Switch to the browser" in printed
 
 
 def test_waiting_without_a_timeout_says_so_instead_of_naming_a_budget(

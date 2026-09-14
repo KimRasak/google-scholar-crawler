@@ -15,6 +15,7 @@ from pathlib import Path
 from playwright.sync_api import BrowserContext, Page, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
 
+from . import focus
 from .challenge import HumanHandoff
 from .diagnose import CrawlFailure, diagnose_launch, diagnose_unwritable
 from .storage import ChallengeLog, unwritable
@@ -35,6 +36,8 @@ class BrowserOptions:
     :param locale: browser locale sent as ``Accept-Language``.
     :param timezone: IANA timezone reported to pages.
     :param proxy_server: optional proxy URL, e.g. ``http://127.0.0.1:8080``.
+    :param steal_focus: let the window take the foreground when it opens; off by default
+        (``--keep-background``), and ``--no-keep-background`` turns it back on.
     """
 
     user_data_dir: Path
@@ -43,6 +46,7 @@ class BrowserOptions:
     locale: str = "en-US"
     timezone: str = "America/Los_Angeles"
     proxy_server: str | None = None
+    steal_focus: bool = False
 
 
 @contextmanager
@@ -51,11 +55,17 @@ def browser_session(options: BrowserOptions) -> Iterator[tuple[BrowserContext, P
 
     :param options: launch settings.
     :returns: a context manager yielding the context and a ready page; both close on exit.
+
+    Under ``--keep-background`` the operator's frontmost application is noted before the
+    window opens, and a watcher hands the screen back once the browser takes it — see
+    :mod:`scholar_crawler.focus`.
     """
     unusable = unwritable(options.user_data_dir, kind="dir")
     if unusable:
         raise CrawlFailure(diagnose_unwritable(unusable, "--profile", kind="dir"))
     options.user_data_dir.mkdir(parents=True, exist_ok=True)
+    # Before the window exists is the only moment the screen's owner can be known.
+    previous = focus.remember(steal_focus=options.steal_focus, headless=options.headless)
     with sync_playwright() as playwright:
         try:
             context = playwright.chromium.launch_persistent_context(
@@ -74,6 +84,7 @@ def browser_session(options: BrowserOptions) -> Iterator[tuple[BrowserContext, P
             raise CrawlFailure(
                 diagnose_launch(error, channel=options.channel, profile=options.user_data_dir)
             ) from error
+        focus.keep_behind(previous, focus.app_name(options.channel))
         context.add_init_script(_INIT_SCRIPT)
         page = context.pages[0] if context.pages else context.new_page()
         try:
