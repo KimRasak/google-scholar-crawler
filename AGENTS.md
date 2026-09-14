@@ -36,9 +36,15 @@ CAPTCHA, the browser window is brought to the front and the run waits. So:
 ```sh
 scholar-crawler -q "graph attention networks" -p 2 --json          # 2 pages, 10 records each
 scholar-crawler -q "..." -p 5 --dry-run --json                     # read it back and cost it
+scholar-crawler -q "..." --recent 3 --json                         # only the last 3 years
 scholar-crawler --cites 2960712678066186980 -p 2 --json            # who cites this paper
 scholar-crawler --author kukA0LcAAAAJ -n 200 --json                # one author's publications
 ```
+
+Add `--recent 3` when only current work matters: keyword and citing-works listings otherwise
+lead with the field's decade-old classics. `--year-from`/`--year-to` give an exact range.
+`--author` profiles are the one exception — Scholar lists a profile without a year filter, so
+post-filter those records with `scholar-digest --recent 3`.
 
 `--json` prints exactly one JSON object on stdout and sends every progress line to stderr, so
 `json.loads(stdout)` always works. Pass it with a real crawl or with `--dry-run`; it is refused
@@ -48,7 +54,7 @@ reports rather than results.
 ```json
 {
   "tool": "scholar-crawler",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "ok": true,
   "exit_code": 0,
   "counts": { "records": 20, "duplicates": 0, "requests": 2, "takeovers": 0 },

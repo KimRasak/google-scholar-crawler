@@ -11,7 +11,7 @@ from traceback import format_exception_only
 
 from .browser import BrowserOptions, Session, locale_for, timezone_for
 from .challenge import HumanHandoff
-from .config import ConfigError, resolve_settings, settings_advice
+from .config import ConfigError, Origin, Sources, resolve_settings, settings_advice
 from .crawler import DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, Pacing
 from .diagnose import CrawlFailure, Diagnosis, diagnose_unwritable, stop_report
 from .expand import FollowPolicy
@@ -27,7 +27,7 @@ from .machine import (
     refusal,
     version,
 )
-from .models import AuthorRequest, SearchRequest
+from .models import AuthorRequest, SearchRequest, recent_year_low
 from .modes import (
     check_environment,
     forget_state,
@@ -172,6 +172,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     query.add_argument("--year-from", type=int, help="earliest publication year")
     query.add_argument("--year-to", type=int, help="latest publication year")
+    query.add_argument(
+        "--recent",
+        type=int,
+        metavar="YEARS",
+        help="keep only works from the last YEARS, this one included (--recent 3 is the "
+        "lower bound 'three calendar years ago'); an alternative to --year-from — give one, "
+        "not both",
+    )
     query.add_argument("--lang", default="en", help="Scholar interface language (hl) (default: en)")
     query.add_argument("--sort-by-date", action="store_true", help="sort by date instead of relevance")
     query.add_argument("--no-citations", action="store_true", help="exclude citation-only records")
@@ -366,6 +374,40 @@ def _collect_clusters(args: argparse.Namespace) -> list[str]:
     return list(args.cluster) + (
         _lines_of(args.clusters_file, "--clusters-file") if args.clusters_file else []
     )
+
+
+def _apply_recent(args: argparse.Namespace, sources: Sources) -> list[str]:
+    """Turn ``--recent`` into the ``--year-from`` it means, at the one place both are known.
+
+    Both flags set the earliest year, so a command carrying both is a contradiction, not a
+    combination, and is refused like any other impossible command. The one exception is the
+    precedence rule the settings file documents: a flag beats the file. So ``--recent`` typed
+    on the command line replaces a file's ``year-from`` — reported, not silent — and a file's
+    ``recent`` yields to a typed ``--year-from`` the same way.
+
+    :param args: parsed arguments; ``year_from`` is updated in place when ``--recent`` wins.
+    :param sources: where the settings in effect came from, which is how a flag is told
+        apart from a file's choice.
+    :returns: lines to print when a settings file's value was replaced.
+    :raises ValueError: when both flags were set by the same hand, or ``--recent`` names
+        fewer than one year.
+    """
+    if args.recent is None:
+        return []
+    low = recent_year_low(args.recent)
+    if args.year_from is None:
+        args.year_from = low
+        return []
+    recent_origin, year_origin = sources.of("recent"), sources.of("year_from")
+    if Origin.COMMAND_LINE not in (recent_origin, year_origin) or recent_origin == year_origin:
+        raise ValueError(
+            f"--recent {args.recent} and --year-from {args.year_from} both set the earliest "
+            "year; give one of them"
+        )
+    if recent_origin is Origin.COMMAND_LINE:
+        args.year_from = low
+        return ["--recent replaces the settings file's year-from"]
+    return ["--year-from replaces the settings file's recent"]
 
 
 def build_targets(args: argparse.Namespace) -> tuple[list[SearchRequest], list[AuthorRequest]]:
@@ -830,6 +872,10 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
     if offline is not None:
         return _Ran(offline)
     try:
+        # --recent is resolved into the year range it means before anything reads the
+        # filters, so the explain, the plan and every request see one resolved value.
+        for note in _apply_recent(args, sources):
+            print(f"[filters] {note}", flush=True)
         listings, authors = build_targets(args)
         follow = FollowPolicy(
             depth=args.follow_cites,
@@ -866,6 +912,15 @@ def _run(args: argparse.Namespace, argv: list[str] | None, given: list[str]) -> 
         print("[plan] nothing was requested; drop --dry-run to start", flush=True)
         return _Ran(0, plan=plan)
 
+    if authors and (args.year_from is not None or args.year_to is not None):
+        # The one target class a year range cannot reach: Scholar serves profile pages
+        # without one, so saying nothing would let the filter look broader than it is.
+        print(
+            "[filters] Scholar has no year filter on author profiles: the range applies to "
+            "the search, citing-works and version listings only; filter the file afterwards "
+            "with scholar-digest --recent",
+            flush=True,
+        )
     outputs = Outputs.open_for(
         out=args.out,
         state=args.state,

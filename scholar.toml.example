@@ -22,6 +22,7 @@ pages = 2
 
 [filters]
 year-from = 2020
+# recent = 3          # only the last 3 years, this one included; instead of year-from, not beside it
 review-only = false
 
 [pacing]

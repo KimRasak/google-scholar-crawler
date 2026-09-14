@@ -159,6 +159,16 @@ def test_contradictory_years_are_caught_before_a_request_is_sent() -> None:
     assert any("later than --year-to" in line for line in concerns)
 
 
+def test_a_year_range_says_it_does_not_reach_author_profiles() -> None:
+    # Scholar serves profile pages without a year filter, so a range beside --author covers
+    # less than it looks like; the explanation says which targets it does cover.
+    concerns = _concerns(["-q", "x", "--author", "kukA0LcAAAAJ", "--year-from", "2023"])
+    assert any("no year filter on author profiles" in line for line in concerns)
+    assert not any(
+        "author profiles" in line for line in _concerns(["-q", "x", "--year-from", "2023"])
+    )
+
+
 def test_two_outputs_pointed_at_one_file_are_caught() -> None:
     concerns = _concerns(["-q", "x", "--bibtex", "out/results.jsonl"])
     assert any("--bibtex and --out write to the same file" in line for line in concerns)

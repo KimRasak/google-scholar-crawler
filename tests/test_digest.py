@@ -144,6 +144,57 @@ def test_the_citation_threshold_keeps_the_records_that_meet_it() -> None:
     assert len(filter_records(records, min_citations=0)) == 4
 
 
+def _freeze_year(monkeypatch: pytest.MonkeyPatch, year: int) -> None:
+    """Pin today's date so ``--recent``'s arithmetic is readable in a test.
+
+    :param monkeypatch: pytest's patching helper.
+    :param year: the year every ``--recent`` resolves against.
+    """
+    from datetime import date as real_date
+
+    from scholar_crawler import models
+
+    class _Frozen:
+        @classmethod
+        def today(cls) -> real_date:
+            return real_date(year, 7, 1)
+
+    monkeypatch.setattr(models, "date", _Frozen)
+
+
+def test_recent_resolves_to_the_same_lower_bound_as_year_from(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # --recent 3 in the frozen year 2025 is --year-from 2023: the newest record stays, the
+    # 2021 one and the yearless one are filtered out by the ordinary year range.
+    _freeze_year(monkeypatch, 2025)
+    path = _write(
+        tmp_path / "a.jsonl",
+        [
+            _record(cluster_id="old", year=2021, cited_by_count=900),
+            _record(cluster_id="new", year=2024, cited_by_count=3),
+            _record(cluster_id="noyear", cited_by_count=500),
+        ],
+    )
+    out = tmp_path / "m.jsonl"
+    assert main([str(path), "--recent", "3", "-o", str(out)]) == 0
+    assert "2 filtered out" in capsys.readouterr().out
+    stored = [json.loads(line) for line in out.read_text().splitlines()]
+    assert [record["cluster_id"] for record in stored] == ["new"]
+
+
+def test_recent_alone_is_refused_for_a_year_it_cannot_mean(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["a.jsonl", "--recent", "0"]) == 1
+    assert "--recent counts years" in capsys.readouterr().out
+
+
+def test_recent_and_year_from_together_are_refused(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["a.jsonl", "--recent", "3", "--year-from", "2020"]) == 1
+    assert "both set the earliest year" in capsys.readouterr().out
+
+
 def test_written_files_hold_the_kept_records(tmp_path: Path) -> None:
     records = [_record(), _record(cluster_id="c2", title="B paper")]
     jsonl = tmp_path / "nested" / "merged.jsonl"

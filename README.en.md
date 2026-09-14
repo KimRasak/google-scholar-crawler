@@ -120,7 +120,7 @@ Check the machine first; this sends no request:
 ```sh
 $ scholar-crawler --doctor
 [doctor] + python                 3.13.5 at /opt/miniconda3/bin/python3
-[doctor] + version                0.2.0
+[doctor] + version                0.3.0
 [doctor] + playwright             1.60.0
 [doctor] + bs4                    4.14.3
 [doctor] + lxml                   6.1.0
@@ -154,14 +154,17 @@ Once the machine is sound, `--self-check` goes on to test the network.
 
 ## More commands
 
-Rather than reading the flag table, start from `--recipes`: seventeen complete commands to copy. **The first one collects a topic** — a list opening with three diagnostics would answer a question nobody asked. The checks come after it, and the rest run roughly from cheapest to most expensive. A run given nothing to do prints the first three after the error, so copying a line out of the error message starts a crawl.
+Rather than reading the flag table, start from `--recipes`: eighteen complete commands to copy. **The first one collects a topic** — a list opening with three diagnostics would answer a question nobody asked. The checks come after it, and the rest run roughly from cheapest to most expensive. A run given nothing to do prints the first three after the error, so copying a line out of the error message starts a crawl.
 
 ```sh
 $ scholar-crawler --recipes
 1. Collect one topic — start here
    $ scholar-crawler -q "graph attention networks" -p 3 -o out/gat.jsonl
      3 pages, 10 records each, about a minute; clear any challenge in the window it opens
-2. Check that this machine can run a crawl at all
+2. Collect recent work only
+   $ scholar-crawler -q "graph attention networks" --recent 3 -p 3 -o out/recent.jsonl
+     only the last 3 years, this one included; searches otherwise lead with the field's decade-old classics
+3. Check that this machine can run a crawl at all
    $ scholar-crawler --doctor
      no requests; reports Python, the libraries, the browser and the directories
 ...
@@ -173,9 +176,10 @@ The tests keep these honest: every recipe is parsed by the real parser and must 
 # Keyword search, three pages (10 results each)
 scholar-crawler -q "large language model agents" -p 3 -o out/agents.jsonl
 
-# Year filter, sorted by date, capped at 40 records
+# Recent work only, sorted by date, capped at 40 records
+# (--recent 3 = the last 3 calendar years, this one included; for an exact range use --year-from/--year-to)
 scholar-crawler -q "retrieval augmented generation" \
-  --year-from 2023 --sort-by-date -n 40 -o out/rag.jsonl
+  --recent 3 --sort-by-date -n 40 -o out/rag.jsonl
 
 # Batch queries (one per line, # comments allowed) with resume
 # with several targets each one reports its place: [query] 3/12 '...' from offset 0
@@ -208,7 +212,7 @@ This tool is increasingly run by agents, which do not want progress lines — th
 $ scholar-crawler -q "graph attention networks" -p 1 --json 2>/dev/null
 {
   "tool": "scholar-crawler",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "ok": true,
   "exit_code": 0,
   "counts": { "records": 10, "duplicates": 0, "requests": 1, "takeovers": 0 },
@@ -283,7 +287,7 @@ The input is ordinary JSONL: people edit it and other scripts generate it. Every
 
 | Option | Effect |
 | --- | --- |
-| `--min-citations`, `--year-from`, `--year-to` | filters; a year range drops records without a year |
+| `--min-citations`, `--recent`, `--year-from`, `--year-to` | filters; `--recent 3` means the last 3 calendar years (this one included), one alternative to `--year-from`; a year range drops records without a year |
 
 **Printed reports** — these write nothing
 
@@ -734,6 +738,7 @@ What it catches (`warn` means a flag does not do what it looks like; `note` mean
 
 - `--headless` has nobody to hand a challenge to, so the first one ends the run with whatever was collected;
 - `--year-from` later than `--year-to`, which returns nothing;
+- a year range reaching nothing on `--author` profiles (Scholar serves those without a year filter) — it applies to the search, citing-works and version listings only, and the run says so before it starts; filter the file afterwards with `scholar-digest --recent`;
 - values that amount to doing no work, such as `--pages 0` or `--max-handoffs 0`;
 - delays shorter than the default 4–11s, and `--cooldown-every 0` removing the long pause;
 - `--no-learn-from-history` when the takeover log actually holds history (silent when it does not);
@@ -794,7 +799,7 @@ It fetches one page of a broad query and reports, field by field, whether titles
 | `-p/--pages`, `-n/--max-results` | pages per entry point / hard result cap (last page truncated exactly). Search pages hold 10 results, profile pages 100 publications |
 | `--follow-cites`, `--follow-breadth`, `--follow-min-citations` | after the seed entry points, keep crawling the works that cite them for this many levels; each level expands only the most-cited N records, skipping anything below the citation floor |
 | `--start`, `--resume` | first offset; continue from the saved cursor |
-| `--year-from/--year-to`, `--sort-by-date`, `--review-only` | year range, date order, reviews only |
+| `--recent`, `--year-from/--year-to`, `--sort-by-date`, `--review-only` | recent work only (the last N years, this one included; one alternative to `--year-from`), year range, date order, reviews only |
 | `--no-citations`, `--no-patents` | exclude citation-only records / patents |
 | `--lang`, `--host` | interface language (`hl`), which the browser's `Accept-Language` and timezone both follow with no separate flag; mirror such as `https://scholar.google.de` |
 | `--challenge-log` | takeover log (default `out/challenges.jsonl`, URLs redacted) |

@@ -35,7 +35,7 @@ from .machine import (
     refusal,
     version,
 )
-from .models import readable_record, record_key
+from .models import readable_record, recent_year_low, record_key
 from .refresh import (
     DEFAULT_REFRESH_LIMIT,
     DEFAULT_STALE_DAYS,
@@ -289,6 +289,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     selection.add_argument("--year-from", type=int, metavar="YEAR", help="drop records published earlier")
     selection.add_argument("--year-to", type=int, metavar="YEAR", help="drop records published later")
+    selection.add_argument(
+        "--recent",
+        type=int,
+        metavar="YEARS",
+        help="keep only works from the last YEARS, this one included; an alternative to "
+        "--year-from — give one, not both",
+    )
 
     printed = parser.add_argument_group(
         "printed reports", "read the collection in the terminal; these write nothing"
@@ -437,6 +444,19 @@ def _run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
             "--quiet needs --out, --csv, --bibtex, --report or --refresh-list, "
             "otherwise the run prints nothing",
         )
+    if args.recent is not None:
+        # The same shorthand the crawler takes, resolved into the same --year-from — with
+        # the same refusal when both lower bounds are named in one command.
+        if args.year_from is not None:
+            return _fail(
+                "usage",
+                f"--recent {args.recent} and --year-from {args.year_from} both set the "
+                "earliest year; give one of them",
+            )
+        try:
+            args.year_from = recent_year_low(args.recent)
+        except ValueError as error:
+            return _fail("usage", str(error))
     try:
         records, malformed, repaired = load_records(args.inputs)
     except OSError as error:

@@ -120,7 +120,7 @@ scholar-crawler --install-browser
 ```sh
 $ scholar-crawler --doctor
 [doctor] + python                 3.13.5 at /opt/miniconda3/bin/python3
-[doctor] + version                0.2.0
+[doctor] + version                0.3.0
 [doctor] + playwright             1.60.0
 [doctor] + bs4                    4.14.3
 [doctor] + lxml                   6.1.0
@@ -154,14 +154,17 @@ $ scholar-crawler --doctor --channel ''
 
 ## 更多用法
 
-不想读参数表就先看 `--recipes`：十七条可以直接复制的完整命令。**第一条就是「抓一个主题」**——列表开头摆三条体检命令，等于回答没人问过的问题；抓取之后才是各种检查，再往后大致按「越靠后越贵」排。什么都不传时报错后也会列出前三条，所以从错误信息里抄一条就能开始抓。
+不想读参数表就先看 `--recipes`：十八条可以直接复制的完整命令。**第一条就是「抓一个主题」**——列表开头摆三条体检命令，等于回答没人问过的问题；抓取之后才是各种检查，再往后大致按「越靠后越贵」排。什么都不传时报错后也会列出前三条，所以从错误信息里抄一条就能开始抓。
 
 ```sh
 $ scholar-crawler --recipes
 1. Collect one topic — start here
    $ scholar-crawler -q "graph attention networks" -p 3 -o out/gat.jsonl
      3 pages, 10 records each, about a minute; clear any challenge in the window it opens
-2. Check that this machine can run a crawl at all
+2. Collect recent work only
+   $ scholar-crawler -q "graph attention networks" --recent 3 -p 3 -o out/recent.jsonl
+     only the last 3 years, this one included; searches otherwise lead with the field's decade-old classics
+3. Check that this machine can run a crawl at all
    $ scholar-crawler --doctor
      no requests; reports Python, the libraries, the browser and the directories
 ...
@@ -173,9 +176,9 @@ $ scholar-crawler --recipes
 # 关键词检索，抓 3 页（每页 10 条）
 scholar-crawler -q "large language model agents" -p 3 -o out/agents.jsonl
 
-# 限定年份 + 按时间排序，最多 40 条
+# 只要近三年的 + 按时间排序，最多 40 条（--recent 3 = 最近 3 个日历年，含今年；要精确区间用 --year-from/--year-to）
 scholar-crawler -q "retrieval augmented generation" \
-  --year-from 2023 --sort-by-date -n 40 -o out/rag.jsonl
+  --recent 3 --sort-by-date -n 40 -o out/rag.jsonl
 
 # 批量查询（文件内一行一个，# 开头为注释，见 queries.example.txt），断点续爬
 # 多个目标时日志里每条会标出进度：[query] 3/12 '...' from offset 0
@@ -208,7 +211,7 @@ scholar-crawler -q 'author:"Yoshua Bengio" source:"NeurIPS"' -p 2
 $ scholar-crawler -q "graph attention networks" -p 1 --json 2>/dev/null
 {
   "tool": "scholar-crawler",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "ok": true,
   "exit_code": 0,
   "counts": { "records": 10, "duplicates": 0, "requests": 1, "takeovers": 0 },
@@ -281,7 +284,7 @@ $ scholar-digest out/all.jsonl
 
 | 参数 | 作用 |
 | --- | --- |
-| `--min-citations`、`--year-from`、`--year-to` | 过滤条件；带年份区间时会丢掉没有年份的记录 |
+| `--min-citations`、`--recent`、`--year-from`、`--year-to` | 过滤条件；`--recent 3` 指最近 3 个日历年（含今年），与 `--year-from` 二选一；带年份区间时会丢掉没有年份的记录 |
 
 **在终端里看**（不写任何文件）
 
@@ -728,6 +731,7 @@ $ scholar-crawler -q "graph attention networks" -p 3 --bibtex out/refs.bib --dry
 
 - `--headless` 无人可交，第一次验证就会带着已抓到的数据结束；
 - `--year-from` 晚于 `--year-to`，Scholar 什么都不会返回；
+- 年份区间管不到 `--author` 主页（Scholar 的主页没有年份过滤），只作用于检索、引证与版本列表——开始抓之前会说明；抓完的文件可以用 `scholar-digest --recent` 再过滤；
 - `--pages 0`、`--max-handoffs 0` 这类等于「不干活」的值；
 - 延迟比默认的 4–11 秒更短、`--cooldown-every 0` 去掉长暂停；
 - `--no-learn-from-history`，且接管记录里确实有历史（没有历史就不提）；
@@ -789,7 +793,7 @@ $ scholar-crawler --self-check
 | `-p/--pages`、`-n/--max-results` | 每个入口抓几页 / 最多抓几条（末页精确截断）。检索页每页 10 条，作者主页每页 100 篇 |
 | `--follow-cites`、`--follow-breadth`、`--follow-min-citations` | 抓完种子入口后，继续抓「引用它们的文献」若干层；每层只展开被引最多的 N 条，且低于引用下限的直接跳过 |
 | `--start`、`--resume` | 起始 offset；从 state 断点继续 |
-| `--year-from/--year-to`、`--sort-by-date`、`--review-only` | 年份区间、按日期排序、只要综述 |
+| `--recent`、`--year-from/--year-to`、`--sort-by-date`、`--review-only` | 只看最近 N 年（含今年，与 `--year-from` 二选一）、年份区间、按日期排序、只要综述 |
 | `--no-citations`、`--no-patents` | 排除仅引用条目、排除专利 |
 | `--lang`、`--host` | 界面语言 `hl`（浏览器的 `Accept-Language` 与时区都跟着它，不另设旗标）；镜像站如 `https://scholar.google.de` |
 | `-o/--out`、`--state` | JSONL 输出、断点文件（CSV 交给 `scholar-digest --csv`，抓取本身不导表） |

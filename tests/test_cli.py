@@ -136,6 +136,110 @@ def test_filters_apply_to_every_request() -> None:
         assert request.language == "zh-CN"
 
 
+def _freeze_year(monkeypatch: pytest.MonkeyPatch, year: int) -> None:
+    """Pin today's date so ``--recent``'s arithmetic is readable in a test.
+
+    :param monkeypatch: pytest's patching helper.
+    :param year: the year every ``--recent`` resolves against.
+    """
+    from datetime import date as real_date
+
+    from scholar_crawler import models
+
+    class _Frozen:
+        @classmethod
+        def today(cls) -> real_date:
+            return real_date(year, 7, 1)
+
+    monkeypatch.setattr(models, "date", _Frozen)
+
+
+def test_recent_is_sent_as_the_year_range_it_means(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The whole point of --recent is that the caller does not have to know the year, so the
+    # resolution is read off the URL the run would request: --recent 3 in 2025 is as_ylo=2023.
+    _freeze_year(monkeypatch, 2025)
+    out = tmp_path / "out"
+    code = main(
+        [
+            "-q",
+            "x",
+            "--recent",
+            "3",
+            "-o",
+            str(out / "r.jsonl"),
+            "--state",
+            str(out / "state.json"),
+            "--challenge-log",
+            str(out / "c.jsonl"),
+            "--dry-run",
+            "--json",
+        ]
+    )
+    assert code == 0
+    document = json.loads(capsys.readouterr().out)
+    assert "as_ylo=2023" in document["plan"]["targets"][0]["url"]
+
+
+def test_recent_sets_only_the_lower_bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    from scholar_crawler.cli import _apply_recent
+    from scholar_crawler.config import Sources
+
+    _freeze_year(monkeypatch, 2025)
+    args = _args(["-q", "x", "--recent", "3", "--year-to", "2024"])  # type: ignore[arg-type]
+    assert _apply_recent(args, Sources()) == []  # type: ignore[arg-type]
+    requests, _authors = build_targets(args)  # type: ignore[arg-type]
+    assert (requests[0].year_low, requests[0].year_high) == (2023, 2024)
+
+
+def test_recent_that_counts_no_years_is_refused() -> None:
+    from scholar_crawler.cli import _apply_recent
+    from scholar_crawler.config import Sources
+
+    args = _args(["-q", "x", "--recent", "0"])  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="1 or more"):
+        _apply_recent(args, Sources())  # type: ignore[arg-type]
+
+
+def test_recent_and_year_from_from_the_same_hand_are_refused() -> None:
+    # Two lower bounds in one command is a contradiction, not a combination.
+    from scholar_crawler.cli import _apply_recent
+    from scholar_crawler.config import Sources
+
+    args = _args(["-q", "x", "--recent", "3", "--year-from", "2020"])  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="both set the earliest year"):
+        _apply_recent(args, Sources())  # type: ignore[arg-type]
+
+
+def test_a_flag_beats_the_settings_file_at_the_earliest_year(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Precedence is command line over file, so --recent typed beside a file's year-from
+    # replaces it — reported, not silent — and a typed --year-from beats the file's recent.
+    from scholar_crawler.cli import _apply_recent
+    from scholar_crawler.config import Origin, Sources
+
+    _freeze_year(monkeypatch, 2025)
+    args = _args(["-q", "x", "--recent", "3"])  # type: ignore[arg-type]
+    args.year_from = 2020  # as the settings file would have left it
+    sources = Sources(
+        origins={"recent": Origin.COMMAND_LINE, "year_from": Origin.FILE},
+        values={"recent": 3, "year_from": 2020},
+    )
+    assert _apply_recent(args, sources) == ["--recent replaces the settings file's year-from"]
+    assert args.year_from == 2023
+
+    args = _args(["-q", "x", "--year-from", "2019"])  # type: ignore[arg-type]
+    args.recent = 3  # as the settings file would have left it
+    sources = Sources(
+        origins={"recent": Origin.FILE, "year_from": Origin.COMMAND_LINE},
+        values={"recent": 3, "year_from": 2019},
+    )
+    assert _apply_recent(args, sources) == ["--year-from replaces the settings file's recent"]
+    assert args.year_from == 2019
+
+
 def test_cites_and_cluster_accept_urls_from_collected_records() -> None:
     requests, _authors = build_targets(  # type: ignore[arg-type]
         _args(

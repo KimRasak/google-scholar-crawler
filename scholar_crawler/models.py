@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 
@@ -82,6 +83,25 @@ class SearchRequest:
 
 SEARCH_FIELDS = 9
 """``key=value`` fields a search signature carries after the query, which may contain anything."""
+
+
+def recent_year_low(recent: int, *, today: date | None = None) -> int:
+    """The earliest year ``--recent N`` asks for: the last N calendar years, this one included.
+
+    Keyword and citing-works searches lead with the field's classics, so a caller who wants
+    current work would have to know today's year and do the subtraction on every command.
+    ``--recent 3`` in 2025 is therefore ``--year-from 2023``: 2023, 2024 and 2025. The result
+    feeds the ordinary ``year_low`` of a request, so state signatures, resume commands and
+    URLs are exactly what an explicit ``--year-from`` would have produced.
+
+    :param recent: how many calendar years back to reach, counting the current one.
+    :param today: the day to count from; the real today when None.
+    :returns: the earliest year to keep.
+    :raises ValueError: when ``recent`` counts no years at all.
+    """
+    if recent < 1:
+        raise ValueError("--recent counts years, so it takes 1 or more")
+    return (today or date.today()).year - recent + 1
 
 
 def parse_signature(signature: str) -> SearchRequest | AuthorRequest | None:

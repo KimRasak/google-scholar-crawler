@@ -333,6 +333,14 @@ def _flag_concerns(
                 "Scholar will return nothing",
             )
         )
+    if authors and (args.year_from or args.year_to):
+        concerns.append(
+            Concern(
+                Level.NOTE,
+                "Scholar has no year filter on author profiles: the range applies to the "
+                "search, citing-works and version listings only",
+            )
+        )
     if args.pages < 1 and listings:
         concerns.append(Concern(Level.WARN, f"--pages {args.pages} loads no listing page at all"))
     if args.max_results is not None and args.max_results < 10:

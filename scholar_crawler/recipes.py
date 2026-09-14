@@ -42,6 +42,12 @@ RECIPES: tuple[Recipe, ...] = (
         note="3 pages, 10 records each, about a minute; clear any challenge in the window it opens",
     ),
     Recipe(
+        purpose="Collect recent work only",
+        command='scholar-crawler -q "graph attention networks" --recent 3 -p 3 -o out/recent.jsonl',
+        note="only the last 3 years, this one included; searches otherwise lead with the "
+        "field's decade-old classics",
+    ),
+    Recipe(
         purpose="Check that this machine can run a crawl at all",
         command="scholar-crawler --doctor",
         note="no requests; reports Python, the libraries, the browser and the directories",
